@@ -6,6 +6,7 @@ MODULE_SO=$(MODULE_NAME).so
 # Detect Redis installation
 REDIS_CFLAGS=$(shell pkg-config --cflags hiredis 2>/dev/null || echo "-I/usr/include/hiredis")
 REDIS_LDFLAGS=$(shell pkg-config --libs hiredis 2>/dev/null || echo "-lhiredis")
+REDIS_MODULE_CFLAGS=-I/tmp/redis-stable/src
 
 # Detect PostgreSQL installation
 PG_CFLAGS=$(shell pg_config --includedir 2>/dev/null | sed 's/^/-I/' || echo "-I/usr/include/postgresql")
@@ -17,7 +18,7 @@ JANSSON_LDFLAGS=$(shell pkg-config --libs jansson 2>/dev/null || echo "-ljansson
 
 # Compiler and flags
 CC=gcc
-CFLAGS=-fPIC -std=c99 -Wall -Werror -O2 $(REDIS_CFLAGS) $(PG_CFLAGS) $(JANSSON_CFLAGS)
+CFLAGS=-fPIC -std=c99 -Wall -Werror -O2 $(REDIS_CFLAGS) $(REDIS_MODULE_CFLAGS) $(PG_CFLAGS) $(JANSSON_CFLAGS)
 LDFLAGS=-shared $(REDIS_LDFLAGS) $(PG_LDFLAGS) $(JANSSON_LDFLAGS) -pthread
 
 # Source files

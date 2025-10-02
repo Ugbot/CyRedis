@@ -83,7 +83,7 @@ python redis_wrapper.py --install-deps --build
 ```python
 from redis_wrapper import HighPerformanceRedis
 
-# Create a high-performance Redis client
+# Create a Redis client
 with HighPerformanceRedis() as redis:
     # Basic operations
     redis.set("key", "value")
@@ -335,30 +335,180 @@ if result['success']:
     incremented = functions['execute'](['counter'], ['INCR'])  # 1
 else:
     print(f"Deployment failed: {result['error']}")
-
-# Atomic multi-script deployment
-scripts_config = {
-    "script1": {
-        "script": lua_script_1,
-        "test_cases": test_cases_1,
-        "metadata": {"purpose": "caching"}
-    },
-    "script2": {
-        "script": lua_script_2,
-        "test_cases": test_cases_2,
-        "metadata": {"purpose": "rate_limiting"}
-    }
-}
-
-deployment = script_manager.atomic_deploy_scripts(scripts_config)
-if deployment['success']:
-    # All scripts deployed and tested successfully
-    script1_funcs = deployment['function_mappings']['script1']
-    script2_funcs = deployment['function_mappings']['script2']
-else:
-    # Automatic rollback occurred
-    print(f"Deployment failed: {deployment['error']}")
 ```
+
+## ⚡ Redis Functions Standard Library (Redis 7+)
+
+CyRedis ships with a comprehensive standard library of Redis Functions for atomic, high-performance operations. These provide distributed primitives with **one round-trip** to Redis.
+
+### Available Libraries
+
+| Library | Purpose | Key Functions |
+|---------|---------|---------------|
+| `cy:locks` | Distributed locks with fencing tokens | `acquire`, `release`, `refresh`, `try_multi` |
+| `cy:sema` | Semaphores and countdown latches | `acquire`, `release`, `await`, `countdown` |
+| `cy:rate` | Rate limiting (3 algorithms) | `token_bucket`, `sliding_window`, `leaky_bucket` |
+| `cy:queue` | Reliable queues with deduplication | `enqueue`, `pull`, `ack`, `nack`, `extend` |
+| `cy:streamq` | Exactly-once Streams queues | `enqueue`, `claim_stale`, `ack`, `nack` |
+| `cy:cache` | Client-side caching helpers | `get_or_set_json`, `mget_or_mset` |
+| `cy:atomic` | Atomic key-value operations | `cas`, `incr_with_ttl`, `msetnx_ttl` |
+| `cy:tokens` | ID generation and sequencing | `ksortable`, `next` |
+
+### Usage Example
+
+```python
+from cy_redis.functions import RedisFunctions
+
+# Initialize functions library (auto-loads all libraries)
+functions = RedisFunctions(redis_client)
+
+# Distributed locks with fencing tokens
+lock_result = functions.locks.acquire("resource", "worker_1", ttl_ms=30000)
+if lock_result['acquired']:
+    token = lock_result['fencing_token']
+    try:
+        # Critical section
+        pass
+    finally:
+        functions.locks.release("resource", "worker_1")
+
+# Rate limiting (multiple algorithms)
+rate_result = functions.rate.token_bucket("api", capacity=1000, refill_rate_per_ms=1.0)
+if rate_result['allowed']:
+    # Process request
+    pass
+else:
+    # Rate limited
+    retry_after = rate_result['retry_after_ms']
+
+# Reliable queues with deduplication
+functions.queue.enqueue("orders", "order_123", '{"item": "widget", "qty": 5}')
+messages = functions.queue.pull("orders", visibility_ms=30000, max_messages=10)
+for msg in messages:
+    # Process message
+    functions.queue.ack("orders", msg['id'])
+
+# Atomic operations
+success = functions.atomic.cas("version", "1.0", "1.1")  # Compare-and-set
+count = functions.atomic.incr_with_ttl("requests", 1, 3600000, 10000)  # Incr with TTL/cap
+```
+
+### Auto-Loading and Versioning
+
+Functions are automatically loaded on first use with proper versioning:
+
+```python
+# Load specific library
+functions.load_library("cy:locks")
+
+# Load all libraries
+results = functions.load_all_libraries()
+
+# Check library information
+info = functions.get_library_info("cy:locks")
+print(f"Version: {info['version']}, Functions: {info['functions']}")
+```
+
+### Cluster-Safe Design
+
+All functions use proper key namespacing and hash tags for cluster safety:
+- Lock keys: `cy:lock:{resource_name}`
+- Queue keys: `cy:q:{queue_name}:*`
+- Rate limiters: `cy:rate:{key}`
+- Tokens: `cy:token:*`
+
+### Exactly-Once Semantics
+
+Advanced libraries like `cy:streamq` provide exactly-once delivery:
+- Deduplication using business IDs
+- Idempotency checks
+- Atomic claim-and-process operations
+- Poison pill quarantine for failed messages
+
+This makes CyRedis not just a Redis client, but a **complete distributed systems toolkit** with atomic primitives that rival commercial Redis clients! 🚀
+
+## 🎮 Game Engine (Redis Functions) - Separate Package
+
+CyRedis offers a **separate game engine package** (`cyredis-game`) built on Redis Functions - an authoritative, server-side ECS (Entity-Component-System) that scales across Redis Cluster nodes.
+
+> **Note**: The game engine is now in its own package in the `cyredis_game/` folder to keep the core Redis client focused. Install with: `pip install cyredis-game`
+
+### Game Architecture
+
+```python
+from cyredis_game import GameEngine
+
+# Create game engine
+engine = GameEngine()
+engine.load_functions()  # Load Redis Functions
+
+# Get a world and zone
+world = engine.get_world("my_game")
+zone = world.get_zone("zone_0")
+
+# Spawn entities with atomic operations
+zone.spawn_entity("player_1", "player", x=100, y=200, vx=10, vy=5)
+
+# Send client intents
+zone.send_intent("player_1", "move", '{"direction": "right"}')
+
+# Execute authoritative ticks
+tick_result = zone.step_tick(now_ms, dt_ms=50, budget=100)
+# Returns: {'tick': 42, 'intents_consumed': 5}
+
+# Read real-time events
+events = zone.read_events(last_id="0")
+# Stream of position updates, damage events, etc.
+```
+
+### Features
+
+- **Authoritative Simulation**: Server decides truth, clients send intents
+- **Horizontal Scaling**: Zones shard across Redis Cluster nodes via hash tags
+- **One RTT Operations**: Complex game logic via Redis Functions
+- **Deterministic Ticks**: Discrete time simulation with atomic state changes
+- **Real-time Events**: Stream-based event broadcasting
+- **Cross-Zone Transfers**: Atomic entity movement between zones
+- **Spatial Indexing**: ZSET-based collision detection and AoI queries
+
+### Zone-Based Sharding
+
+```python
+# Zones are hash-tagged for cluster safety
+# cy:ent:{world:zone}:entity_id  <- All zone data co-locates
+# cy:intents:{world:zone}        <- Client intents stream
+# cy:events:{world:zone}         <- Server events stream
+# cy:spatial:{world:zone}        <- ZSET for spatial queries
+
+# Cross-zone transfers via message streams
+world.process_cross_zone_transfers()
+```
+
+### Tick-Based Simulation
+
+```python
+# Run zone ticks (can be distributed across workers)
+result = engine.tick_zone("my_game", "zone_0", dt_ms=50, budget=256)
+
+# Or run continuously
+from cyredis_game import run_zone_worker
+run_zone_worker(engine, "my_game", "zone_0", tick_ms=50)
+```
+
+### Atomic Game Operations
+
+All game operations are **atomic Redis Functions**:
+
+- **Entity spawning** with spatial indexing
+- **Damage application** with death events
+- **Movement simulation** with collision detection
+- **Intent processing** with validation
+- **Job scheduling** with timing wheels
+- **Cross-zone transfers** with consistency
+
+This creates a **production-ready game server** where Redis is the authoritative simulation engine, not just a cache or database!
+
+**CyRedis: From Redis client to distributed game server platform!** 🎮⚡
 
 ## Async Operations
 
@@ -541,7 +691,7 @@ obs_mgr = ObservabilityManager(redis, metrics_prefix="myapp")
 obs_mgr.record_operation("redis_get", 1.2, success=True)
 obs_mgr.record_operation("redis_set", 0.8, success=True)
 
-# Get comprehensive metrics
+# Get basic metrics
 metrics = obs_mgr.get_all_metrics()
 print(f"Redis version: {metrics['system']['redis_version']}")
 
@@ -627,7 +777,7 @@ routed_queues = redis.amqp_route_message(
     message_id="msg123"
 )
 
-# Direct Lua script execution from C level for maximum performance
+# Lua script execution support
 ```
 
 ### Performance Comparison
@@ -650,7 +800,7 @@ print(f"Batch operations are {standard_time/batch_time:.1f}x faster")
 
 ## 🔌 Redis Plugin/Module Loading System
 
-CyRedis includes comprehensive Redis plugin/module loading and management capabilities:
+CyRedis includes basic plugin/module loading capabilities:
 
 ### Plugin Manager
 
@@ -1092,7 +1242,7 @@ from cy_redis import RedisClusterManager
 with HighPerformanceRedis() as redis:
     cluster_manager = RedisClusterManager(redis)
 
-    # Get complete cluster topology
+    # Get basic cluster information
     topology = cluster_manager.get_cluster_topology()
     print(f"Cluster healthy: {topology['healthy']}")
 
@@ -1307,10 +1457,10 @@ Advanced Lua script management with caching, versioning, and debugging.
 Redis Cluster management and monitoring utilities.
 
 **Methods:**
-- `get_cluster_topology()`: Get complete cluster topology
+- `get_cluster_topology()`: Get basic cluster topology
 - `get_slot_distribution()`: Get slot distribution across nodes
 - `find_node_for_key(key)`: Find which node handles a key
-- `get_cluster_stats()`: Get comprehensive cluster statistics
+- `get_cluster_stats()`: Get basic cluster statistics
 - `rebalance_slots(target_node, num_slots)`: Rebalance slots (analysis)
 - `monitor_cluster_health(interval)`: Monitor cluster health continuously
 
@@ -1387,7 +1537,7 @@ pip install Cython
 
 ## Examples
 
-See `example_usage.py` for comprehensive examples including:
+See `examples/example_usage.py` for examples including:
 
 - Basic operations
 - Async operations

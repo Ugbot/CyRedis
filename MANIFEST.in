@@ -5,11 +5,13 @@ include requirements.txt
 include pyproject.toml
 include cy_redis.pyx
 include redis_wrapper.py
-include example_usage.py
-include migration_example.py
 include build_cyredis.sh
-recursive-include cy_redis/pgcache *.c *.h *.so Makefile build_module.sh README.md
-recursive-include tests *.py
+recursive-include plugins *.py *.md
+recursive-include plugins/pgcache *.c *.h *.so Makefile build_module.sh README.md
+recursive-include examples *.py *.md
+recursive-include tests *.py *.md
+recursive-include cyredis_game *.py *.pyx *.pxd *.md *.sh
+recursive-include lua_scripts *.lua *.md
 recursive-include docs *.md *.rst
 global-exclude *.pyc
 global-exclude *.pyo

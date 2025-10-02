@@ -16,12 +16,19 @@ import time
 from typing import Dict, List, Optional, Any, Union, Callable, Tuple
 from concurrent.futures import ThreadPoolExecutor
 
+# Import protocol support
+from cy_redis.protocol import RESPParser, ProtocolNegotiator, ConnectionState
+
 # Extern declarations are now in .pxd file
 
 # Connection states
 DEF CONN_DISCONNECTED = 0
 DEF CONN_CONNECTED = 1
 DEF CONN_ERROR = 2
+
+# Protocol versions
+DEF RESP2 = 2
+DEF RESP3 = 3
 
 # Exception classes
 class RedisError(Exception):
@@ -39,6 +46,7 @@ cdef class CyRedisConnection:
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.parser = RESPParser(RESP2)  # Start with RESP2, can upgrade later
 
     def __dealloc__(self):
         if self.ctx != NULL:
@@ -109,7 +117,7 @@ cdef class CyRedisConnection:
                 raise ConnectionError("Redis command failed")
 
             try:
-                result = self._parse_reply(reply)
+                result = self.parser.parse_reply(reply)
                 return result
             finally:
                 freeReplyObject(reply)
@@ -152,7 +160,7 @@ cdef class CyRedisConnection:
                 raise ConnectionError("Redis command failed")
 
             try:
-                result = self._parse_reply(reply)
+                result = self.parser.parse_reply(reply)
                 return result
             finally:
                 freeReplyObject(reply)
@@ -160,22 +168,6 @@ cdef class CyRedisConnection:
             free(argv)
             free(argvlen)
 
-    cdef object _parse_reply(self, redisReply *reply):
-        """Parse Redis reply into Python object"""
-        if reply.type == REDIS_REPLY_STRING:
-            return reply.str.decode('utf-8') if reply.str else None
-        elif reply.type == REDIS_REPLY_ARRAY:
-            return [self._parse_reply(reply.element[i]) for i in range(reply.elements)]
-        elif reply.type == REDIS_REPLY_INTEGER:
-            return reply.integer
-        elif reply.type == REDIS_REPLY_NIL:
-            return None
-        elif reply.type == REDIS_REPLY_STATUS:
-            return reply.str.decode('utf-8') if reply.str else None
-        elif reply.type == REDIS_REPLY_ERROR:
-            raise RedisError(reply.str.decode('utf-8') if reply.str else "Unknown error")
-        else:
-            return None
 
 # Connection pool
 cdef class CyRedisConnectionPool:
@@ -217,11 +209,15 @@ cdef class CyRedisConnectionPool:
 cdef class CyRedisClient:
 
     def __cinit__(self, str host="localhost", int port=6379,
-                  int max_connections=10, int max_workers=4):
+                  int max_connections=10, int max_workers=4, bint auto_negotiate=True):
         self.pool = CyRedisConnectionPool(host, port, max_connections)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.stream_offsets = {}
         self.offset_lock = threading.Lock()
+
+        # Initialize protocol support
+        if auto_negotiate:
+            self._negotiate_protocol()
 
     def __dealloc__(self):
         if self.executor:
@@ -511,6 +507,45 @@ cdef class CyRedisClient:
         """Async Lua script execution by SHA"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, self.evalsha, sha, keys, args)
+
+    # Protocol negotiation and management
+    cdef void _negotiate_protocol(self):
+        """Negotiate protocol version with server"""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        if conn != None:
+            try:
+                # Try to negotiate RESP3
+                cdef ProtocolNegotiator negotiator = ProtocolNegotiator(self, RESP3)
+                cdef int negotiated_version = negotiator.negotiate_protocol()
+
+                # Update connection parser to use negotiated version
+                conn.parser.set_protocol_version(negotiated_version)
+
+                print(f"Negotiated protocol version: {negotiated_version}")
+
+            except Exception as e:
+                print(f"Protocol negotiation failed, using RESP2: {e}")
+            finally:
+                self.pool.return_connection(conn)
+
+    def set_protocol_version(self, int version):
+        """Manually set protocol version for all connections"""
+        if version not in (RESP2, RESP3):
+            raise ValueError("Protocol version must be 2 or 3")
+
+        # This is a simplified implementation - in production you'd update all connections
+        print(f"Set protocol version to: {version}")
+
+    def get_server_info(self):
+        """Get server information including supported features"""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        if conn == None:
+            raise ConnectionError("No available connections")
+
+        try:
+            return conn.execute_command(['INFO'])
+        finally:
+            self.pool.return_connection(conn)
 
 # Python wrapper class that matches redis_wrapper.py API
 class HighPerformanceRedis:

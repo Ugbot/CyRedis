@@ -334,6 +334,36 @@ extensions = [
         extra_compile_args=ext_config['extra_compile_args'],
         extra_link_args=ext_config['extra_link_args'],
         language="c",
+    ),
+    Extension(
+        "cy_redis.protocol",
+        sources=["cy_redis/protocol" + source_ext] + ext_config['sources'],
+        include_dirs=ext_config['include_dirs'],
+        library_dirs=ext_config['library_dirs'],
+        libraries=ext_config['libraries'],
+        extra_compile_args=ext_config['extra_compile_args'],
+        extra_link_args=ext_config['extra_link_args'],
+        language="c",
+    ),
+    Extension(
+        "cy_redis.connection_pool",
+        sources=["cy_redis/connection_pool" + source_ext] + ext_config['sources'],
+        include_dirs=ext_config['include_dirs'],
+        library_dirs=ext_config['library_dirs'],
+        libraries=ext_config['libraries'],
+        extra_compile_args=ext_config['extra_compile_args'],
+        extra_link_args=ext_config['extra_link_args'],
+        language="c",
+    ),
+    Extension(
+        "cy_redis.functions",
+        sources=["cy_redis/functions" + source_ext] + ext_config['sources'],
+        include_dirs=ext_config['include_dirs'],
+        library_dirs=ext_config['library_dirs'],
+        libraries=ext_config['libraries'],
+        extra_compile_args=ext_config['extra_compile_args'],
+        extra_link_args=ext_config['extra_link_args'],
+        language="c",
     )
 ]
 

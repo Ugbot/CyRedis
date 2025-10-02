@@ -64,15 +64,15 @@ def get_pgcache_module_path():
         str: Path to pgcache.so, or None if not found
     """
     package_dir = os.path.dirname(__file__)
-    module_path = os.path.join(package_dir, 'pgcache', 'pgcache.so')
+    module_path = os.path.join(package_dir, 'plugins', 'pgcache', 'pgcache.so')
 
     if os.path.exists(module_path):
         return module_path
 
     # Try to find it in the installed package
     try:
-        import cy_redis.pgcache
-        module_path = os.path.join(os.path.dirname(cy_redis.pgcache.__file__), 'pgcache.so')
+        import plugins.pgcache
+        module_path = os.path.join(os.path.dirname(plugins.pgcache.__file__), 'pgcache.so')
         if os.path.exists(module_path):
             return module_path
     except ImportError:

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Advanced Optimized Build Script for CyRedis
-# Includes all performance optimizations, SIMD operations, compression, and monitoring
+# Build script for CyRedis
+# Includes basic performance optimizations and additional features
 
 set -e  # Exit on any error
 
-echo "🚀 Building CyRedis with Advanced Optimizations..."
+echo "Building CyRedis..."
 
 # Initialize submodules (includes hiredis)
 if [ ! -d "hiredis" ]; then
@@ -126,20 +126,14 @@ except ImportError as e:
 print('✅ Performance benchmarks completed!')
 "
 
-echo "🎉 CyRedis Advanced Build Complete!"
+echo "CyRedis build completed!"
 echo ""
-echo "📋 Available Features:"
-echo "  ✓ Core Redis operations (SET, GET, DEL, etc.)"
-echo "  ✓ High-performance Cython implementation"
-echo "  ✓ Direct hiredis integration"
-echo "  ✓ Connection pooling"
-echo "  ✓ Thread-safe operations"
-echo "  ✓ Bulk operations (MGET, MSET)"
-echo "  ✓ Compression for large payloads"
-echo "  ✓ Memory pooling"
-echo "  ✓ Metrics and monitoring"
-echo "  ✓ Circuit breaker pattern"
-echo "  ✓ Async support"
-echo "  ✓ SIMD-like bulk processing"
+echo "Available features:"
+echo "  • Core Redis operations (SET, GET, DEL, etc.)"
+echo "  • Cython implementation"
+echo "  • Hiredis integration"
+echo "  • Connection pooling"
+echo "  • Basic bulk operations"
+echo "  • Some additional features"
 echo ""
-echo "🚀 Ready for production use!"
+echo "Ready for use."

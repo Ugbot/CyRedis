@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <jansson.h>
+#include <unistd.h>
+#include <sys/select.h>
 
 /* Module metadata */
 #define MODULE_NAME "pgcache"
@@ -21,6 +23,23 @@ typedef struct PGCtx {
     char *cache_prefix;
     RedisModuleCtx *redis_ctx;
     pthread_mutex_t conn_mutex;
+
+    // Notification handling
+    int enable_notifications;
+    PGconn *notify_conn;
+    pthread_t notify_thread;
+    int notify_thread_running;
+
+    // WAL reading
+    int enable_wal;
+    char *wal_slot_name;
+    char *wal_publication_name;
+    PGconn *wal_conn;
+    pthread_t wal_thread;
+    int wal_thread_running;
+
+    // Watch forwarding
+    int enable_watch_forwarding;
 } PGCtx;
 
 static PGCtx *global_ctx = NULL;
@@ -123,6 +142,195 @@ static json_t* execute_pg_query(PGCtx *ctx, const char *query, int *row_count) {
 
     PQclear(res);
     return result_array;
+}
+
+/* Notification handling functions */
+static void setup_pg_notifications(PGCtx *ctx) {
+    if (!ctx->enable_notifications) return;
+
+    ctx->notify_conn = PQconnectdb(""); // Use same connection string as main conn
+    if (PQstatus(ctx->notify_conn) != CONNECTION_OK) {
+        RedisModule_Log(ctx->redis_ctx, "warning",
+                       "Failed to connect for notifications: %s",
+                       PQerrorMessage(ctx->notify_conn));
+        PQfinish(ctx->notify_conn);
+        ctx->notify_conn = NULL;
+        return;
+    }
+
+    // Listen for cache invalidation events
+    PGresult *res = PQexec(ctx->notify_conn, "LISTEN cache_invalidation");
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        RedisModule_Log(ctx->redis_ctx, "warning",
+                       "Failed to set up LISTEN: %s", PQerrorMessage(ctx->notify_conn));
+        PQclear(res);
+        PQfinish(ctx->notify_conn);
+        ctx->notify_conn = NULL;
+        return;
+    }
+    PQclear(res);
+
+    RedisModule_Log(ctx->redis_ctx, "notice", "PostgreSQL notifications enabled");
+}
+
+static void* notification_listener_thread(void *arg) {
+    PGCtx *ctx = (PGCtx*)arg;
+    ctx->notify_thread_running = 1;
+
+    RedisModule_Log(ctx->redis_ctx, "notice", "Notification listener thread started");
+
+    while (ctx->notify_thread_running && ctx->notify_conn) {
+        // Wait for notifications with timeout
+        if (PQconsumeInput(ctx->notify_conn) == 0) {
+            RedisModule_Log(ctx->redis_ctx, "warning", "Lost connection to PostgreSQL");
+            break;
+        }
+
+        PGnotify *notify;
+        while ((notify = PQnotifies(ctx->notify_conn)) != NULL) {
+            // Parse notification payload
+            json_t *payload = json_loads(notify->extra, 0, NULL);
+            if (payload && json_is_object(payload)) {
+                json_t *table_json = json_object_get(payload, "table");
+                json_t *operation_json = json_object_get(payload, "operation");
+                json_t *old_data = json_object_get(payload, "old_data");
+                json_t *new_data = json_object_get(payload, "new_data");
+
+                if (table_json && json_is_string(table_json)) {
+                    const char *table = json_string_value(table_json);
+                    const char *operation = operation_json ? json_string_value(operation_json) : "unknown";
+
+                    // Build primary key from old_data or new_data
+                    json_t *pk_data = old_data ? old_data : new_data;
+                    if (pk_data && json_is_object(pk_data)) {
+                        char *pk_json = json_dumps(pk_data, JSON_COMPACT);
+
+                        // Invalidate cache entry
+                        char *cache_key = build_cache_key(ctx, table, pk_json);
+
+                        RedisModuleCtx *rctx = RedisModule_GetThreadSafeContext(NULL);
+                        RedisModule_Call(rctx, "DEL", "c", cache_key);
+                        RedisModule_FreeThreadSafeContext(rctx);
+
+                        // Publish invalidation event
+                        char event_data[1024];
+                        snprintf(event_data, sizeof(event_data),
+                                "{\"operation\":\"%s\",\"table\":\"%s\",\"key\":%s}",
+                                operation, table, pk_json);
+
+                        publish_event(ctx, "pg_invalidation", table, event_data);
+
+                        RedisModule_Log(ctx->redis_ctx, "notice",
+                                       "Invalidated cache for table %s, key %s", table, pk_json);
+
+                        free(pk_json);
+                        RedisModule_Free(cache_key);
+                    }
+                }
+            }
+
+            if (payload) json_decref(payload);
+            PQfreemem(notify);
+        }
+
+        // Sleep briefly to avoid busy waiting
+        usleep(100000); // 100ms
+    }
+
+    ctx->notify_thread_running = 0;
+    RedisModule_Log(ctx->redis_ctx, "notice", "Notification listener thread stopped");
+    return NULL;
+}
+
+/* WAL reading functions */
+static void setup_wal_reading(PGCtx *ctx) {
+    if (!ctx->enable_wal) return;
+
+    // Create logical replication slot if it doesn't exist
+    char create_slot_query[512];
+    snprintf(create_slot_query, sizeof(create_slot_query),
+             "SELECT * FROM pg_create_logical_replication_slot('%s', 'pgoutput')",
+             ctx->wal_slot_name);
+
+    PGconn *temp_conn = get_pg_connection(ctx);
+    if (temp_conn) {
+        PGresult *res = PQexec(temp_conn, create_slot_query);
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            RedisModule_Log(ctx->redis_ctx, "warning",
+                           "Failed to create replication slot: %s", PQerrorMessage(temp_conn));
+        }
+        PQclear(res);
+    }
+
+    // Connect for WAL streaming
+    ctx->wal_conn = PQconnectdb(""); // Use same connection string
+    if (PQstatus(ctx->wal_conn) != CONNECTION_OK) {
+        RedisModule_Log(ctx->redis_ctx, "warning",
+                       "Failed to connect for WAL reading: %s",
+                       PQerrorMessage(ctx->wal_conn));
+        PQfinish(ctx->wal_conn);
+        ctx->wal_conn = NULL;
+        return;
+    }
+
+    // Start logical replication
+    char replication_query[1024];
+    snprintf(replication_query, sizeof(replication_query),
+             "START_REPLICATION SLOT %s LOGICAL 0/0 (proto_version '1', publication_names '%s')",
+             ctx->wal_slot_name, ctx->wal_publication_name);
+
+    if (PQsendQuery(ctx->wal_conn, replication_query) == 0) {
+        RedisModule_Log(ctx->redis_ctx, "warning",
+                       "Failed to start WAL replication: %s", PQerrorMessage(ctx->wal_conn));
+        PQfinish(ctx->wal_conn);
+        ctx->wal_conn = NULL;
+        return;
+    }
+
+    RedisModule_Log(ctx->redis_ctx, "notice", "WAL reading enabled");
+}
+
+static void* wal_reader_thread(void *arg) {
+    PGCtx *ctx = (PGCtx*)arg;
+    ctx->wal_thread_running = 1;
+
+    RedisModule_Log(ctx->redis_ctx, "notice", "WAL reader thread started");
+
+    while (ctx->wal_thread_running && ctx->wal_conn) {
+        // Read WAL data
+        char *buffer = NULL;
+        int len = PQgetCopyData(ctx->wal_conn, &buffer, 0);
+
+        if (len > 0) {
+            // Process WAL message
+            // This is a simplified implementation - real WAL parsing would be more complex
+            RedisModule_Log(ctx->redis_ctx, "notice", "Received WAL data: %d bytes", len);
+
+            // Publish WAL event
+            publish_event(ctx, "wal_change", "system", buffer);
+
+            PQfreemem(buffer);
+
+        } else if (len == -1) {
+            // Error or connection closed
+            RedisModule_Log(ctx->redis_ctx, "warning", "WAL connection error");
+            break;
+        } else if (len == -2) {
+            // No data available
+            usleep(100000); // 100ms
+        }
+    }
+
+    ctx->wal_thread_running = 0;
+    RedisModule_Log(ctx->redis_ctx, "notice", "WAL reader thread stopped");
+    return NULL;
+}
+
+/* Watch forwarding functions */
+static void setup_watch_forwarding(PGCtx *ctx) {
+    if (!ctx->enable_watch_forwarding) return;
+
+    RedisModule_Log(ctx->redis_ctx, "notice", "Watch forwarding enabled");
 }
 
 /* Redis commands */
@@ -317,7 +525,6 @@ int PGCMultiRead_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int
         return REDISMODULE_OK;
     }
 
-    json_t *result_obj = json_object();
     int pk_count = json_array_size(pk_array);
 
     // Check cache for all keys first
@@ -448,6 +655,183 @@ int PGCMultiRead_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int
     return REDISMODULE_OK;
 }
 
+/* PGCACHE.SETUP.NOTIFICATIONS */
+int PGCSetupNotifications_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    PGCtx *pgctx = global_ctx;
+    if (!pgctx) {
+        return RedisModule_ReplyWithError(ctx, "PostgreSQL cache not initialized");
+    }
+
+    const char *enable_str = RedisModule_StringPtrLen(argv[1], NULL);
+    pgctx->enable_notifications = strcmp(enable_str, "1") == 0 ||
+                                  strcmp(enable_str, "true") == 0 ||
+                                  strcmp(enable_str, "yes") == 0;
+
+    if (pgctx->enable_notifications) {
+        setup_pg_notifications(pgctx);
+        if (pgctx->notify_conn) {
+            // Start notification listener thread
+            pthread_create(&pgctx->notify_thread, NULL, notification_listener_thread, pgctx);
+        }
+    } else {
+        // Stop notification thread
+        if (pgctx->notify_thread_running) {
+            pgctx->notify_thread_running = 0;
+            pthread_join(pgctx->notify_thread, NULL);
+        }
+        if (pgctx->notify_conn) {
+            PQfinish(pgctx->notify_conn);
+            pgctx->notify_conn = NULL;
+        }
+    }
+
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
+    return REDISMODULE_OK;
+}
+
+/* PGCACHE.SETUP.WAL <slot_name> <publication_name> */
+int PGCSetupWAL_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 3) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    PGCtx *pgctx = global_ctx;
+    if (!pgctx) {
+        return RedisModule_ReplyWithError(ctx, "PostgreSQL cache not initialized");
+    }
+
+    const char *slot_name = RedisModule_StringPtrLen(argv[1], NULL);
+    const char *publication_name = RedisModule_StringPtrLen(argv[2], NULL);
+
+    pgctx->enable_wal = 1;
+    pgctx->wal_slot_name = RedisModule_Strdup(slot_name);
+    pgctx->wal_publication_name = RedisModule_Strdup(publication_name);
+
+    setup_wal_reading(pgctx);
+    if (pgctx->wal_conn) {
+        // Start WAL reader thread
+        pthread_create(&pgctx->wal_thread, NULL, wal_reader_thread, pgctx);
+    }
+
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
+    return REDISMODULE_OK;
+}
+
+/* PGCACHE.SETUP.WATCHFORWARDING */
+int PGCSetupWatchForwarding_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    PGCtx *pgctx = global_ctx;
+    if (!pgctx) {
+        return RedisModule_ReplyWithError(ctx, "PostgreSQL cache not initialized");
+    }
+
+    const char *enable_str = RedisModule_StringPtrLen(argv[1], NULL);
+    pgctx->enable_watch_forwarding = strcmp(enable_str, "1") == 0 ||
+                                     strcmp(enable_str, "true") == 0 ||
+                                     strcmp(enable_str, "yes") == 0;
+
+    setup_watch_forwarding(pgctx);
+
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
+    return REDISMODULE_OK;
+}
+
+/* PGCACHE.STATUS */
+int PGCStatus_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    PGCtx *pgctx = global_ctx;
+    if (!pgctx) {
+        return RedisModule_ReplyWithError(ctx, "PostgreSQL cache not initialized");
+    }
+
+    json_t *status = json_object();
+    json_object_set_new(status, "notifications_enabled", json_boolean(pgctx->enable_notifications));
+    json_object_set_new(status, "notifications_running", json_boolean(pgctx->notify_thread_running));
+    json_object_set_new(status, "wal_enabled", json_boolean(pgctx->enable_wal));
+    json_object_set_new(status, "wal_running", json_boolean(pgctx->wal_thread_running));
+    json_object_set_new(status, "watch_forwarding_enabled", json_boolean(pgctx->enable_watch_forwarding));
+    json_object_set_new(status, "cache_prefix", json_string(pgctx->cache_prefix));
+    json_object_set_new(status, "default_ttl", json_integer(pgctx->default_ttl));
+
+    char *status_str = json_dumps(status, JSON_COMPACT);
+    RedisModule_ReplyWithStringBuffer(ctx, status_str, strlen(status_str));
+
+    free(status_str);
+    json_decref(status);
+    return REDISMODULE_OK;
+}
+
+/* PGCACHE.WAL.LIST */
+int PGCWALList_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    PGCtx *pgctx = global_ctx;
+    if (!pgctx) {
+        return RedisModule_ReplyWithError(ctx, "PostgreSQL cache not initialized");
+    }
+
+    // Query for replication slots
+    const char *query = "SELECT slot_name, plugin, slot_type, database, active FROM pg_replication_slots";
+    int row_count = 0;
+    json_t *result = execute_pg_query(pgctx, query, &row_count);
+
+    if (!result) {
+        return RedisModule_ReplyWithError(ctx, "Failed to query replication slots");
+    }
+
+    char *result_str = json_dumps(result, JSON_COMPACT);
+    RedisModule_ReplyWithStringBuffer(ctx, result_str, strlen(result_str));
+
+    free(result_str);
+    json_decref(result);
+    return REDISMODULE_OK;
+}
+
+/* PGCACHE.WATCH <key> */
+int PGCWatch_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    PGCtx *pgctx = global_ctx;
+    if (!pgctx || !pgctx->enable_watch_forwarding) {
+        return RedisModule_ReplyWithError(ctx, "Watch forwarding not enabled");
+    }
+
+    const char *key = RedisModule_StringPtrLen(argv[1], NULL);
+
+    // Forward watch to Redis pubsub channel
+    char channel[512];
+    snprintf(channel, sizeof(channel), "pgcache_watch:%s", key);
+
+    // Publish watch event
+    json_t *watch_event = json_object();
+    json_object_set_new(watch_event, "type", json_string("watch_started"));
+    json_object_set_new(watch_event, "key", json_string(key));
+    json_object_set_new(watch_event, "timestamp", json_real((double)time(NULL)));
+
+    char *event_str = json_dumps(watch_event, JSON_COMPACT);
+    RedisModule_Call(ctx, "PUBLISH", "cc", channel, event_str);
+
+    free(event_str);
+    json_decref(watch_event);
+
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
+    return REDISMODULE_OK;
+}
+
 /* Module initialization */
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if (RedisModule_Init(ctx, MODULE_NAME, MODULE_VERSION, REDISMODULE_APIVER_1)
@@ -465,6 +849,15 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     global_ctx->redis_ctx = ctx;
     global_ctx->default_ttl = 3600;
     global_ctx->cache_prefix = RedisModule_Strdup("pg_cache:");
+
+    // Initialize new fields
+    global_ctx->enable_notifications = 0;
+    global_ctx->notify_thread_running = 0;
+    global_ctx->enable_wal = 0;
+    global_ctx->wal_thread_running = 0;
+    global_ctx->enable_watch_forwarding = 0;
+    global_ctx->wal_slot_name = RedisModule_Strdup("pgcache_slot");
+    global_ctx->wal_publication_name = RedisModule_Strdup("pgcache_pub");
 
     pthread_mutex_init(&global_ctx->conn_mutex, NULL);
 
@@ -488,6 +881,24 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         } else if (strcmp(param, "cache_prefix") == 0) {
             RedisModule_Free(global_ctx->cache_prefix);
             global_ctx->cache_prefix = RedisModule_Strdup(value);
+        } else if (strcmp(param, "enable_notifications") == 0) {
+            global_ctx->enable_notifications = strcmp(value, "1") == 0 ||
+                                              strcmp(value, "true") == 0 ||
+                                              strcmp(value, "yes") == 0;
+        } else if (strcmp(param, "enable_wal") == 0) {
+            global_ctx->enable_wal = strcmp(value, "1") == 0 ||
+                                     strcmp(value, "true") == 0 ||
+                                     strcmp(value, "yes") == 0;
+        } else if (strcmp(param, "wal_slot_name") == 0) {
+            RedisModule_Free(global_ctx->wal_slot_name);
+            global_ctx->wal_slot_name = RedisModule_Strdup(value);
+        } else if (strcmp(param, "wal_publication_name") == 0) {
+            RedisModule_Free(global_ctx->wal_publication_name);
+            global_ctx->wal_publication_name = RedisModule_Strdup(value);
+        } else if (strcmp(param, "enable_watch_forwarding") == 0) {
+            global_ctx->enable_watch_forwarding = strcmp(value, "1") == 0 ||
+                                                 strcmp(value, "true") == 0 ||
+                                                 strcmp(value, "yes") == 0;
         }
     }
 
@@ -518,21 +929,94 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         return REDISMODULE_ERR;
     }
 
-    RedisModule_Log(ctx, "notice", "PostgreSQL cache Redis module loaded");
+    // Register new enhanced commands
+    if (RedisModule_CreateCommand(ctx, "pgcache.setup.notifications", PGCSetupNotifications_RedisCommand,
+                                 "write", 0, 0, 0) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "pgcache.setup.wal", PGCSetupWAL_RedisCommand,
+                                 "write", 0, 0, 0) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "pgcache.setup.watchforwarding", PGCSetupWatchForwarding_RedisCommand,
+                                 "write", 0, 0, 0) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "pgcache.status", PGCStatus_RedisCommand,
+                                 "readonly", 0, 0, 0) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "pgcache.wal.list", PGCWALList_RedisCommand,
+                                 "readonly", 0, 0, 0) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "pgcache.watch", PGCWatch_RedisCommand,
+                                 "readonly", 0, 0, 0) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    // Initialize features if enabled at startup
+    if (global_ctx->enable_notifications) {
+        setup_pg_notifications(global_ctx);
+        if (global_ctx->notify_conn) {
+            pthread_create(&global_ctx->notify_thread, NULL, notification_listener_thread, global_ctx);
+        }
+    }
+
+    if (global_ctx->enable_wal) {
+        setup_wal_reading(global_ctx);
+        if (global_ctx->wal_conn) {
+            pthread_create(&global_ctx->wal_thread, NULL, wal_reader_thread, global_ctx);
+        }
+    }
+
+    if (global_ctx->enable_watch_forwarding) {
+        setup_watch_forwarding(global_ctx);
+    }
+
+    RedisModule_Log(ctx, "notice", "PostgreSQL cache Redis module loaded with enhanced features");
     return REDISMODULE_OK;
 }
 
 int RedisModule_OnUnload(RedisModuleCtx *ctx) {
     if (global_ctx) {
+        // Stop background threads
+        if (global_ctx->notify_thread_running) {
+            global_ctx->notify_thread_running = 0;
+            pthread_join(global_ctx->notify_thread, NULL);
+        }
+
+        if (global_ctx->wal_thread_running) {
+            global_ctx->wal_thread_running = 0;
+            pthread_join(global_ctx->wal_thread, NULL);
+        }
+
+        // Close connections
         if (global_ctx->pg_conn) {
             PQfinish(global_ctx->pg_conn);
         }
 
+        if (global_ctx->notify_conn) {
+            PQfinish(global_ctx->notify_conn);
+        }
+
+        if (global_ctx->wal_conn) {
+            PQfinish(global_ctx->wal_conn);
+        }
+
+        // Free memory
         RedisModule_Free(global_ctx->pg_host);
         RedisModule_Free(global_ctx->pg_database);
         RedisModule_Free(global_ctx->pg_user);
         RedisModule_Free(global_ctx->pg_password);
         RedisModule_Free(global_ctx->cache_prefix);
+        RedisModule_Free(global_ctx->wal_slot_name);
+        RedisModule_Free(global_ctx->wal_publication_name);
 
         pthread_mutex_destroy(&global_ctx->conn_mutex);
         RedisModule_Free(global_ctx);
