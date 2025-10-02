@@ -1,6 +1,3 @@
-[submodule "sabot"]
-	path = sabot
-	url = https://github.com/Ugbot/Sabot
 [submodule "hiredis"]
 	path = hiredis
 	url = https://github.com/redis/hiredis
