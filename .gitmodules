@@ -1,3 +1,6 @@
 [submodule "hiredis"]
 	path = hiredis
 	url = https://github.com/redis/hiredis
+[submodule "plugins/pgcache/psqlodbc"]
+	path = plugins/pgcache/psqlodbc
+	url = https://github.com/postgresql-interfaces/psqlodbc

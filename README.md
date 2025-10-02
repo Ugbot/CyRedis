@@ -31,6 +31,11 @@ A complete Redis client implementation where all operations go through the hired
 
 ### Vendored Dependencies
 - **hiredis/** - Redis C client library (git submodule)
+- **plugins/pgcache/psqlodbc/** - PostgreSQL ODBC driver (git submodule)
+
+### Optional Plugins
+- **plugins/** - Modular extensions (PostgreSQL cache, etc.)
+- **cyredis_game/** - Distributed game simulation engine
 
 ---
 
@@ -49,6 +54,9 @@ from optimized_redis import OptimizedRedis
 redis = OptimizedRedis()
 redis.set("key", "value")
 value = redis.get("key")
+
+# Run examples
+python examples/example_usage.py
 ```
 
 ---
@@ -59,11 +67,22 @@ See `README_CYREDIS.md` for complete API documentation.
 
 ---
 
-## 🧪 Examples
+## 🧪 Examples & Tests
 
-- **example_usage.py** - Comprehensive usage examples
-- **migration_example.py** - Migration from standard Redis client
-- **test_pgcache_integration.py** - PostgreSQL integration tests
+### 📚 Examples Directory
+- **`examples/example_usage.py`** - Comprehensive usage examples
+- **`examples/migration_example.py`** - Migration from standard Redis client
+- **`examples/example_redis_functions.py`** - Redis Functions usage
+- **`examples/example_shared_dict.py`** - Distributed shared dictionaries
+- **`examples/example_production_redis.py`** - Production patterns
+
+### 🧪 Tests Directory
+- **`tests/test_pgcache_integration.py`** - PostgreSQL integration tests
+- See `tests/README.md` for test structure and running instructions
+
+### 🎮 Game Engine
+- **`cyredis_game/`** - Complete distributed game simulation engine
+- **`cyredis_game/example_game_engine.py`** - Game engine demos
 
 ---
 
