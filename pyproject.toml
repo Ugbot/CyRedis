@@ -1,0 +1,155 @@
+[build-system]
+requires = [
+    "setuptools>=61.0",
+    "wheel",
+    "Cython>=0.29.0",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cy-redis"
+version = "0.1.0"
+description = "High-performance threaded Redis client using Cython and hiredis"
+readme = "README_CYREDIS.md"
+license = {text = "MIT"}
+requires-python = ">=3.6"
+authors = [
+    {name = "AI Assistant", email = "assistant@example.com"},
+]
+maintainers = [
+    {name = "AI Assistant", email = "assistant@example.com"},
+]
+keywords = [
+    "redis",
+    "cython",
+    "hiredis",
+    "high-performance",
+    "threading",
+    "async",
+    "database",
+    "client",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Cython",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "Cython>=0.29.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-asyncio>=0.15",
+    "black>=21.0",
+    "flake8>=3.9",
+    "mypy>=0.900",
+    "isort>=5.8.0",
+]
+docs = [
+    "sphinx>=4.0",
+    "sphinx-rtd-theme>=1.0",
+    "myst-parser>=0.15",
+]
+test = [
+    "pytest>=6.0",
+    "pytest-asyncio>=0.15",
+    "pytest-cov>=2.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-repo/cy-redis"
+Documentation = "https://cy-redis.readthedocs.io/"
+Repository = "https://github.com/your-repo/cy-redis"
+Issues = "https://github.com/your-repo/cy-redis/issues"
+Changelog = "https://github.com/your-repo/cy-redis/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cy_redis", "redis_wrapper*"]
+exclude = ["tests*", "docs*", "scripts*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "cy_redis.__version__"}
+
+[tool.cython]
+language_level = 3
+
+[tool.black]
+line-length = 88
+target-version = ['py36']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["cy_redis"]
+known_third_party = ["Cython"]
+
+[tool.mypy]
+python_version = "3.6"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "Cython.*",
+    "setuptools.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=cy_redis --cov-report=html --cov-report=term-missing"
+testpaths = [
+    "tests",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]

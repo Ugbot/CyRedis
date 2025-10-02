@@ -1,0 +1,25 @@
+include README_CYREDIS.md
+include LICENSE
+include CHANGELOG.md
+include requirements.txt
+include pyproject.toml
+include cy_redis.pyx
+include redis_wrapper.py
+include example_usage.py
+include migration_example.py
+include build_cyredis.sh
+recursive-include cy_redis/pgcache *.c *.h *.so Makefile build_module.sh README.md
+recursive-include tests *.py
+recursive-include docs *.md *.rst
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude .git
+global-exclude .github
+global-exclude .tox
+global-exclude .coverage
+global-exclude htmlcov
+global-exclude .pytest_cache
+global-exclude *.egg-info
+global-exclude build
+global-exclude dist

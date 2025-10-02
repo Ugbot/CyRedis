@@ -1,0 +1,9 @@
+Cython>=0.29.0
+setuptools>=61.0
+wheel
+uvloop>=0.17.0  # Optional: for enhanced async performance
+# hiredis library must be installed on the system
+# macOS: brew install hiredis
+# Ubuntu/Debian: sudo apt-get install libhiredis-dev
+# CentOS/RHEL: sudo yum install hiredis-devel
+# Fedora: sudo dnf install hiredis-devel
