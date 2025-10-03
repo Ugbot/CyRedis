@@ -1,0 +1,367 @@
+version: '3.8'
+
+networks:
+  cyredis-test:
+    driver: bridge
+
+volumes:
+  redis-standalone-data:
+  redis-master-data:
+  redis-replica1-data:
+  redis-replica2-data:
+  redis-cluster-node1-data:
+  redis-cluster-node2-data:
+  redis-cluster-node3-data:
+  redis-cluster-node4-data:
+  redis-cluster-node5-data:
+  redis-cluster-node6-data:
+
+services:
+  # ============================================================================
+  # Redis Standalone - For basic testing
+  # ============================================================================
+  redis-standalone:
+    image: redis:7-alpine
+    container_name: cyredis-standalone
+    ports:
+      - "6379:6379"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-standalone-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================================
+  # Redis Cluster - 6 nodes (3 masters + 3 replicas)
+  # ============================================================================
+  redis-cluster-node1:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-node1
+    ports:
+      - "7000:7000"
+      - "17000:17000"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-cluster-node1-data:/data
+      - ./redis-cluster/redis-cluster.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 7000
+      --cluster-announce-ip 127.0.0.1
+      --cluster-announce-port 7000
+      --cluster-announce-bus-port 17000
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7000", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-cluster-node2:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-node2
+    ports:
+      - "7001:7001"
+      - "17001:17001"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-cluster-node2-data:/data
+      - ./redis-cluster/redis-cluster.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 7001
+      --cluster-announce-ip 127.0.0.1
+      --cluster-announce-port 7001
+      --cluster-announce-bus-port 17001
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7001", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-cluster-node3:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-node3
+    ports:
+      - "7002:7002"
+      - "17002:17002"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-cluster-node3-data:/data
+      - ./redis-cluster/redis-cluster.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 7002
+      --cluster-announce-ip 127.0.0.1
+      --cluster-announce-port 7002
+      --cluster-announce-bus-port 17002
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7002", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-cluster-node4:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-node4
+    ports:
+      - "7003:7003"
+      - "17003:17003"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-cluster-node4-data:/data
+      - ./redis-cluster/redis-cluster.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 7003
+      --cluster-announce-ip 127.0.0.1
+      --cluster-announce-port 7003
+      --cluster-announce-bus-port 17003
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7003", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-cluster-node5:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-node5
+    ports:
+      - "7004:7004"
+      - "17004:17004"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-cluster-node5-data:/data
+      - ./redis-cluster/redis-cluster.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 7004
+      --cluster-announce-ip 127.0.0.1
+      --cluster-announce-port 7004
+      --cluster-announce-bus-port 17004
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7004", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-cluster-node6:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-node6
+    ports:
+      - "7005:7005"
+      - "17005:17005"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-cluster-node6-data:/data
+      - ./redis-cluster/redis-cluster.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 7005
+      --cluster-announce-ip 127.0.0.1
+      --cluster-announce-port 7005
+      --cluster-announce-bus-port 17005
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7005", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Cluster initialization service
+  redis-cluster-init:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-init
+    networks:
+      - cyredis-test
+    depends_on:
+      redis-cluster-node1:
+        condition: service_healthy
+      redis-cluster-node2:
+        condition: service_healthy
+      redis-cluster-node3:
+        condition: service_healthy
+      redis-cluster-node4:
+        condition: service_healthy
+      redis-cluster-node5:
+        condition: service_healthy
+      redis-cluster-node6:
+        condition: service_healthy
+    volumes:
+      - ./redis-cluster/init-cluster.sh:/usr/local/bin/init-cluster.sh:ro
+    command: /bin/sh /usr/local/bin/init-cluster.sh
+    restart: "no"
+
+  # ============================================================================
+  # Redis Sentinel - 1 master + 2 replicas + 3 sentinels
+  # ============================================================================
+  redis-sentinel-master:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-master
+    ports:
+      - "6380:6380"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-master-data:/data
+      - ./redis-sentinel/redis-master.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-sentinel-replica1:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-replica1
+    ports:
+      - "6381:6381"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-replica1-data:/data
+      - ./redis-sentinel/redis-replica.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 6381
+      --replicaof redis-sentinel-master 6380
+    depends_on:
+      redis-sentinel-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6381", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-sentinel-replica2:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-replica2
+    ports:
+      - "6382:6382"
+    networks:
+      - cyredis-test
+    volumes:
+      - redis-replica2-data:/data
+      - ./redis-sentinel/redis-replica.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --port 6382
+      --replicaof redis-sentinel-master 6380
+    depends_on:
+      redis-sentinel-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6382", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Sentinel instances
+  redis-sentinel1:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel1
+    ports:
+      - "26379:26379"
+    networks:
+      - cyredis-test
+    volumes:
+      - ./redis-sentinel/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    command: >
+      sh -c "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf &&
+             chmod 644 /tmp/sentinel.conf &&
+             redis-sentinel /tmp/sentinel.conf"
+    depends_on:
+      redis-sentinel-master:
+        condition: service_healthy
+      redis-sentinel-replica1:
+        condition: service_healthy
+      redis-sentinel-replica2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-sentinel2:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel2
+    ports:
+      - "26380:26380"
+    networks:
+      - cyredis-test
+    volumes:
+      - ./redis-sentinel/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    command: >
+      sh -c "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf &&
+             sed -i 's/26379/26380/g' /tmp/sentinel.conf &&
+             chmod 644 /tmp/sentinel.conf &&
+             redis-sentinel /tmp/sentinel.conf"
+    depends_on:
+      redis-sentinel-master:
+        condition: service_healthy
+      redis-sentinel-replica1:
+        condition: service_healthy
+      redis-sentinel-replica2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26380", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-sentinel3:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel3
+    ports:
+      - "26381:26381"
+    networks:
+      - cyredis-test
+    volumes:
+      - ./redis-sentinel/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    command: >
+      sh -c "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf &&
+             sed -i 's/26379/26381/g' /tmp/sentinel.conf &&
+             chmod 644 /tmp/sentinel.conf &&
+             redis-sentinel /tmp/sentinel.conf"
+    depends_on:
+      redis-sentinel-master:
+        condition: service_healthy
+      redis-sentinel-replica1:
+        condition: service_healthy
+      redis-sentinel-replica2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26381", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped

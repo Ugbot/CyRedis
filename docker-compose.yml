@@ -1,0 +1,167 @@
+version: '3.8'
+
+services:
+  # Redis service for testing
+  redis:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cyredis-test
+
+  # Redis Cluster node 1
+  redis-cluster-1:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-cluster-1
+    ports:
+      - "7001:7001"
+      - "17001:17001"
+    command: >
+      redis-server
+      --port 7001
+      --cluster-enabled yes
+      --cluster-config-file nodes-1.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    volumes:
+      - redis-cluster-1-data:/data
+    networks:
+      - cyredis-test
+
+  # Redis Cluster node 2
+  redis-cluster-2:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-cluster-2
+    ports:
+      - "7002:7002"
+      - "17002:17002"
+    command: >
+      redis-server
+      --port 7002
+      --cluster-enabled yes
+      --cluster-config-file nodes-2.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    volumes:
+      - redis-cluster-2-data:/data
+    networks:
+      - cyredis-test
+
+  # Redis Cluster node 3
+  redis-cluster-3:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-cluster-3
+    ports:
+      - "7003:7003"
+      - "17003:17003"
+    command: >
+      redis-server
+      --port 7003
+      --cluster-enabled yes
+      --cluster-config-file nodes-3.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    volumes:
+      - redis-cluster-3-data:/data
+    networks:
+      - cyredis-test
+
+  # PostgreSQL service for pgcache testing
+  postgres:
+    image: postgres:16-alpine
+    container_name: cyredis-test-postgres
+    environment:
+      POSTGRES_USER: cyredis
+      POSTGRES_PASSWORD: cyredis_test_password
+      POSTGRES_DB: cyredis_test
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cyredis"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cyredis-test
+
+  # Redis Sentinel 1
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-sentinel-1
+    ports:
+      - "26379:26379"
+    command: >
+      sh -c "echo 'port 26379' > /tmp/sentinel.conf &&
+             echo 'sentinel monitor mymaster redis 6379 2' >> /tmp/sentinel.conf &&
+             echo 'sentinel down-after-milliseconds mymaster 5000' >> /tmp/sentinel.conf &&
+             echo 'sentinel parallel-syncs mymaster 1' >> /tmp/sentinel.conf &&
+             echo 'sentinel failover-timeout mymaster 10000' >> /tmp/sentinel.conf &&
+             redis-server /tmp/sentinel.conf --sentinel"
+    depends_on:
+      - redis
+    networks:
+      - cyredis-test
+
+  # Redis Sentinel 2
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-sentinel-2
+    ports:
+      - "26380:26379"
+    command: >
+      sh -c "echo 'port 26379' > /tmp/sentinel.conf &&
+             echo 'sentinel monitor mymaster redis 6379 2' >> /tmp/sentinel.conf &&
+             echo 'sentinel down-after-milliseconds mymaster 5000' >> /tmp/sentinel.conf &&
+             echo 'sentinel parallel-syncs mymaster 1' >> /tmp/sentinel.conf &&
+             echo 'sentinel failover-timeout mymaster 10000' >> /tmp/sentinel.conf &&
+             redis-server /tmp/sentinel.conf --sentinel"
+    depends_on:
+      - redis
+    networks:
+      - cyredis-test
+
+  # Redis Sentinel 3
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-sentinel-3
+    ports:
+      - "26381:26379"
+    command: >
+      sh -c "echo 'port 26379' > /tmp/sentinel.conf &&
+             echo 'sentinel monitor mymaster redis 6379 2' >> /tmp/sentinel.conf &&
+             echo 'sentinel down-after-milliseconds mymaster 5000' >> /tmp/sentinel.conf &&
+             echo 'sentinel parallel-syncs mymaster 1' >> /tmp/sentinel.conf &&
+             echo 'sentinel failover-timeout mymaster 10000' >> /tmp/sentinel.conf &&
+             redis-server /tmp/sentinel.conf --sentinel"
+    depends_on:
+      - redis
+    networks:
+      - cyredis-test
+
+networks:
+  cyredis-test:
+    driver: bridge
+
+volumes:
+  redis-data:
+  redis-cluster-1-data:
+  redis-cluster-2-data:
+  redis-cluster-3-data:
+  postgres-data:

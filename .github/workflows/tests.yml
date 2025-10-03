@@ -1,0 +1,248 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cyredis
+          POSTGRES_PASSWORD: cyredis_test_password
+          POSTGRES_DB: cyredis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cyredis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify UV installation
+        run: uv --version
+
+      - name: Cache UV dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.local/share/uv
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-${{ matrix.python-version }}-
+            ${{ runner.os }}-uv-
+
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpq-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install postgresql
+
+      - name: Install Python dependencies
+        run: |
+          uv pip install --system -e ".[dev,test]"
+          uv pip install --system pytest-watch pytest-xdist
+
+      - name: Build Cython extensions
+        run: |
+          uv run python setup.py build_ext --inplace
+
+      - name: Run fast tests
+        run: |
+          uv run pytest -v -m "not slow and not cluster" tests/
+
+      - name: Run all tests with coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          uv run pytest -v --cov=cy_redis --cov-report=xml --cov-report=term-missing tests/
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+
+      - name: Run flake8
+        run: |
+          uv run flake8 cy_redis/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          uv run flake8 cy_redis/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Check black formatting
+        run: |
+          uv run black --check cy_redis/ tests/ examples/
+
+      - name: Check isort imports
+        run: |
+          uv run isort --check-only cy_redis/ tests/ examples/
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cyredis
+          POSTGRES_PASSWORD: cyredis_test_password
+          POSTGRES_DB: cyredis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cyredis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpq-dev
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev,test]"
+
+      - name: Build Cython extensions
+        run: |
+          uv run python setup.py build_ext --inplace
+
+      - name: Run integration tests
+        run: |
+          uv run pytest -v -m "integration" tests/
+
+  build:
+    name: Build Distribution
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install build dependencies
+        run: |
+          uv pip install --system build wheel setuptools Cython
+
+      - name: Build source distribution
+        run: |
+          python -m build --sdist
+
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/

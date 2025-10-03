@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # Standalone Redis for basic testing
+  redis:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis with password
+  redis-auth:
+    image: redis:7-alpine
+    container_name: cyredis-test-redis-auth
+    ports:
+      - "6380:6379"
+    command: redis-server --requirepass testpassword
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpassword", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # PostgreSQL for pgcache tests
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyredis-test-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Cluster nodes (minimal 3-node setup for testing)
+  redis-cluster-1:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-1
+    ports:
+      - "7000:7000"
+      - "17000:17000"
+    command: redis-server --port 7000 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000
+    volumes:
+      - cluster-1-data:/data
+
+  redis-cluster-2:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-2
+    ports:
+      - "7001:7001"
+      - "17001:17001"
+    command: redis-server --port 7001 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000
+    volumes:
+      - cluster-2-data:/data
+
+  redis-cluster-3:
+    image: redis:7-alpine
+    container_name: cyredis-cluster-3
+    ports:
+      - "7002:7002"
+      - "17002:17002"
+    command: redis-server --port 7002 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000
+    volumes:
+      - cluster-3-data:/data
+
+  # Redis Sentinel setup (1 master + 2 replicas + 3 sentinels)
+  redis-master:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-master
+    ports:
+      - "6400:6379"
+    command: redis-server --appendonly yes
+
+  redis-replica-1:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-replica-1
+    ports:
+      - "6401:6379"
+    command: redis-server --replicaof redis-master 6379
+    depends_on:
+      - redis-master
+
+  redis-replica-2:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-replica-2
+    ports:
+      - "6402:6379"
+    command: redis-server --replicaof redis-master 6379
+    depends_on:
+      - redis-master
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-1
+    ports:
+      - "26379:26379"
+    command: >
+      sh -c "echo 'sentinel monitor mymaster redis-master 6379 2
+      sentinel down-after-milliseconds mymaster 5000
+      sentinel parallel-syncs mymaster 1
+      sentinel failover-timeout mymaster 10000' > /tmp/sentinel.conf &&
+      redis-sentinel /tmp/sentinel.conf"
+    depends_on:
+      - redis-master
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-2
+    ports:
+      - "26380:26379"
+    command: >
+      sh -c "echo 'sentinel monitor mymaster redis-master 6379 2
+      sentinel down-after-milliseconds mymaster 5000
+      sentinel parallel-syncs mymaster 1
+      sentinel failover-timeout mymaster 10000' > /tmp/sentinel.conf &&
+      redis-sentinel /tmp/sentinel.conf"
+    depends_on:
+      - redis-master
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: cyredis-sentinel-3
+    ports:
+      - "26381:26379"
+    command: >
+      sh -c "echo 'sentinel monitor mymaster redis-master 6379 2
+      sentinel down-after-milliseconds mymaster 5000
+      sentinel parallel-syncs mymaster 1
+      sentinel failover-timeout mymaster 10000' > /tmp/sentinel.conf &&
+      redis-sentinel /tmp/sentinel.conf"
+    depends_on:
+      - redis-master
+
+volumes:
+  redis-data:
+  postgres-data:
+  cluster-1-data:
+  cluster-2-data:
+  cluster-3-data:
+
+networks:
+  default:
+    name: cyredis-test-network
