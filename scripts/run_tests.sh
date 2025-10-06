@@ -13,6 +13,7 @@
 #   --all                Run all tests (default)
 #   --unit              Run unit tests only
 #   --integration       Run integration tests only
+#   --worker-coord      Run worker coordination tests only
 #   --fast              Run fast tests only (no slow/cluster)
 #   --coverage          Generate coverage report
 #   --apps              Run test applications/examples
@@ -27,6 +28,7 @@
 # Examples:
 #   ./scripts/run_tests.sh --fast --docker-up
 #   ./scripts/run_tests.sh --integration --coverage
+#   ./scripts/run_tests.sh --worker-coord --coverage
 #   ./scripts/run_tests.sh --all --docker-up --docker-down
 #
 ##############################################################################
@@ -82,6 +84,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --integration)
             TEST_TYPE="integration"
+            shift
+            ;;
+        --worker-coord)
+            TEST_TYPE="worker_coordination"
             shift
             ;;
         --fast)
@@ -276,6 +282,9 @@ run_tests() {
         integration)
             pytest_cmd="$pytest_cmd -m 'integration'"
             ;;
+        worker_coordination)
+            pytest_cmd="$pytest_cmd -m 'worker_coordination or unit'"
+            ;;
         fast)
             pytest_cmd="$pytest_cmd -m 'not slow and not cluster'"
             ;;
@@ -366,6 +375,9 @@ run_watch_mode() {
             ;;
         integration)
             pytest_args="$pytest_args -m 'integration'"
+            ;;
+        worker_coordination)
+            pytest_args="$pytest_args -m 'worker_coordination or unit'"
             ;;
         fast)
             pytest_args="$pytest_args -m 'not slow and not cluster'"

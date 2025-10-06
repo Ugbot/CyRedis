@@ -1,51 +1,93 @@
-# Makefile for PostgreSQL Cache Redis Module
+# Makefile for pgcache plugin tests
 
-MODULE_NAME=pgcache
-MODULE_SO=$(MODULE_NAME).so
+.PHONY: all test test-unit test-integration test-perf setup clean help
 
-# Detect Redis installation
-REDIS_CFLAGS=$(shell pkg-config --cflags hiredis 2>/dev/null || echo "-I/usr/include/hiredis")
-REDIS_LDFLAGS=$(shell pkg-config --libs hiredis 2>/dev/null || echo "-lhiredis")
-REDIS_MODULE_CFLAGS=-I/tmp/redis-stable/src
+# Default target
+all: help
 
-# Detect PostgreSQL installation
-PG_CFLAGS=$(shell pg_config --includedir 2>/dev/null | sed 's/^/-I/' || echo "-I/usr/include/postgresql")
-PG_LDFLAGS=$(shell pg_config --libdir 2>/dev/null | sed 's/^/-L/' || echo "-L/usr/lib") -lpq
+# Help target
+help:
+	@echo "Available targets:"
+	@echo "  setup         - Set up test environment (PostgreSQL + Redis)"
+	@echo "  test          - Run all tests (unit + integration + performance)"
+	@echo "  test-unit     - Run unit tests only"
+	@echo "  test-integration - Run integration tests only (requires PostgreSQL)"
+	@echo "  test-perf     - Run performance tests only"
+	@echo "  clean         - Clean up test files and results"
+	@echo "  build         - Build the pgcache module"
+	@echo "  install       - Install required Python packages"
 
-# Detect Jansson (JSON library)
-JANSSON_CFLAGS=$(shell pkg-config --cflags jansson 2>/dev/null || echo "-I/usr/include")
-JANSSON_LDFLAGS=$(shell pkg-config --libs jansson 2>/dev/null || echo "-ljansson")
+# Build the pgcache module
+build:
+	@echo "Building pgcache module..."
+	@cd .. && make
+	@echo "✅ Module built successfully"
 
-# Compiler and flags
-CC=gcc
-CFLAGS=-fPIC -std=c99 -Wall -Werror -O2 $(REDIS_CFLAGS) $(REDIS_MODULE_CFLAGS) $(PG_CFLAGS) $(JANSSON_CFLAGS)
-LDFLAGS=-shared $(REDIS_LDFLAGS) $(PG_LDFLAGS) $(JANSSON_LDFLAGS) -pthread
+# Install Python dependencies
+install:
+	@echo "Installing Python dependencies..."
+	@pip install redis psycopg2-binary
+	@echo "✅ Dependencies installed"
 
-# Source files
-SRC=src/pgcache.c
-OBJ=$(SRC:.c=.o)
+# Set up test environment
+setup: install build
+	@echo "Setting up test environment..."
+	@python3 setup_test_environment.py
 
-# Build targets
-all: $(MODULE_SO)
+# Run all tests
+test: setup
+	@echo "Running complete test suite..."
+	@python3 run_tests.py
 
-$(MODULE_SO): $(OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+# Run unit tests only
+test-unit: install
+	@echo "Running unit tests..."
+	@python3 run_tests.py --unit-only
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Run integration tests only
+test-integration: install build
+	@echo "Running integration tests..."
+	@python3 run_tests.py --integration-only
 
+# Run performance tests only
+test-perf: install
+	@echo "Running performance tests..."
+	@python3 test_pgcache.py
+
+# Clean up test files
 clean:
-	rm -f $(OBJ) $(MODULE_SO)
+	@echo "Cleaning up test files..."
+	@rm -f test_results*.json
+	@rm -f test_config.json
+	@echo "✅ Test files cleaned"
 
-install: $(MODULE_SO)
-	@echo "Built $(MODULE_SO)"
-	@echo "To load the module in Redis, add to redis.conf:"
-	@echo "loadmodule $(shell pwd)/$(MODULE_SO) [module_args]"
+# Show test status
+status:
+	@echo "Checking test environment status..."
+	@python3 -c "
+import redis
+import psycopg2
+try:
+    r = redis.Redis(decode_responses=True)
+    r.ping()
+    print('✅ Redis: Connected')
+except:
+    print('❌ Redis: Not available')
 
-test: $(MODULE_SO)
-	@echo "Module built successfully: $(MODULE_SO)"
-	@echo "File size: $(shell ls -lh $(MODULE_SO) | awk '{print $$5}')"
-	@echo "Dependencies:"
-	@ldd $(MODULE_SO) 2>/dev/null || echo "Could not check dependencies"
+try:
+    pg = psycopg2.connect(host='localhost', database='postgres', user='postgres')
+    pg.close()
+    print('✅ PostgreSQL: Available')
+except:
+    print('❌ PostgreSQL: Not available')
 
-.PHONY: all clean install test
+# Check if module is loaded
+try:
+    result = r.execute_command('MODULE', 'LIST')
+    if 'pgcache' in str(result).lower():
+        print('✅ pgcache module: Loaded')
+    else:
+        print('❌ pgcache module: Not loaded')
+except:
+    print('❌ pgcache module: Cannot check')
+"
