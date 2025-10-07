@@ -5,6 +5,7 @@ include requirements.txt
 include pyproject.toml
 include cy_redis.pyx
 include redis_wrapper.py
+include hiredis/libhiredis.dylib
 include build_cyredis.sh
 recursive-include plugins *.py *.md
 recursive-include plugins/pgcache *.c *.h *.so Makefile build_module.sh README.md

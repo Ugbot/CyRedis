@@ -253,119 +253,8 @@ def get_extension_config():
 # Get extension configuration
 ext_config = get_extension_config()
 
-# Handle .pyx files if Cython is available
-if USE_CYTHON:
-    # Use .pyx files directly
-    source_ext = ".pyx"
-    cmdclass = {'build_ext': cython_build_ext}
-else:
-    # Fall back to .c files (need to cythonize manually first)
-    source_ext = ".c"
-    cmdclass = {}
-
-# Extension definitions
-extensions = [
-    Extension(
-        "cy_redis.cy_redis_client",
-        sources=["cy_redis/cy_redis_client" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.messaging",
-        sources=["cy_redis/messaging" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.distributed",
-        sources=["cy_redis/distributed" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.rpc",
-        sources=["cy_redis/rpc" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.advanced",
-        sources=["cy_redis/advanced" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'] + ['z'],  # Add zlib for compression
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.shared_dict",
-        sources=["cy_redis/shared_dict" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'] + ['z'],  # Add zlib for compression
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.script_manager",
-        sources=["cy_redis/script_manager" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.protocol",
-        sources=["cy_redis/protocol" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.connection_pool",
-        sources=["cy_redis/connection_pool" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    ),
-    Extension(
-        "cy_redis.functions",
-        sources=["cy_redis/functions" + source_ext] + ext_config['sources'],
-        include_dirs=ext_config['include_dirs'],
-        library_dirs=ext_config['library_dirs'],
-        libraries=ext_config['libraries'],
-        extra_compile_args=ext_config['extra_compile_args'],
-        extra_link_args=ext_config['extra_link_args'],
-        language="c",
-    )
-]
+# Extensions are now defined in pyproject.toml
+extensions = []
 
 # Check Python version
 if sys.version_info < (3, 6):
@@ -378,7 +267,7 @@ if os.path.exists(readme_path):
     with open(readme_path, 'r', encoding='utf-8') as f:
         long_description = f.read()
 
-# Setup configuration
+# Setup configuration - extensions and build configuration are now handled by pyproject.toml
 setup(
     name="cy-redis",
     version="0.1.0",
@@ -389,18 +278,13 @@ setup(
     author_email="",
     url="https://github.com/your-repo/cy-redis",
     packages=find_packages(),
-    ext_modules=extensions,
-    cmdclass=dict(cmdclass, **{
-        'build_ext': BuildExt,
-        'build_py': BuildRedisModule,
-    }),
     package_data={
-        'cy_redis': ['pgcache/*.so'],
+        'cy_redis': ['*.dylib', 'pgcache/*.so'],
         'cy_redis.pgcache': ['*.so', 'src/*', 'Makefile', 'build_module.sh', 'README.md'],
     },
     include_package_data=True,
     zip_safe=False,
-    python_requires=">=3.6",
+    python_requires=">=3.9",
     install_requires=[
         "Cython>=0.29.0",
         "psycopg2-binary>=2.9.0",  # For PostgreSQL event handling

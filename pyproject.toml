@@ -1,9 +1,5 @@
 [build-system]
-requires = [
-    "setuptools>=61.0",
-    "wheel",
-    "Cython>=0.29.0",
-]
+requires = ["setuptools", "Cython>=0.29.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -12,7 +8,7 @@ version = "0.1.0"
 description = "High-performance threaded Redis client using Cython and hiredis"
 readme = "README_CYREDIS.md"
 license = {text = "MIT"}
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 authors = [
     {name = "AI Assistant", email = "assistant@example.com"},
 ]
@@ -86,8 +82,180 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cy_redis", "redis_wrapper*"]
-exclude = ["tests*", "docs*", "scripts*"]
+include = ["cy_redis*"]
+exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "lua_scripts*", "hiredis*"]
+
+# Core Infrastructure
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.cy_redis_client"
+sources = ["cy_redis/core/cy_redis_client.pyx"]
+include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.protocol"
+sources = ["cy_redis/core/protocol.pyx"]
+include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Temporarily disabled - has import issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.core.connection_pool"
+# sources = ["cy_redis/core/connection_pool.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Async Redis client - now pure Python (no longer a Cython extension)
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.core.async_core"
+# sources = ["cy_redis/core/async_core.py"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Temporarily disabled - has Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.core.redis_core"
+# sources = ["cy_redis/core/redis_core.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Communication - temporarily disabled due to dependency on async_core
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.communication.messaging"
+# sources = ["cy_redis/communication/messaging.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.communication.messaging_core"
+# sources = ["cy_redis/communication/messaging_core.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.communication.rpc"
+# sources = ["cy_redis/communication/rpc.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Advanced Features
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.advanced"
+sources = ["cy_redis/features/advanced.pyx"]
+include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+extra-link-args = ["-lz"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.distributed"
+sources = ["cy_redis/features/distributed.pyx"]
+include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Temporarily disabled - has Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.features.functions"
+# sources = ["cy_redis/features/functions.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Temporarily disabled - has Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.features.script_manager"
+# sources = ["cy_redis/features/script_manager.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Web Integration - temporarily disabled due to Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.web.web_cache"
+# sources = ["cy_redis/web/web_cache.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.web.web_app_support"
+# sources = ["cy_redis/web/web_app_support.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Auth components - temporarily disabled due to Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.auth.token_manager"
+# sources = ["cy_redis/auth/token_manager.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.auth.session_manager"
+# sources = ["cy_redis/auth/session_manager.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.auth.two_factor_auth"
+# sources = ["cy_redis/auth/two_factor_auth.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.auth.password_reset_manager"
+# sources = ["cy_redis/auth/password_reset_manager.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Worker components - temporarily disabled due to Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.workers.worker_queue"
+# sources = ["cy_redis/workers/worker_queue.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.workers.lifecycle_manager"
+# sources = ["cy_redis/workers/lifecycle_manager.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.workers.worker_coordinator"
+# sources = ["cy_redis/workers/worker_coordinator.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.workers.multi_session_tracker"
+# sources = ["cy_redis/workers/multi_session_tracker.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# Data Structures - temporarily disabled due to Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.data.shared_dict"
+# sources = ["cy_redis/data/shared_dict.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+# extra-link-args = ["-lz"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.data.shared_state_manager"
+# sources = ["cy_redis/data/shared_state_manager.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.data.concurrent_shared_dict"
+# sources = ["cy_redis/data/concurrent_shared_dict.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
+# extra-link-args = ["-lz"]
+
+# Utils - temporarily disabled due to Cython issues
+# [[tool.setuptools.ext-modules]]
+# name = "cy_redis.utils.redis_iterators"
+# sources = ["cy_redis/utils/redis_iterators.pyx"]
+# include-dirs = ["/Users/bengamble/CyRedis/hiredis"]
+# extra-objects = ["/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"]
 
 [tool.setuptools.dynamic]
 version = {attr = "cy_redis.__version__"}
@@ -152,4 +320,9 @@ filterwarnings = [
     "error",
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
 ]

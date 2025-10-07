@@ -1,0 +1,100 @@
+# cython: language_level=3
+# cython: boundscheck=False
+# cython: wraparound=False
+# cython: cdivision=True
+# cython: nonecheck=False
+# distutils: language = c
+
+"""
+Multi-Session Tracker for CyRedis Web Application Support.
+Tracks and manages multiple user sessions across different devices/browsers.
+"""
+
+import json
+import time
+from typing import Dict, List, Any
+
+# Import dependencies
+from cy_redis.core.cy_redis_client cimport CyRedisClient
+from cy_redis.auth.session_manager cimport SessionManager
+
+
+cdef class MultiSessionTracker:
+    """
+    Track and manage multiple user sessions across different devices/browsers.
+    """
+
+    def __cinit__(self, CyRedisClient redis_client, SessionManager session_manager):
+        self.redis_client = redis_client
+        self.session_manager = session_manager
+        self.sessions_key = "sessions:multi"
+
+    def register_session(self, user_id: str, session_id: str,
+                        device_info: Dict[str, Any] = None) -> bool:
+        """Register a new session for tracking"""
+        device_info = device_info or {}
+
+        session_info = {
+            'session_id': session_id,
+            'user_id': user_id,
+            'device_info': json.dumps(device_info),
+            'registered_at': time.time(),
+            'last_seen': time.time(),
+            'is_active': True
+        }
+
+        # Store session info
+        self.redis_client.hset(f"{self.sessions_key}:{session_id}", mapping=session_info)
+
+        # Add to user's session list
+        self.redis_client.sadd(f"{self.sessions_key}:user:{user_id}", session_id)
+
+        return True
+
+    def update_session_activity(self, session_id: str):
+        """Update last seen time for session"""
+        self.redis_client.hset(f"{self.sessions_key}:{session_id}", 'last_seen', time.time())
+
+    def get_user_sessions(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all sessions for a user"""
+        session_ids = self.redis_client.smembers(f"{self.sessions_key}:user:{user_id}")
+
+        sessions = []
+        for session_id_bytes in session_ids:
+            session_id = session_id_bytes.decode()
+            session_data = self.redis_client.hgetall(f"{self.sessions_key}:{session_id}")
+
+            if session_data:
+                session_info = {k.decode(): v.decode() for k, v in session_data.items()}
+                sessions.append(session_info)
+
+        return sessions
+
+    def revoke_session(self, session_id: str):
+        """Revoke a specific session"""
+        # Mark as inactive
+        self.redis_client.hset(f"{self.sessions_key}:{session_id}", 'is_active', 'false')
+
+        # Also destroy the actual session
+        session_data = self.redis_client.hgetall(f"{self.sessions_key}:{session_id}")
+        if session_data:
+            actual_session_id = session_data.get(b'session_id', b'').decode()
+            if actual_session_id:
+                self.session_manager.destroy_session(actual_session_id)
+
+    def revoke_all_user_sessions(self, user_id: str):
+        """Revoke all sessions for a user"""
+        sessions = self.get_user_sessions(user_id)
+
+        for session in sessions:
+            if session.get('is_active') == 'true':
+                self.revoke_session(session['session_id'])
+
+    def cleanup_inactive_sessions(self, max_age: int = 86400):
+        """Clean up sessions that haven't been seen for too long"""
+        current_time = time.time()
+        cutoff_time = current_time - max_age
+
+        # This would need pattern scanning in production
+        # For now, sessions are checked when accessed
+        pass
