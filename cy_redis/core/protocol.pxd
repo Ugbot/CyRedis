@@ -6,7 +6,7 @@ Header declarations for CyRedis Protocol Support
 """
 
 # Forward declaration - declare redisReply here to avoid circular import
-cdef extern from "../../hiredis/hiredis.h":
+cdef extern from "hiredis.h":
     ctypedef struct redisReply:
         int type
         long long integer

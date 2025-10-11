@@ -22,7 +22,7 @@ from cpython.ref cimport Py_INCREF, Py_DECREF, PyObject
 from cpython.exc cimport PyErr_CheckSignals
 
 # Hiredis includes
-cdef extern from "../../hiredis/hiredis.h":
+cdef extern from "hiredis.h":
     ctypedef struct redisContext:
         int err
         char errstr[128]

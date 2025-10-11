@@ -28,7 +28,7 @@ cdef extern from "sys/time.h":
         long tv_usec
 
 # Extern declarations for hiredis (must be in .pyx file to be accessible)
-cdef extern from "../../hiredis/hiredis.h":
+cdef extern from "hiredis.h":
     ctypedef struct redisContext:
         int err
         char errstr[128]

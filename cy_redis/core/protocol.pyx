@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional, Union, Tuple
 from concurrent.futures import ThreadPoolExecutor
 
 # Import hiredis types
-cdef extern from "../../hiredis/hiredis.h":
+cdef extern from "hiredis.h":
     ctypedef struct redisReply:
         int type
         long long integer

@@ -14,7 +14,7 @@ cdef extern from "sys/time.h":
         long tv_usec
 
 # hiredis structures - declared as extern at module level
-cdef extern from "../../hiredis/hiredis.h":
+cdef extern from "hiredis.h":
     ctypedef struct redisContext:
         int err
         char errstr[128]
