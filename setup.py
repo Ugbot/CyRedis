@@ -117,16 +117,30 @@ class BuildExt(build_ext):
 
     def check_hiredis(self):
         """Check if hiredis is available"""
+        # First check for vendored hiredis in the project directory
+        hiredis_dir = os.path.join(os.path.dirname(__file__), 'hiredis')
+        hiredis_header = os.path.join(hiredis_dir, 'hiredis.h')
+        hiredis_lib_dylib = os.path.join(hiredis_dir, 'libhiredis.dylib')
+        hiredis_lib_so = os.path.join(hiredis_dir, 'libhiredis.so')
+        hiredis_lib_a = os.path.join(hiredis_dir, 'libhiredis.a')
+
+        # Check if vendored hiredis exists and is built
+        if os.path.exists(hiredis_header):
+            if os.path.exists(hiredis_lib_dylib) or os.path.exists(hiredis_lib_so) or os.path.exists(hiredis_lib_a):
+                print(f"✓ Found vendored hiredis library in {hiredis_dir}")
+                return True
+
+        # Try pkg-config for system installation
         try:
-            # Try pkg-config first
             result = subprocess.run(['pkg-config', '--exists', 'hiredis'],
                                   capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
+                print("✓ Found system hiredis via pkg-config")
                 return True
         except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
             pass
 
-        # Try to compile a small test program
+        # Try to compile a small test program for system installation
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.c', delete=False) as f:
             f.write("""
@@ -146,7 +160,10 @@ int main() {
         try:
             result = subprocess.run(['cc', '-lhiredis', test_file, '-o', '/dev/null'],
                                   capture_output=True, timeout=10)
-            return result.returncode == 0
+            if result.returncode == 0:
+                print("✓ Found system hiredis via test compilation")
+                return True
+            return False
         except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
             return False
         finally:
@@ -170,7 +187,7 @@ int main() {
             elif system == "linux":
                 # Try different Linux package managers
                 for cmd in [
-                    ['apt-get', 'update', '&&', 'apt-get', 'install', '-y', 'libhiredis-dev'],
+                    ['apt-get', 'install', '-y', 'libhiredis-dev'],
                     ['yum', 'install', '-y', 'hiredis-devel'],
                     ['dnf', 'install', '-y', 'hiredis-devel'],
                     ['pacman', '-S', '--noconfirm', 'hiredis'],
