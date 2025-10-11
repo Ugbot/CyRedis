@@ -7,11 +7,10 @@
             "hiredis/hiredis.h"
         ],
         "extra_objects": [
-            "/Users/bengamble/CyRedis/hiredis/libhiredis.dylib"
+            "hiredis/libhiredis.a"
         ],
         "include_dirs": [
-            "cy_redis/core",
-            "/Users/bengamble/CyRedis/hiredis"
+            "hiredis"
         ],
         "language": "c",
         "name": "cy_redis.core.protocol",
@@ -1141,7 +1140,7 @@ static CYTHON_INLINE float __PYX_NAN() {
 #define __PYX_HAVE__cy_redis__core__protocol
 #define __PYX_HAVE_API__cy_redis__core__protocol
 /* Early includes */
-#include "../../hiredis/hiredis.h"
+#include "hiredis.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif /* _OPENMP */
