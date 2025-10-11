@@ -90,15 +90,13 @@ exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "lua_scripts*
 name = "cy_redis.core.cy_redis_client"
 sources = ["cy_redis/core/cy_redis_client.pyx"]
 include-dirs = ["hiredis"]
-library-dirs = ["hiredis"]
-libraries = ["hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
 
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.core.protocol"
 sources = ["cy_redis/core/protocol.pyx"]
 include-dirs = ["hiredis"]
-library-dirs = ["hiredis"]
-libraries = ["hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
 
 # Temporarily disabled - has import issues
 # [[tool.setuptools.ext-modules]]
@@ -145,15 +143,14 @@ libraries = ["hiredis"]
 name = "cy_redis.features.advanced"
 sources = ["cy_redis/features/advanced.pyx"]
 include-dirs = ["hiredis"]
-library-dirs = ["hiredis"]
-libraries = ["hiredis", "z"]
+extra-objects = ["hiredis/libhiredis.a"]
+libraries = ["z"]
 
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.features.distributed"
 sources = ["cy_redis/features/distributed.pyx"]
 include-dirs = ["hiredis"]
-library-dirs = ["hiredis"]
-libraries = ["hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
 
 # Temporarily disabled - has Cython issues
 # [[tool.setuptools.ext-modules]]
