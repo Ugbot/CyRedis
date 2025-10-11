@@ -86,8 +86,8 @@ jobs:
       - name: Build vendored hiredis
         run: |
           cd hiredis
-          make clean
-          make
+          make clean || true
+          make static
           cd ..
 
       - name: Install Python dependencies
@@ -124,6 +124,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -143,8 +145,8 @@ jobs:
       - name: Build vendored hiredis
         run: |
           cd hiredis
-          make clean
-          make
+          make clean || true
+          make static
           cd ..
 
       - name: Install dependencies
@@ -218,8 +220,8 @@ jobs:
       - name: Build vendored hiredis
         run: |
           cd hiredis
-          make clean
-          make
+          make clean || true
+          make static
           cd ..
 
       - name: Install dependencies
@@ -263,8 +265,8 @@ jobs:
       - name: Build vendored hiredis
         run: |
           cd hiredis
-          make clean
-          make
+          make clean || true
+          make static
           cd ..
 
       - name: Install build dependencies
