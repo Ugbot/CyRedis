@@ -7,13 +7,13 @@ name = "cy-redis"
 version = "0.1.0"
 description = "High-performance threaded Redis client using Cython and hiredis"
 readme = "README_CYREDIS.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    {name = "AI Assistant", email = "assistant@example.com"},
+    {name = "Ben Gamble", email = "ben@example.com"},
 ]
 maintainers = [
-    {name = "AI Assistant", email = "assistant@example.com"},
+    {name = "Ben Gamble", email = "ben@example.com"},
 ]
 keywords = [
     "redis",
@@ -28,7 +28,6 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",

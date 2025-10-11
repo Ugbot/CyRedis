@@ -99,36 +99,44 @@ class BuildExt(build_ext):
     """Custom build_ext command that checks for hiredis before building"""
 
     def run(self):
-        # Check for hiredis before building
+        # Check for hiredis (non-fatal for static linking)
         if not self.check_hiredis():
-            self.install_hiredis()
-            if not self.check_hiredis():
-                raise RuntimeError(
-                    "hiredis library is required but could not be found or installed. "
-                    "Please install hiredis manually:\n"
-                    "  macOS: brew install hiredis\n"
-                    "  Ubuntu/Debian: sudo apt-get install libhiredis-dev\n"
-                    "  CentOS/RHEL: sudo yum install hiredis-devel\n"
-                    "  Fedora: sudo dnf install hiredis-devel"
-                )
+            print("⚠ Warning: Vendored hiredis not detected during build")
+            print("  Using static linking configuration from pyproject.toml")
+            print("  If build fails, ensure hiredis is built with: cd hiredis && make static")
 
         # Continue with normal build
+        # Static linking is configured in pyproject.toml via extra-objects
         super().run()
 
     def check_hiredis(self):
         """Check if hiredis is available"""
-        # First check for vendored hiredis in the project directory
-        hiredis_dir = os.path.join(os.path.dirname(__file__), 'hiredis')
-        hiredis_header = os.path.join(hiredis_dir, 'hiredis.h')
-        hiredis_lib_dylib = os.path.join(hiredis_dir, 'libhiredis.dylib')
-        hiredis_lib_so = os.path.join(hiredis_dir, 'libhiredis.so')
-        hiredis_lib_a = os.path.join(hiredis_dir, 'libhiredis.a')
+        # Try multiple possible locations for vendored hiredis
+        possible_dirs = [
+            # Relative to setup.py (absolute path)
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hiredis'),
+            # Current working directory
+            os.path.join(os.getcwd(), 'hiredis'),
+            # Environment variable if set
+            os.environ.get('HIREDIS_DIR', ''),
+        ]
 
-        # Check if vendored hiredis exists and is built
-        if os.path.exists(hiredis_header):
-            if os.path.exists(hiredis_lib_dylib) or os.path.exists(hiredis_lib_so) or os.path.exists(hiredis_lib_a):
-                print(f"✓ Found vendored hiredis library in {hiredis_dir}")
-                return True
+        for hiredis_dir in possible_dirs:
+            if not hiredis_dir or not os.path.isdir(hiredis_dir):
+                continue
+
+            hiredis_header = os.path.join(hiredis_dir, 'hiredis.h')
+            hiredis_lib_dylib = os.path.join(hiredis_dir, 'libhiredis.dylib')
+            hiredis_lib_so = os.path.join(hiredis_dir, 'libhiredis.so')
+            hiredis_lib_a = os.path.join(hiredis_dir, 'libhiredis.a')
+
+            # Check if vendored hiredis exists and is built
+            if os.path.exists(hiredis_header):
+                if os.path.exists(hiredis_lib_dylib) or os.path.exists(hiredis_lib_so) or os.path.exists(hiredis_lib_a):
+                    print(f"✓ Found vendored hiredis library at: {hiredis_dir}")
+                    return True
+
+        print("⚠ Vendored hiredis not found, checking system installation...")
 
         # Try pkg-config for system installation
         try:
@@ -291,8 +299,8 @@ setup(
     description="High-performance threaded Redis client using Cython and hiredis with PostgreSQL caching",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author="AI Assistant",
-    author_email="",
+    author="Ben Gamble",
+    author_email="ben@example.com",
     url="https://github.com/your-repo/cy-redis",
     packages=find_packages(),
     package_data={
@@ -324,7 +332,6 @@ setup(
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS",
         "Operating System :: Microsoft :: Windows",
