@@ -1,6 +1,6 @@
-# 🚀 CyRedis - High-Performance Redis Client with Enterprise Features
+# 🚀 CyRedis - A wildly experimental High-Performance Redis Client with Enterprise Features
 
-A comprehensive, high-performance Cython Redis client that provides **FastAPI-style** web application support with advanced features for distributed, real-time applications.
+A Cython Redis client that provides **FastAPI-style** web application support with advanced features for distributed, real-time applications.
 
 ![CyRedis Logo](https://img.shields.io/badge/CyRedis-High%20Performance%20Redis-blue)
 ![Python](https://img.shields.io/badge/Python-3.7+-green)
