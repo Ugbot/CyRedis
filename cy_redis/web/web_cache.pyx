@@ -23,7 +23,7 @@ import signal
 import sys
 
 # Import core Redis functionality
-from cy_redis.core.cy_redis_client cimport CyRedisClient
+from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock
 
 
@@ -207,7 +207,7 @@ cdef class CacheBackend:
 cdef class RedisCacheBackend(CacheBackend):
     """Redis cache backend"""
 
-    def __cinit__(self, CyRedisClient redis_client, str prefix="cyredis:cache"):
+    def __cinit__(self, redis_client, str prefix="cyredis:cache"):
         self.redis_client = redis_client
         self.prefix = prefix
 

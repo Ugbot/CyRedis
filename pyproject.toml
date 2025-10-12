@@ -167,13 +167,12 @@ extra-objects = ["hiredis/libhiredis.a"]
 # library-dirs = ["hiredis"]
 # libraries = ["hiredis"]
 
-# Web Integration - temporarily disabled due to Cython issues
-# [[tool.setuptools.ext-modules]]
-# name = "cy_redis.web.web_cache"
-# sources = ["cy_redis/web/web_cache.pyx"]
-# include-dirs = ["hiredis"]
-# library-dirs = ["hiredis"]
-# libraries = ["hiredis"]
+# Web Integration
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.web.web_cache"
+sources = ["cy_redis/web/web_cache.pyx"]
+include-dirs = ["hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
 
 # [[tool.setuptools.ext-modules]]
 # name = "cy_redis.web.web_app_support"
@@ -240,13 +239,13 @@ extra-objects = ["hiredis/libhiredis.a"]
 # library-dirs = ["hiredis"]
 # libraries = ["hiredis"]
 
-# Data Structures - temporarily disabled due to Cython issues
-# [[tool.setuptools.ext-modules]]
-# name = "cy_redis.data.shared_dict"
-# sources = ["cy_redis/data/shared_dict.pyx"]
-# include-dirs = ["hiredis"]
-# library-dirs = ["hiredis"]
-# libraries = ["hiredis", "z"]
+# Data Structures
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.data.shared_dict"
+sources = ["cy_redis/data/shared_dict.pyx"]
+include-dirs = ["hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+libraries = ["z"]
 
 # [[tool.setuptools.ext-modules]]
 # name = "cy_redis.data.shared_state_manager"
@@ -255,12 +254,12 @@ extra-objects = ["hiredis/libhiredis.a"]
 # library-dirs = ["hiredis"]
 # libraries = ["hiredis"]
 
-# [[tool.setuptools.ext-modules]]
-# name = "cy_redis.data.concurrent_shared_dict"
-# sources = ["cy_redis/data/concurrent_shared_dict.pyx"]
-# include-dirs = ["hiredis"]
-# library-dirs = ["hiredis"]
-# libraries = ["hiredis", "z"]
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.data.concurrent_shared_dict"
+sources = ["cy_redis/data/concurrent_shared_dict.pyx"]
+include-dirs = ["hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+libraries = ["z"]
 
 # Utils - temporarily disabled due to Cython issues
 # [[tool.setuptools.ext-modules]]

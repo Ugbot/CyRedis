@@ -15,7 +15,7 @@ import time
 from typing import Dict, List, Any
 
 # Import dependencies
-from cy_redis.core.cy_redis_client cimport CyRedisClient
+from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock
 
 
@@ -25,7 +25,7 @@ cdef class ConcurrentSharedDict:
     Thread-safe and process-safe dictionary that can be accessed by multiple users.
     """
 
-    def __cinit__(self, str dict_name, CyRedisClient redis_client):
+    def __cinit__(self, str dict_name, redis_client):
         self.dict_name = dict_name
         self.redis_client = redis_client
         self.dict_key = f"shared_dict:{dict_name}"
@@ -71,7 +71,7 @@ cdef class ConcurrentSharedDict:
     # Dictionary interface - thread-safe and process-safe
     def __getitem__(self, key):
         """Get item with automatic sync"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         if key not in data:
             raise KeyError(key)
         return data[key]
@@ -105,37 +105,37 @@ cdef class ConcurrentSharedDict:
 
     def __contains__(self, key):
         """Check if key exists"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return key in data
 
     def __len__(self):
         """Get dictionary length"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return len(data)
 
     def __iter__(self):
         """Iterate over keys"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return iter(data)
 
     def keys(self):
         """Get dictionary keys"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return data.keys()
 
     def values(self):
         """Get dictionary values"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return data.values()
 
     def items(self):
         """Get dictionary items"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return data.items()
 
     def get(self, key, default=None):
         """Get with default value"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return data.get(key, default)
 
     # Advanced concurrent operations
@@ -145,7 +145,7 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
+            data = self._load_from_redis()
             data.update(other)
             self._save_to_redis(data)
             self._invalidate_cache()
@@ -169,8 +169,8 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
-            cdef object result = data.pop(key, default)
+            data = self._load_from_redis()
+            result = data.pop(key, default)
             self._save_to_redis(data)
             self._invalidate_cache()
             return result
@@ -183,8 +183,8 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
-            cdef tuple result = data.popitem()
+            data = self._load_from_redis()
+            result = data.popitem()
             self._save_to_redis(data)
             self._invalidate_cache()
             return result
@@ -197,7 +197,7 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
+            data = self._load_from_redis()
             if key not in data:
                 data[key] = default
                 self._save_to_redis(data)
@@ -213,8 +213,8 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
-            cdef int current = data.get(key, 0)
+            data = self._load_from_redis()
+            current = data.get(key, 0)
             if not isinstance(current, int):
                 current = 0
             current += amount
@@ -231,8 +231,8 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
-            cdef float current = data.get(key, 0.0)
+            data = self._load_from_redis()
+            current = data.get(key, 0.0)
             if not isinstance(current, (int, float)):
                 current = 0.0
             current += amount
@@ -250,7 +250,7 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
+            data = self._load_from_redis()
             data.update(updates)
             self._save_to_redis(data)
             self._invalidate_cache()
@@ -259,12 +259,12 @@ cdef class ConcurrentSharedDict:
 
     def bulk_get(self, keys: List[str]) -> List[Any]:
         """Bulk get multiple keys efficiently"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return [data.get(key) for key in keys]
 
     def multi_get(self, *keys: str) -> Dict[str, Any]:
         """Get multiple keys as a dictionary"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return {key: data.get(key) for key in keys}
 
     def multi_set(self, mapping: Dict[str, Any]):
@@ -273,7 +273,7 @@ cdef class ConcurrentSharedDict:
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
-            cdef dict data = self._load_from_redis()
+            data = self._load_from_redis()
             data.update(mapping)
             self._save_to_redis(data)
             self._invalidate_cache()
@@ -292,8 +292,8 @@ cdef class ConcurrentSharedDict:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get dictionary statistics"""
-        cdef dict data = self._ensure_synced()
-        cdef long total_size = len(json.dumps(data))
+        data = self._ensure_synced()
+        total_size = len(json.dumps(data))
 
         return {
             'name': self.dict_name,
@@ -307,12 +307,12 @@ cdef class ConcurrentSharedDict:
 
     def copy(self) -> Dict[str, Any]:
         """Create a copy of the dictionary"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return data.copy()
 
     def __repr__(self):
         """String representation"""
-        cdef dict data = self._ensure_synced()
+        data = self._ensure_synced()
         return f"ConcurrentSharedDict('{self.dict_name}', {len(data)} items)"
 
     def __str__(self):

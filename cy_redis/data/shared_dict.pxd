@@ -5,9 +5,7 @@
 Header declarations for CyRedis Shared Dictionary
 """
 
-# Forward declarations
-cdef class CyRedisClient
-cdef class CyDistributedLock
+# No forward declarations needed - using object types
 
 # Shared Dictionary
 cdef class CySharedDict:

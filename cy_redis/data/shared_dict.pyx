@@ -16,7 +16,7 @@ from typing import Dict, Any, Optional, Union, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 # Import our optimized components
-from cy_redis.core.cy_redis_client cimport CyRedisClient
+from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock
 
 # Shared dictionary with Redis replication and concurrency control
@@ -357,7 +357,7 @@ cdef class CySharedDictManager:
     cdef dict dicts
     cdef object executor
 
-    def __cinit__(self, CyRedisClient redis_client):
+    def __cinit__(self, redis_client):
         self.redis = redis_client
         self.dicts = {}
         self.executor = ThreadPoolExecutor(max_workers=4)

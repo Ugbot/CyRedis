@@ -36,6 +36,27 @@ except ImportError:
     _advanced_available = False
     RedisAdvanced = None
 
+try:
+    from cy_redis.data.shared_dict import CySharedDict
+    _shared_dict_available = True
+except ImportError:
+    _shared_dict_available = False
+    CySharedDict = None
+
+try:
+    from cy_redis.data.concurrent_shared_dict import ConcurrentSharedDict
+    _concurrent_shared_dict_available = True
+except ImportError:
+    _concurrent_shared_dict_available = False
+    ConcurrentSharedDict = None
+
+try:
+    from cy_redis.web.web_cache import WebCache
+    _web_cache_available = True
+except ImportError:
+    _web_cache_available = False
+    WebCache = None
+
 # Make submodules available for advanced usage
 try:
     from . import core
@@ -82,6 +103,13 @@ __all__ = [
     'CyRedisClient',
     'CyDistributedLock',
     'RedisAdvanced',
+
+    # Data structures
+    'CySharedDict',
+    'ConcurrentSharedDict',
+
+    # Web support
+    'WebCache',
 
     # Submodules for advanced usage
     'core',

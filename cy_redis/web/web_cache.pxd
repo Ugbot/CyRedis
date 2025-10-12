@@ -5,7 +5,7 @@ Web Cache Module Declarations for CyRedis
 Provides FastAPI-cache inspired functionality declarations.
 """
 
-from cy_redis.core.cy_redis_client cimport CyRedisClient
+# No cimport needed - using object types
 
 # Forward declarations for Cython classes
 cdef class HTTPCacheHeaders:
@@ -34,7 +34,7 @@ cdef class CacheBackend:
     cdef str prefix
 
 cdef class RedisCacheBackend(CacheBackend):
-    cdef CyRedisClient redis_client
+    cdef object redis_client  # CyRedisClient
 
 cdef class InMemoryCacheBackend(CacheBackend):
     cdef dict cache
@@ -60,11 +60,11 @@ cdef class CacheManager:
     cdef HTTPCacheHeaders http_headers
 
 # Factory functions
-cdef CacheManager create_redis_cache(CyRedisClient redis_client, str prefix, int default_ttl)
+cdef CacheManager create_redis_cache(object redis_client, str prefix, int default_ttl)
 cdef CacheManager create_memory_cache(str prefix, int default_ttl)
 
 # Global functions
-cdef WebCache init_cache(CyRedisClient redis_client, str backend_type, str prefix, int default_ttl)
+cdef WebCache init_cache(object redis_client, str backend_type, str prefix, int default_ttl)
 cdef WebCache get_cache()
 
 # Python wrapper class
