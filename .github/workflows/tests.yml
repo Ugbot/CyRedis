@@ -83,14 +83,14 @@ jobs:
           make static
           cd ..
 
+      - name: Install build dependencies
+        run: |
+          uv pip install --system setuptools wheel Cython
+
       - name: Install Python dependencies
         run: |
           uv pip install --system -e ".[dev,test]"
           uv pip install --system pytest-watch pytest-xdist
-
-      - name: Build Cython extensions
-        run: |
-          uv run python setup.py build_ext --inplace
 
       - name: Run fast tests
         run: |
@@ -148,14 +148,14 @@ jobs:
           make static
           cd ..
 
+      - name: Install build dependencies
+        run: |
+          uv pip install --system --break-system-packages setuptools wheel Cython
+
       - name: Install Python dependencies
         run: |
           uv pip install --system --break-system-packages -e ".[dev,test]"
           uv pip install --system --break-system-packages pytest-watch pytest-xdist
-
-      - name: Build Cython extensions
-        run: |
-          uv run python setup.py build_ext --inplace
 
       - name: Run fast tests
         run: |
@@ -192,6 +192,10 @@ jobs:
           make clean || true
           make static
           cd ..
+
+      - name: Install build dependencies
+        run: |
+          uv pip install --system setuptools wheel Cython
 
       - name: Install dependencies
         run: |
@@ -268,13 +272,13 @@ jobs:
           make static
           cd ..
 
+      - name: Install build dependencies
+        run: |
+          uv pip install --system setuptools wheel Cython
+
       - name: Install dependencies
         run: |
           uv pip install --system -e ".[dev,test]"
-
-      - name: Build Cython extensions
-        run: |
-          uv run python setup.py build_ext --inplace
 
       - name: Run integration tests
         run: |
