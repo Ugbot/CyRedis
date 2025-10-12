@@ -81,8 +81,7 @@ __all__ = [
     # Core classes
     'CyRedisClient',
     'CyDistributedLock',
-    'ConcurrentSharedDict',
-    'WebAppSupport',
+    'RedisAdvanced',
 
     # Submodules for advanced usage
     'core',
