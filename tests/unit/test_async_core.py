@@ -4,7 +4,7 @@ Unit tests for async_core.pyx - Async Redis operations
 import pytest
 import asyncio
 import time
-from cy_redis.async_core import (
+from cy_redis.core.async_core import (
     AsyncRedisConnection, AsyncRedisClient, AsyncMessageQueue,
     AsyncRedisWrapper
 )

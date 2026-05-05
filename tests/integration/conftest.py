@@ -17,14 +17,12 @@ except ImportError:
 
 # Import CyRedis components
 try:
-    from cy_redis import CyRedisClient
-    from redis_wrapper import (
-        HighPerformanceRedis,
-        DistributedLock,
-        ReliableQueue,
-        WorkerQueue,
-        StreamConsumerGroup,
-    )
+    from cy_redis import CyRedisClient, CyDistributedLock as DistributedLock
+    from cy_redis.reliable_queue import ReliableQueue, WorkerQueue
+    try:
+        from cy_redis.high_performance_redis import HighPerformanceRedis
+    except ImportError:
+        HighPerformanceRedis = None
     CYREDIS_AVAILABLE = True
 except ImportError:
     CYREDIS_AVAILABLE = False

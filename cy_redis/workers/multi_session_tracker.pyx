@@ -16,7 +16,7 @@ from typing import Dict, List, Any
 
 # Import dependencies
 from cy_redis.core.cy_redis_client cimport CyRedisClient
-from cy_redis.auth.session_manager cimport SessionManager
+from cy_redis.auth.session_manager import SessionManager
 
 
 cdef class MultiSessionTracker:
@@ -24,7 +24,7 @@ cdef class MultiSessionTracker:
     Track and manage multiple user sessions across different devices/browsers.
     """
 
-    def __cinit__(self, CyRedisClient redis_client, SessionManager session_manager):
+    def __cinit__(self, CyRedisClient redis_client, session_manager):
         self.redis_client = redis_client
         self.session_manager = session_manager
         self.sessions_key = "sessions:multi"

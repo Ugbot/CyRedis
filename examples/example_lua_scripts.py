@@ -6,10 +6,11 @@ Demonstrates high-performance script loading, caching, and execution
 
 import time
 import os
+from typing import Dict, Any
 from optimized_redis import OptimizedRedis
 from optimized_lua_script_manager import OptimizedLuaScriptManager
 
-def demonstrate_lua_script_management():
+def demonstrate_lua_script_management() -> None:
     """Demonstrate comprehensive Lua script management."""
     print("🚀 CyRedis Lua Script Management Demo")
     print("=" * 50)

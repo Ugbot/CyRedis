@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+from typing import Any, Optional
 Example of Atomic Lua Script Deployment with Testing and Function Mapping
 Demonstrates the new atomic_load_and_test and atomic_deploy_scripts capabilities
 """

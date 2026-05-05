@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+from typing import Any, Optional
 Example demonstrating CyRedis RESP2/3 Protocol Support and MVP Features
 Shows auto-negotiation, push messages, connection pooling, and more
 """

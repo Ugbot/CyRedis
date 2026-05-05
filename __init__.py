@@ -7,10 +7,20 @@ built using Cython and the hiredis C library for optimal performance.
 Includes PostgreSQL read-through caching via Redis modules.
 """
 
+from typing import Any, Optional
 import os
 
+from cy_redis.core.cy_redis_client import (
+    CyRedisClient,
+    CyRedisConnection,
+    CyRedisConnectionPool,
+    RedisError,
+    ConnectionError,
+)
+from cy_redis.high_performance_redis import HighPerformanceRedis
+from cy_redis.distributed import CyDistributedLock, CyReadWriteLock
+
 try:
-    from .cy_redis import CyRedisClient, ThreadedStreamManager, RedisError, ConnectionError
     from .pg_cache import (
         PostgreSQLConnection, ReadThroughCache, PGCacheManager,
         load_pgcache_module, check_pgcache_module_loaded, get_pgcache_module_info
@@ -50,13 +60,44 @@ try:
         HighPerformanceAsyncRedis,
         RedisPluginManager,
     )
-except ImportError as e:
-    raise ImportError(
-        "CyRedis extension not built. Please install with: pip install -e ."
-    ) from e
+except ImportError:
+    # Some optional modules may not be built; keep core usable.
+    HighPerformanceRedis = None
+    ThreadedStreamConsumer = None
+    KeyspaceWatcher = None
+    KeyspaceNotificationConsumer = None
+    OptimisticLock = None
+    StreamConsumerGroup = None
+    WorkerQueue = None
+    PubSubHub = None
+    DistributedLock = None
+    ReadWriteLock = None
+    Semaphore = None
+    DistributedCounter = None
+    LocalCache = None
+    LiveObject = None
+    ReliableQueue = None
+    LuaScriptManager = None
+    OptimizedLuaScriptManager = None
+    RedisClusterManager = None
+    RedisSentinelManager = None
+    RedisScripts = None
+    ScriptHelper = None
+    WebSessionManager = None
+    XATransactionManager = None
+    ObservabilityManager = None
+    SecurityManager = None
+    PostgreSQLConnection = None
+    ReadThroughCache = None
+    PGCacheManager = None
+    enable_uvloop = None
+    is_uvloop_enabled = None
+    create_uvloop_event_loop = None
+    HighPerformanceAsyncRedis = None
+    RedisPluginManager = None
 
 
-def get_pgcache_module_path():
+def get_pgcache_module_path() -> Optional[str]:
     """
     Get the path to the built pgcache Redis module.
 

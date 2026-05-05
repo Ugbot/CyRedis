@@ -6,9 +6,10 @@ Demonstrates replicated dictionary with concurrency control
 
 import time
 import threading
+from typing import Any
 from shared_dict import SharedDict, SharedDictManager
 
-def worker_thread(thread_id, shared_dict):
+def worker_thread(thread_id: int, shared_dict: SharedDict) -> None:
     """Worker thread that performs operations on shared dictionary."""
     print(f"Thread {thread_id}: Starting operations")
 
@@ -23,7 +24,7 @@ def worker_thread(thread_id, shared_dict):
 
     print(f"Thread {thread_id}: Completed operations")
 
-def demonstrate_shared_dict():
+def demonstrate_shared_dict() -> None:
     """Demonstrate shared dictionary functionality."""
     print("🚀 CyRedis Shared Dictionary Demo")
     print("=" * 50)

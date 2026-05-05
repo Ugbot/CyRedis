@@ -26,7 +26,7 @@ cdef class CySharedDict:
     """
 
     cdef object redis
-    cdef str dict_key
+    cdef readonly str dict_key
     cdef str lock_key
     cdef object lock
     cdef bint use_compression
@@ -117,7 +117,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()  # Always get latest
             data[key] = value
             self._save_to_redis(data)
-            self._invalidate_cache()  # Force sync on next access
+            self.local_cache = data
+            self.last_sync = <long>time.time()
         finally:
             self.lock.release()
 
@@ -130,7 +131,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()
             del data[key]
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
         finally:
             self.lock.release()
 
@@ -181,7 +183,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()
             data.update(other)
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
         finally:
             self.lock.release()
 
@@ -192,7 +195,8 @@ cdef class CySharedDict:
 
         try:
             self._save_to_redis({})
-            self._invalidate_cache()
+            self.local_cache = {}
+            self.last_sync = <long>time.time()
         finally:
             self.lock.release()
 
@@ -208,7 +212,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()
             result = data.pop(key, default)
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
             return result
         finally:
             self.lock.release()
@@ -225,7 +230,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()
             result = data.popitem()
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
             return result
         finally:
             self.lock.release()
@@ -241,7 +247,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()
             data.setdefault(key, default)
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
         finally:
             self.lock.release()
 
@@ -257,7 +264,8 @@ cdef class CySharedDict:
             data = self._load_from_redis()
             data.update(updates)
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
         finally:
             self.lock.release()
 
@@ -283,7 +291,8 @@ cdef class CySharedDict:
             current += amount
             data[key] = current
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
             return current
         finally:
             self.lock.release()
@@ -304,7 +313,8 @@ cdef class CySharedDict:
             current += amount
             data[key] = current
             self._save_to_redis(data)
-            self._invalidate_cache()
+            self.local_cache = data
+            self.last_sync = <long>time.time()
             return current
         finally:
             self.lock.release()

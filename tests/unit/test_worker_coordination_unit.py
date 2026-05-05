@@ -31,24 +31,23 @@ class TestWorkerIDGeneration:
 
     def test_worker_id_format(self):
         """Test that worker IDs are properly formatted."""
-        # Mock the modules that aren't available in unit tests
-        with patch('cy_redis.web_app_support.os') as mock_os, \
-             patch('cy_redis.web_app_support.socket') as mock_socket:
+        if not CYREDIS_WEB_AVAILABLE:
+            pytest.skip("Worker coordination modules not available")
+
+        with patch('cy_redis.workers.lifecycle_manager.os') as mock_os, \
+             patch('cy_redis.workers.lifecycle_manager.socket') as mock_socket:
 
             mock_os.getpid.return_value = 12345
             mock_socket.gethostname.return_value = "test-host"
 
-            if CYREDIS_WEB_AVAILABLE:
-                # We can't easily test the Cython class directly without Redis
-                # But we can test the logic by mocking the Redis client
-                mock_redis = Mock()
-                manager = LifecycleManager(mock_redis, worker_id=None)
+            mock_redis = Mock()
+            manager = LifecycleManager(mock_redis, worker_id=None)
 
-                # Check that worker_id follows expected pattern
-                assert manager.worker_id.startswith("worker_test-host_12345_")
-                assert len(manager.worker_id) > 20  # Should include timestamp
+            assert manager.worker_id.startswith("worker_test-host_12345_")
+            assert len(manager.worker_id) > 20
 
 
+@pytest.mark.skipif(not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available")
 class TestWorkerCoordinatorLogic:
     """Test worker coordinator logic without Redis."""
 
@@ -184,6 +183,7 @@ class TestWorkerCoordinatorLogic:
         assert status_counts['stopped'] == 1  # worker_3
 
 
+@pytest.mark.skipif(not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available")
 class TestLifecycleManagerLogic:
     """Test lifecycle manager logic without Redis."""
 
@@ -306,6 +306,7 @@ class TestConcurrentSharedDictLogic:
         assert float_result == expected_float
 
 
+@pytest.mark.skipif(not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available")
 class TestErrorHandlingLogic:
     """Test error handling logic without external dependencies."""
 

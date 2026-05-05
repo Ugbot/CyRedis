@@ -3,11 +3,11 @@ Unit tests for functions.pyx - Redis Functions
 """
 import pytest
 import uuid
-from cy_redis.functions import (
+from cy_redis.features.functions import (
     CyRedisFunctionsManager, CyLocks, CyRateLimiter, CyQueue,
     RedisFunctions, FUNCTION_LIBRARIES
 )
-from cy_redis.cy_redis_client import CyRedisClient
+from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 @pytest.fixture

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+from typing import Any, Optional
 Example demonstrating CyRedis Standard Library of Redis Functions
 Atomic operations with one round-trip using Redis 7+ Functions
 """

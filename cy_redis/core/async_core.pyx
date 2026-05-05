@@ -4,9 +4,52 @@ Provides asynchronous Redis operations without blocking the event loop.
 """
 
 import asyncio
-import uvloop
+try:
+    import uvloop
+    _HAS_UVLOOP = True
+except ImportError:
+    _HAS_UVLOOP = False
 from concurrent.futures import ThreadPoolExecutor
-from .cy_redis_client import CyRedisConnection
+from .cy_redis_client import CyRedisConnection, CyRedisConnectionPool
+
+
+class AsyncMessage:
+    def __init__(self, data=None):
+        self.data = data
+
+
+class AsyncMessageQueue:
+    """Simple async-safe queue using a list and asyncio locks."""
+
+    def __init__(self, capacity: int = 1024):
+        self.capacity = capacity
+        self._queue = []
+        self._lock = asyncio.Lock()
+        self._not_empty = asyncio.Condition(self._lock)
+        self._not_full = asyncio.Condition(self._lock)
+
+    async def put(self, msg: AsyncMessage):
+        async with self._lock:
+            while len(self._queue) >= self.capacity:
+                await self._not_full.wait()
+            self._queue.append(msg)
+            self._not_empty.notify()
+
+    async def get(self) -> AsyncMessage:
+        async with self._lock:
+            while not self._queue:
+                await self._not_empty.wait()
+            msg = self._queue.pop(0)
+            self._not_full.notify()
+            return msg
+
+    @property
+    def queue(self):
+        return self
+
+    @property
+    def size(self) -> int:
+        return len(self._queue)
 
 
 class AsyncRedisConnection:
@@ -23,20 +66,26 @@ class AsyncRedisConnection:
             self._connection = CyRedisConnection(self.host, self.port)
         return self._connection
 
+    def connect(self) -> int:
+        """Establish connection; returns 0 on success."""
+        conn = self._get_connection()
+        result = conn.connect()
+        return 0 if result == 0 else -1
+
+    def disconnect(self):
+        """Close the underlying connection."""
+        if self._connection is not None:
+            self._connection.disconnect()
+            self._connection = None
+
     def execute_command(self, command):
         """Execute command synchronously"""
         return self._get_connection().execute_command(command)
 
-    async def execute_command_async(self, command):
-        """Execute command asynchronously using thread pool"""
-        loop = asyncio.get_event_loop()
-        executor = ThreadPoolExecutor(max_workers=1)
-
-        try:
-            result = await loop.run_in_executor(executor, self.execute_command, command)
-            return result
-        finally:
-            executor.shutdown(wait=True)
+    async def execute_command_async(self, command, executor=None):
+        """Execute command asynchronously using the provided (or running loop's) executor."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(executor, self.execute_command, command)
 
 
 class AsyncRedisClient:
@@ -49,6 +98,8 @@ class AsyncRedisClient:
         self.connections = []
         self.executor = None
         self._loop = None
+        self._pool = None
+        self.running = False
 
     async def __aenter__(self):
         """Async context manager entry"""
@@ -60,81 +111,110 @@ class AsyncRedisClient:
         await self.close()
 
     async def _ensure_loop(self):
-        """Ensure we have a uvloop event loop"""
-        try:
-            loop = asyncio.get_running_loop()
-            if not isinstance(loop, uvloop.Loop):
-                # Replace with uvloop if not already using it
-                asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-                # Can't replace running loop, so we'll work with what we have
-        except RuntimeError:
-            # No running loop, create uvloop
-            asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-            asyncio.set_event_loop(uvloop.new_event_loop())
-
-        self._loop = asyncio.get_event_loop()
+        """Initialise executor and optionally install uvloop if not already running."""
         if self.executor is None:
             self.executor = ThreadPoolExecutor(max_workers=self.max_connections)
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            if _HAS_UVLOOP:
+                asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+                asyncio.set_event_loop(uvloop.new_event_loop())
+            self._loop = asyncio.get_event_loop()
 
-    async def close(self):
-        """Close the client and cleanup resources"""
-        if self.executor:
+    def start_workers(self):
+        """Start background worker threads."""
+        if self.executor is None:
+            self.executor = ThreadPoolExecutor(max_workers=self.max_connections)
+        self.running = True
+
+    def stop_workers(self):
+        """Stop background worker threads."""
+        self.running = False
+        if self.executor is not None:
             self.executor.shutdown(wait=True)
             self.executor = None
 
+    async def close(self):
+        """Close the client and cleanup resources."""
+        self.running = False
+        if self.executor:
+            self.executor.shutdown(wait=True)
+            self.executor = None
+        self._pool = None
+
     def _get_connection(self):
-        """Get or create a connection from pool"""
-        # Simple implementation - just create new connections up to max
-        if len(self.connections) < self.max_connections:
-            conn = AsyncRedisConnection(self.host, self.port)
-            self.connections.append(conn)
-            return conn
+        """Get a CyRedisConnectionPool-backed connection."""
+        if self._pool is None:
+            self._pool = CyRedisConnectionPool(
+                self.host, self.port, self.max_connections
+            )
+        return self._pool.get_connection()
 
-        # Round-robin through existing connections
-        return self.connections[len(self.connections) % self.max_connections]
+    def _return_connection(self, conn):
+        if self._pool is not None and conn is not None:
+            self._pool.return_connection(conn)
 
-    async def execute(self, command):
-        """Execute Redis command asynchronously using thread pool"""
+    async def execute(self, command: list):
+        """Execute a Redis command (list form) asynchronously."""
         await self._ensure_loop()
-
         conn = self._get_connection()
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(self.executor, conn.execute_command, command)
-        return result
+        try:
+            return await loop.run_in_executor(
+                self.executor, conn.execute_command, command
+            )
+        finally:
+            self._return_connection(conn)
 
     # High-level Redis operations
     async def set(self, key: str, value: str) -> bool:
-        """Set a key-value pair"""
-        result = await self.execute(f"SET {key} {value}")
-        return result == "OK"
+        result = await self.execute(['SET', key, str(value)])
+        return result == 'OK'
 
-    async def get(self, key: str) -> str:
-        """Get the value of a key"""
-        return await self.execute(f"GET {key}")
+    async def get(self, key: str):
+        return await self.execute(['GET', key])
 
     async def delete(self, key: str) -> int:
-        """Delete a key"""
-        result = await self.execute(f"DEL {key}")
-        return int(result) if result else 0
+        result = await self.execute(['DEL', key])
+        return int(result) if result is not None else 0
 
     async def incr(self, key: str) -> int:
-        """Increment a key"""
-        result = await self.execute(f"INCR {key}")
-        return int(result) if result else 0
+        result = await self.execute(['INCR', key])
+        return int(result) if result is not None else 0
 
     async def exists(self, key: str) -> bool:
-        """Check if a key exists"""
-        result = await self.execute(f"EXISTS {key}")
-        return bool(int(result) if result else 0)
+        result = await self.execute(['EXISTS', key])
+        return bool(int(result)) if result is not None else False
 
     async def ping(self) -> str:
-        """Ping Redis server"""
-        return await self.execute("PING")
+        return await self.execute(['PING'])
 
-    async def info(self, section: str = "") -> str:
-        """Get Redis info"""
-        cmd = f"INFO {section}" if section else "INFO"
+    async def info(self, section: str = '') -> str:
+        cmd = ['INFO', section] if section else ['INFO']
         return await self.execute(cmd)
+
+
+class AsyncRedisWrapper:
+    """Facade matching tests expectations, built on AsyncRedisClient."""
+
+    def __init__(self, host: str = "localhost", port: int = 6379, max_connections: int = 10):
+        self._client = AsyncRedisClient(host=host, port=port, max_connections=max_connections)
+
+    async def set(self, key: str, value: str):
+        return await self._client.set(key, value)
+
+    async def get(self, key: str):
+        return await self._client.get(key)
+
+    async def delete(self, key: str):
+        return await self._client.delete(key)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._client.close()
 
 
 # Exception classes

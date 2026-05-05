@@ -6,9 +6,10 @@ Shows connection pooling, health checks, TLS, retry logic, and RESP2/3 support
 
 import time
 import threading
+from typing import Any, Dict
 from production_redis import ProductionRedis, create_production_client
 
-def demonstrate_connection_pooling():
+def demonstrate_connection_pooling() -> None:
     """Demonstrate enhanced connection pooling with health checks."""
     print("🏊 Enhanced Connection Pooling Demo")
     print("=" * 40)

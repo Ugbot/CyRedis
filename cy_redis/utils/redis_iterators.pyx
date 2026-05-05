@@ -314,50 +314,68 @@ cdef class RedisPubSubIterator:
             raise StopAsyncIteration from e
 
     async def _initialize_pubsub(self):
-        """Initialize pub/sub connection."""
-        loop = asyncio.get_event_loop()
+        """Open a dedicated connection, subscribe, and start a reader thread."""
+        import threading
+        import queue as _queue
 
-        def _init_pubsub():
-            # Import redis here to avoid issues in Cython context
-            import redis
-            self.pubsub = self.redis_client.pubsub()
+        loop = asyncio.get_running_loop()
 
-            # Subscribe to channels
+        def _setup():
+            from cy_redis.core.cy_redis_client import CyRedisConnection
+            conn = CyRedisConnection(
+                self.redis_client.pool.get_host(),
+                self.redis_client.pool.get_port(),
+            )
+            if conn.connect() != 0:
+                raise ConnectionError("PubSub connection failed")
+            # Consume subscription confirmation replies
             for channel in self.channels:
-                self.pubsub.subscribe(channel)
+                conn.execute_command(['SUBSCRIBE', channel])
+            return conn
 
-            return True
+        conn = await loop.run_in_executor(None, _setup)
+        self.pubsub = conn
+        self._msg_queue = asyncio.Queue()
 
-        await loop.run_in_executor(None, _init_pubsub)
+        # Background thread: block on read_reply() and put messages into the queue
+        def _reader():
+            while not self.is_closed:
+                try:
+                    reply = conn.read_reply()
+                    # RESP array: ['message', channel, data]
+                    if isinstance(reply, list) and len(reply) == 3 and reply[0] == 'message':
+                        msg = {
+                            'type': 'message',
+                            'channel': reply[1] if isinstance(reply[1], str) else reply[1].decode(),
+                            'data': reply[2] if isinstance(reply[2], str) else reply[2].decode(),
+                        }
+                        loop.call_soon_threadsafe(self._msg_queue.put_nowait, msg)
+                except Exception:
+                    if not self.is_closed:
+                        loop.call_soon_threadsafe(self._msg_queue.put_nowait, None)
+                    break
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
 
     async def _get_next_message(self):
-        """Get next message from pub/sub."""
-        loop = asyncio.get_event_loop()
-
-        def _get_message():
-            if not self.pubsub:
-                return None
-
-            # Get message with timeout
-            message = self.pubsub.get_message(timeout=self.timeout_ms / 1000)
-
-            if message and message['type'] == 'message':
-                return {
-                    'type': 'message',
-                    'channel': message['channel'].decode() if isinstance(message['channel'], bytes) else message['channel'],
-                    'data': message['data'].decode() if isinstance(message['data'], bytes) else message['data']
-                }
-
+        """Wait for the next message from the reader thread."""
+        if not hasattr(self, '_msg_queue'):
+            return None
+        try:
+            msg = await asyncio.wait_for(self._msg_queue.get(), timeout=self.timeout_ms / 1000)
+            return msg
+        except asyncio.TimeoutError:
             return None
 
-        return await loop.run_in_executor(None, _get_message)
-
     def close(self):
-        """Close the iterator."""
+        """Close the iterator and unsubscribe."""
         self.is_closed = True
-        if self.pubsub:
+        if self.pubsub is not None:
             try:
-                self.pubsub.close()
+                for channel in self.channels:
+                    self.pubsub.execute_command(['UNSUBSCRIBE', channel])
+                self.pubsub.disconnect()
             except Exception:
                 pass
             self.pubsub = None

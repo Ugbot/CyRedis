@@ -27,7 +27,16 @@ cdef class LifecycleManager:
     Manages initialization, cleanup, and graceful shutdown with workload yielding.
     """
 
-    def __cinit__(self, CyRedisClient redis_client, str worker_id=None):
+    cdef object redis_client
+    cdef public list startup_hooks
+    cdef public list shutdown_hooks
+    cdef bint is_initialized
+    cdef public str worker_id
+    cdef str worker_status_key
+    cdef str workload_transfer_key
+    cdef str heartbeat_key
+
+    def __cinit__(self, object redis_client, str worker_id=None):
         self.redis_client = redis_client
         self.startup_hooks = []
         self.shutdown_hooks = []

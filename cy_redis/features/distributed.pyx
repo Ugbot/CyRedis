@@ -10,6 +10,7 @@ High-Performance Cython Distributed Systems Components
 Optimized implementations of distributed locks, counters, semaphores, and primitives.
 """
 
+import asyncio
 import time
 import uuid
 from typing import Optional, Any, Dict, List
@@ -25,6 +26,13 @@ cdef class CyDistributedLock:
     High-performance distributed lock using Redis SET NX operations.
     Optimized for low-latency lock acquisition and release.
     """
+
+    cdef object redis
+    cdef readonly str lock_key
+    cdef str lock_value
+    cdef readonly int ttl_ms
+    cdef double retry_delay
+    cdef int max_retries
 
     def __cinit__(self, redis_client, str lock_key,
                   str lock_value=None, int ttl_ms=30000,
@@ -172,6 +180,13 @@ cdef class CyReadWriteLock:
     Optimized for high-throughput read operations.
     """
 
+    cdef object redis
+    cdef readonly str base_key
+    cdef str read_key
+    cdef str write_key
+    cdef int ttl_ms
+    cdef str client_id
+
     def __cinit__(self, redis_client, str lock_key,
                   int ttl_ms=30000):
         self.redis = redis_client
@@ -189,9 +204,9 @@ cdef class CyReadWriteLock:
         cdef double start_time = time.time()
 
         while True:
-            # Check if write lock is held
+            # Check if write lock is held (any writer blocks all readers)
             write_owner = self.redis.get(self.write_key)
-            if write_owner is not None and write_owner != self.client_id:
+            if write_owner is not None:
                 if not blocking:
                     return False
 
@@ -306,6 +321,3 @@ cdef class CyReadWriteLock:
 
 # Additional classes will be implemented...
 # CySemaphore, CyDistributedCounter, CyLeaderElection
-
-# Import asyncio for async methods
-import asyncio

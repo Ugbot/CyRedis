@@ -2,26 +2,27 @@
 Unit tests for protocol.pyx - RESP protocol support
 """
 import pytest
-from cy_redis.protocol import (
+from typing import Any
+from cy_redis.core.protocol import (
     RESPParser, ProtocolNegotiator, ConnectionState,
     PushMessageHandler, RedisProtocol, RedisProtocolError
 )
 
 
 @pytest.fixture
-def resp_parser():
+def resp_parser() -> RESPParser:
     """Create a RESP parser for testing"""
     return RESPParser(protocol_version=2)
 
 
 @pytest.fixture
-def resp3_parser():
+def resp3_parser() -> RESPParser:
     """Create a RESP3 parser for testing"""
     return RESPParser(protocol_version=3)
 
 
 @pytest.fixture
-def connection_state():
+def connection_state() -> ConnectionState:
     """Create a connection state tracker"""
     return ConnectionState()
 
@@ -191,12 +192,12 @@ class TestProtocolConstants:
 
     def test_resp2_constant(self):
         """Test RESP2 constant"""
-        from cy_redis.protocol import RESP2
+        from cy_redis.core.protocol import RESP2
         assert RESP2 == 2
 
     def test_resp3_constant(self):
         """Test RESP3 constant"""
-        from cy_redis.protocol import RESP3
+        from cy_redis.core.protocol import RESP3
         assert RESP3 == 3
 
 

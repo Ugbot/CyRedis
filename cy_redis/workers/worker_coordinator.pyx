@@ -24,7 +24,13 @@ cdef class WorkerCoordinator:
     Handles worker registration, health monitoring, and workload distribution.
     """
 
-    def __cinit__(self, CyRedisClient redis_client, str coordinator_id=None):
+    cdef object redis_client
+    cdef readonly str coordinator_id
+    cdef str worker_status_key
+    cdef str dead_workers_key
+    cdef str workload_distribution_key
+
+    def __cinit__(self, object redis_client, str coordinator_id=None):
         self.redis_client = redis_client
         self.coordinator_id = coordinator_id or f"coordinator_{int(time.time())}"
         self.worker_status_key = "workers:status"

@@ -4,18 +4,19 @@ Unit tests for messaging.pyx - Messaging primitives
 import pytest
 import time
 import uuid
-from cy_redis.messaging import CyReliableQueue, ReliableQueue
-from cy_redis.cy_redis_client import CyRedisClient
+from typing import Generator, Any
+from cy_redis.communication.messaging import CyReliableQueue, ReliableQueue
+from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 @pytest.fixture
-def redis_client():
+def redis_client() -> CyRedisClient:
     """Create a Redis client for testing"""
     return CyRedisClient(host="localhost", port=6379)
 
 
 @pytest.fixture
-def reliable_queue(redis_client):
+def reliable_queue(redis_client: CyRedisClient) -> Generator[CyReliableQueue, None, None]:
     """Create a reliable queue for testing"""
     queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
     queue = CyReliableQueue(

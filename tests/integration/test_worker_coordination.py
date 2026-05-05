@@ -23,8 +23,8 @@ try:
         MultiSessionTracker,
         ConcurrentSharedDict
     )
-    CYREDIS_WEB_AVAILABLE = True
-except ImportError:
+    CYREDIS_WEB_AVAILABLE = WebApplicationSupport is not None
+except Exception:
     CYREDIS_WEB_AVAILABLE = False
 
 

@@ -5,11 +5,12 @@ Simple test script to verify sync Redis functionality
 
 import sys
 import os
+from typing import NoReturn
 
 # Add the package to path for testing
 sys.path.insert(0, os.path.dirname(__file__))
 
-def test_sync_redis():
+def test_sync_redis() -> None:
     """Test the sync Redis client"""
 
     try:

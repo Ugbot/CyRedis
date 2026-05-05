@@ -10,6 +10,7 @@ High-Performance Cython Messaging Components
 Optimized implementations of queues, streams, pubsub, and messaging patterns.
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -20,11 +21,21 @@ from concurrent.futures import ThreadPoolExecutor
 from cy_redis.core.cy_redis_client import CyRedisClient
 
 
-# Reliable Queue with C-level optimization
 cdef class CyReliableQueue:
     """
     High-performance reliable queue with visibility timeouts, retries, and dead letter queues.
     """
+
+    cdef object redis
+    cdef readonly str queue_name
+    cdef readonly int visibility_timeout
+    cdef readonly int max_retries
+    cdef str dead_letter_queue
+    cdef str pending_key
+    cdef str processing_key
+    cdef str failed_key
+    cdef str dead_key
+    cdef object executor
 
     def __cinit__(self, redis_client, str queue_name,
                   int visibility_timeout=30, int max_retries=3,
@@ -44,8 +55,11 @@ cdef class CyReliableQueue:
         self.executor = ThreadPoolExecutor(max_workers=4)
 
     def __dealloc__(self):
-        if self.executor:
-            self.executor.shutdown(wait=True)
+        if self.executor is not None:
+            try:
+                self.executor.shutdown(wait=True)
+            except Exception:
+                pass
 
     def push(self, message, int priority=0, int delay=0):
         """
@@ -141,8 +155,10 @@ cdef class CyReliableQueue:
             message_id: ID of the message to acknowledge
         """
         try:
-            # Remove from processing queue
-            self.redis.execute_command(['ZREM', self.processing_key, message_id])
+            # ZREM returns the count of removed elements; 0 means message was not found
+            removed = self.redis.execute_command(['ZREM', self.processing_key, message_id])
+            if not removed:
+                return False
             self.redis.delete(f"{self.processing_key}:{message_id}")
             return True
         except Exception as e:
@@ -268,6 +284,3 @@ class ReliableQueue:
 
 # Additional messaging classes will be implemented...
 # CyPubSubHub, CyStreamConsumerGroup, CyWorkerQueue, CyAMQPRouter
-
-# Import asyncio for async methods
-import asyncio

@@ -4,10 +4,10 @@ Unit tests for script_manager.pyx - Lua script management
 import pytest
 import hashlib
 import uuid
-from cy_redis.script_manager import (
+from cy_redis.features.script_manager import (
     CyLuaScriptManager, OptimizedLuaScriptManager
 )
-from cy_redis.cy_redis_client import CyRedisClient
+from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 @pytest.fixture

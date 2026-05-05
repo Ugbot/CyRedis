@@ -41,11 +41,11 @@ cdef extern from "hiredis.h":
         redisReply **element
 
     redisContext *redisConnect(const char *ip, int port)
-    redisContext *redisConnectWithTimeout(const char *ip, int port, const timeval *tv)
     redisContext *redisConnectUnix(const char *path)
     void redisFree(redisContext *c)
     int redisReconnect(redisContext *c)
     redisReply *redisCommand(redisContext *c, const char *format, ...)
+    redisReply *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen)
     void freeReplyObject(redisReply *reply)
 
 cdef extern from "hiredis/read.h":
@@ -232,88 +232,125 @@ cdef class MessageQueue:
         pthread_mutex_unlock(&self.queue.lock)
         return 0
 
+class _RedisStateProxy:
+    """Python proxy providing access to C-level connection state fields."""
+    __slots__ = ['state']
+    def __init__(self, s):
+        self.state = s
+
 # Redis connection with hiredis
 cdef class RedisConnection:
-    cdef ConnectionState *state
+    cdef ConnectionState *_cs
+
+    @property
+    def state(self):
+        """Python-accessible connection state proxy."""
+        return _RedisStateProxy(self._cs.state)
 
     def __cinit__(self, str host="localhost", int port=6379):
-        self.state = <ConnectionState*>malloc(sizeof(ConnectionState))
-        if self.state == NULL:
+        self._cs = <ConnectionState*>malloc(sizeof(ConnectionState))
+        if self._cs == NULL:
             raise MemoryError("Failed to allocate connection state")
 
-        memset(self.state, 0, sizeof(ConnectionState))
-        self.state.state = CONN_DISCONNECTED
-        self.state.host = strdup(host.encode('utf-8'))
-        self.state.port = port
-        self.state.buffer_size = BUFFER_SIZE
-        self.state.buffer = <char*>malloc(BUFFER_SIZE)
-        if self.state.buffer == NULL:
-            free(self.state)
+        memset(self._cs, 0, sizeof(ConnectionState))
+        self._cs.state = CONN_DISCONNECTED
+        self._cs.host = strdup(host.encode('utf-8'))
+        self._cs.port = port
+        self._cs.buffer_size = BUFFER_SIZE
+        self._cs.buffer = <char*>malloc(BUFFER_SIZE)
+        if self._cs.buffer == NULL:
+            free(self._cs)
             raise MemoryError("Failed to allocate buffer")
 
     def __dealloc__(self):
-        if self.state != NULL:
-            if self.state.ctx != NULL:
-                redisFree(self.state.ctx)
-            if self.state.host != NULL:
-                free(self.state.host)
-            if self.state.buffer != NULL:
-                free(self.state.buffer)
-            free(self.state)
+        if self._cs != NULL:
+            if self._cs.ctx != NULL:
+                redisFree(self._cs.ctx)
+            if self._cs.host != NULL:
+                free(self._cs.host)
+            if self._cs.buffer != NULL:
+                free(self._cs.buffer)
+            free(self._cs)
 
-    cdef int connect(self) nogil:
+    cdef int _connect(self):
         """Establish connection to Redis server using hiredis"""
-        cdef timeval tv
-        tv.tv_sec = CONNECTION_TIMEOUT / 1000
-        tv.tv_usec = (CONNECTION_TIMEOUT % 1000) * 1000
-
-        self.state.ctx = redisConnectWithTimeout(self.state.host, self.state.port, &tv)
-        if self.state.ctx == NULL or self.state.ctx.err:
-            self.state.state = CONN_ERROR
+        self._cs.ctx = redisConnect(self._cs.host, self._cs.port)
+        if self._cs.ctx == NULL or self._cs.ctx.err:
+            self._cs.state = CONN_ERROR
             return -1
 
-        self.state.state = CONN_CONNECTED
-        self.state.fd = self.state.ctx.fd
-        self.state.last_activity = <uint64_t>(time.time() * 1000000)
+        self._cs.state = CONN_CONNECTED
+        self._cs.fd = self._cs.ctx.fd
+        self._cs.last_activity = <uint64_t>(time.time() * 1000000)
         return 0
 
-    cdef int disconnect(self) nogil:
+    def connect(self):
+        """Python-accessible connect"""
+        if self._connect() != 0:
+            raise ConnectionError("Failed to connect to Redis")
+
+    cdef int _disconnect(self):
         """Disconnect from Redis server"""
-        if self.state.ctx != NULL:
-            redisFree(self.state.ctx)
-            self.state.ctx = NULL
+        if self._cs.ctx != NULL:
+            redisFree(self._cs.ctx)
+            self._cs.ctx = NULL
 
-        self.state.state = CONN_DISCONNECTED
+        self._cs.state = CONN_DISCONNECTED
         return 0
 
-    cdef object execute_command(self, list args):
+    def disconnect(self):
+        """Python-accessible disconnect"""
+        self._disconnect()
+
+    def execute_command(self, args):
+        """Python-accessible execute_command"""
+        return self._execute_command(list(args))
+
+    cdef object _execute_command(self, list args):
         """Execute Redis command using hiredis"""
-        if self.state.state != CONN_CONNECTED:
-            if self.connect() != 0:
+        if self._cs.state != CONN_CONNECTED:
+            if self._connect() != 0:
                 raise ConnectionError("Failed to connect to Redis")
 
-        # Build command string
-        cdef str cmd = "*%d\r\n" % len(args)
-        for arg in args:
-            if isinstance(arg, str):
-                arg_bytes = arg.encode('utf-8')
-            elif isinstance(arg, bytes):
-                arg_bytes = arg
-            else:
-                arg_bytes = str(arg).encode('utf-8')
-            cmd += "$%d\r\n%s\r\n" % (len(arg_bytes), arg_bytes.decode('utf-8'))
+        cdef int argc = len(args)
+        cdef char **argv = <char **>malloc(sizeof(char *) * argc)
+        cdef size_t *argvlen = <size_t *>malloc(sizeof(size_t) * argc)
+        cdef redisReply *reply
+        cdef list arg_bytes_list = []
+        cdef int i
+        cdef bytes arg_bytes
 
-        cdef bytes cmd_bytes = cmd.encode('utf-8')
-        cdef redisReply *reply = redisCommand(self.state.ctx, cmd_bytes)
-        if reply == NULL:
-            raise ConnectionError("Redis command failed")
+        if argv == NULL or argvlen == NULL:
+            if argv != NULL: free(argv)
+            if argvlen != NULL: free(argvlen)
+            raise MemoryError("Failed to allocate command args")
 
         try:
-            result = self._parse_reply(reply)
-            return result
+            for i in range(argc):
+                if isinstance(args[i], str):
+                    arg_bytes = (<str>args[i]).encode('utf-8')
+                elif isinstance(args[i], bytes):
+                    arg_bytes = <bytes>args[i]
+                else:
+                    arg_bytes = str(args[i]).encode('utf-8')
+                arg_bytes_list.append(arg_bytes)
+                argv[i] = <char *>arg_bytes_list[i]
+                argvlen[i] = len(arg_bytes_list[i])
+
+            reply = redisCommandArgv(self._cs.ctx, argc,
+                                     <const char **>argv, <const size_t *>argvlen)
+            if reply == NULL:
+                raise ConnectionError("Redis command failed")
+
+            try:
+                result = self._parse_reply(reply)
+                self._cs.last_activity = <uint64_t>(time.time() * 1000000)
+                return result
+            finally:
+                freeReplyObject(reply)
         finally:
-            freeReplyObject(reply)
-            self.state.last_activity = <uint64_t>(time.time() * 1000000)
+            free(argv)
+            free(argvlen)
 
     cdef object _parse_reply(self, redisReply *reply):
         """Parse Redis reply into Python object"""
@@ -334,11 +371,11 @@ cdef class RedisConnection:
 
 # Connection pool
 cdef class ConnectionPool:
-    cdef list connections
-    cdef int max_connections
+    cdef public list connections
+    cdef readonly int max_connections
     cdef object lock
-    cdef str host
-    cdef int port
+    cdef readonly str host
+    cdef readonly int port
     cdef double timeout
 
     def __cinit__(self, str host="localhost", int port=6379, int max_connections=10, double timeout=5.0):
@@ -349,24 +386,25 @@ cdef class ConnectionPool:
         self.port = port
         self.timeout = timeout
 
-    cdef RedisConnection get_connection(self):
+    cpdef get_connection(self):
         """Get a connection from the pool"""
         with self.lock:
             if self.connections:
                 return self.connections.pop()
             elif len(self.connections) < self.max_connections:
                 conn = RedisConnection(self.host, self.port)
-                conn.connect()
+                conn._connect()
                 return conn
         return None
 
-    cdef void return_connection(self, RedisConnection conn):
+    cpdef return_connection(self, conn):
         """Return connection to pool"""
+        cdef RedisConnection c = conn
         with self.lock:
-            if len(self.connections) < self.max_connections and conn.state.state == CONN_CONNECTED:
-                self.connections.append(conn)
+            if len(self.connections) < self.max_connections and c.state.state == CONN_CONNECTED:
+                self.connections.append(c)
             else:
-                conn.disconnect()
+                c._disconnect()
 
 # Main Redis client
 cdef class CyRedisClient:
@@ -390,7 +428,7 @@ cdef class CyRedisClient:
     def set(self, str key, str value, int ex=-1, int px=-1, bint nx=False, bint xx=False):
         """SET command through hiredis"""
         cdef RedisConnection conn = self.pool.get_connection()
-        if conn == NULL:
+        if conn is None:
             raise ConnectionError("No available connections")
 
         try:
@@ -403,68 +441,68 @@ cdef class CyRedisClient:
                 args.append('NX')
             elif xx:
                 args.append('XX')
-            return conn.execute_command(args)
+            return conn._execute_command(args)
         finally:
             self.pool.return_connection(conn)
 
     def get(self, str key):
         """GET command through hiredis"""
         cdef RedisConnection conn = self.pool.get_connection()
-        if conn == NULL:
+        if conn is None:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GET', key])
+            return conn._execute_command(['GET', key])
         finally:
             self.pool.return_connection(conn)
 
     def delete(self, str key):
         """DEL command through hiredis"""
         cdef RedisConnection conn = self.pool.get_connection()
-        if conn == NULL:
+        if conn is None:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['DEL', key])
+            return conn._execute_command(['DEL', key])
         finally:
             self.pool.return_connection(conn)
 
     def publish(self, str channel, str message):
         """PUBLISH command through hiredis"""
         cdef RedisConnection conn = self.pool.get_connection()
-        if conn == NULL:
+        if conn is None:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['PUBLISH', channel, message])
+            return conn._execute_command(['PUBLISH', channel, message])
         finally:
             self.pool.return_connection(conn)
 
     def xadd(self, str stream, dict data, str message_id='*'):
         """XADD command through hiredis"""
         cdef RedisConnection conn = self.pool.get_connection()
-        if conn == NULL:
+        if conn is None:
             raise ConnectionError("No available connections")
 
         try:
             args = ['XADD', stream, message_id]
             for k, v in data.items():
                 args.extend([k, str(v)])
-            return conn.execute_command(args)
+            return conn._execute_command(args)
         finally:
             self.pool.return_connection(conn)
 
     def xread(self, dict streams, int count=10, int block=1000):
         """XREAD command through hiredis"""
         cdef RedisConnection conn = self.pool.get_connection()
-        if conn == NULL:
+        if conn is None:
             raise ConnectionError("No available connections")
 
         try:
             args = ['XREAD', 'COUNT', str(count), 'BLOCK', str(block), 'STREAMS']
             args.extend(streams.keys())
             args.extend(streams.values())
-            result = conn.execute_command(args)
+            result = conn._execute_command(args)
             if result is None:
                 return []
             return self._parse_xread_result(result)

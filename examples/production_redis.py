@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+from typing import Any, Optional
 Production Redis Client - Enterprise-ready with connection pooling, TLS, health checks, and retry logic
 """
 

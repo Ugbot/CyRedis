@@ -9,7 +9,7 @@ from libc.stdint cimport uint64_t
 
 # System time struct
 cdef extern from "sys/time.h":
-    ctypedef struct timeval:
+    cdef struct timeval:
         long tv_sec
         long tv_usec
 
@@ -23,8 +23,8 @@ cdef extern from "hiredis.h":
         char *obuf
         void *reader
         int connection_type
-        struct timeval *connect_timeout
-        struct timeval *command_timeout
+        timeval *connect_timeout
+        timeval *command_timeout
         void *privdata
         void (*free_privdata)(void *)
         void *privctx
@@ -40,7 +40,6 @@ cdef extern from "hiredis.h":
 
     # Core connection functions
     redisContext *redisConnect(const char *ip, int port)
-    redisContext *redisConnectWithTimeout(const char *ip, int port, struct timeval tv)
     redisContext *redisConnectUnix(const char *path)
     void redisFree(redisContext *c)
     int redisReconnect(redisContext *c)
@@ -69,41 +68,47 @@ DEF REDIS_ERR = -1
 # Connection wrapper class - properly wraps hiredis redisContext
 cdef class CyRedisConnection:
     cdef redisContext *ctx
-    cdef bint connected
-    cdef str host
-    cdef int port
-    cdef double timeout
+    cdef bint _connected
+    cdef str _host
+    cdef int _port
+    cdef double _timeout
+    cdef int _protocol_version
 
-    cdef int connect(self)
-    cdef void disconnect(self)
-    cdef object execute_command(self, list args)
+    cdef int _connect(self)
+    cdef void _disconnect(self)
+    cdef object _execute_raw(self, list args)
+    cdef object _ensure_connected_and_run(self, list args)
+    cpdef object _execute_command(self, list args)
     cdef object _parse_reply(self, redisReply *reply)
 
 # Connection pool class - manages multiple CyRedisConnection instances
 cdef class CyRedisConnectionPool:
-    cdef object connections  # List of CyRedisConnection instances
-    cdef int max_connections
-    cdef object lock
-    cdef str host
-    cdef int port
-    cdef double timeout
+    cdef object _connections
+    cdef int _max_connections
+    cdef int _in_use
+    cdef int _total_created
+    cdef object _lock
+    cdef object _semaphore
+    cdef double _wait_timeout
+    cdef str _host
+    cdef int _port
+    cdef double _timeout
 
-    cdef CyRedisConnection get_connection(self)
-    cdef void return_connection(self, CyRedisConnection conn)
+    cpdef CyRedisConnection get_connection(self)
+    cpdef void return_connection(self, CyRedisConnection conn)
+
+# Pipeline class - batches commands into one round trip
+cdef class CyRedisPipeline:
+    cdef CyRedisConnection _conn
+    cdef CyRedisConnectionPool _pool
+    cdef int _queued
 
 # Main client class - provides high-level Redis operations
 cdef class CyRedisClient:
-    cdef CyRedisConnectionPool pool
-    cdef object executor
-    cdef dict stream_offsets
-    cdef object offset_lock
+    cdef CyRedisConnectionPool _pool
+    cdef object _executor
+    cdef dict _stream_offsets
+    cdef object _offset_lock
 
     cdef list _parse_xread_result(self, list result)
-
-    # Lua script support
-    cpdef object eval(self, str script, list keys=?, list args=?)
-    cpdef object evalsha(self, str sha, list keys=?, list args=?)
-    cpdef str script_load(self, str script)
-    cpdef str script_kill(self)
-    cpdef str script_flush(self)
-    cpdef list script_exists(self, list shas)
+    cdef void _negotiate_protocol(self)

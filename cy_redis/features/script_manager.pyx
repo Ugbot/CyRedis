@@ -25,7 +25,7 @@ cdef class CyLuaScriptManager:
     """
 
     cdef CyRedisClient redis
-    cdef str namespace
+    cdef readonly str namespace
     cdef dict loaded_scripts  # script_name -> sha
     cdef dict script_versions  # script_name -> version
     cdef dict script_sources   # script_name -> source_code
@@ -473,18 +473,18 @@ class OptimizedLuaScriptManager:
     Drop-in replacement for LuaScriptManager with better performance.
     """
 
-    def __init__(self, redis_client=None, namespace: str = "scripts"):
-        if redis_client is None:
-            from optimized_redis import OptimizedRedis
-            redis_client = OptimizedRedis()
-
-        # Use the Cython backend if available, otherwise fallback
-        try:
-            self._impl = CyLuaScriptManager(redis_client.client, namespace)
-        except AttributeError:
-            # Fallback to Python implementation
-            from redis_wrapper import LuaScriptManager
-            self._impl = LuaScriptManager(redis_client, namespace)
+    def __init__(self, redis_client, namespace: str = "scripts"):
+        """
+        redis_client must be a CyRedisClient instance (or an object whose
+        ._client attribute is a CyRedisClient).
+        """
+        from cy_redis.core.cy_redis_client import CyRedisClient as _CyRC
+        raw = getattr(redis_client, '_client', redis_client)
+        if not isinstance(raw, _CyRC):
+            raise TypeError(
+                f"redis_client must be a CyRedisClient, got {type(raw).__name__}"
+            )
+        self._impl = CyLuaScriptManager(raw, namespace)
 
     def register_script(self, name: str, script: str, version: str = "1.0.0",
                        metadata: dict = None) -> str:

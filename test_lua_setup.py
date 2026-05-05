@@ -12,21 +12,22 @@ Tests Lua script functionality including:
 import subprocess
 import sys
 import os
+from typing import Optional, List
 
 # Colors
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-YELLOW = '\033[1;33m'
-BLUE = '\033[0;34m'
-NC = '\033[0m'
+RED: str = '\033[0;31m'
+GREEN: str = '\033[0;32m'
+YELLOW: str = '\033[1;33m'
+BLUE: str = '\033[0;34m'
+NC: str = '\033[0m'
 
 
 class LuaTestRunner:
     """Test Lua functionality"""
 
-    def __init__(self):
-        self.passed = 0
-        self.failed = 0
+    def __init__(self) -> None:
+        self.passed: int = 0
+        self.failed: int = 0
 
     def print_header(self, text):
         print(f"\n{BLUE}{'=' * 70}{NC}")

@@ -3,7 +3,7 @@ Unit tests for redis_core.pyx - Basic Redis operations
 """
 import pytest
 import time
-from cy_redis.redis_core import CyRedisClient, RedisConnection, ConnectionPool, MessageQueue
+from cy_redis.core.redis_core import CyRedisClient, RedisConnection, ConnectionPool, MessageQueue
 
 
 @pytest.fixture

@@ -9,6 +9,7 @@
 Advanced CyRedis Features - SIMD Operations, Compression, and Performance Optimizations
 """
 
+import asyncio
 import time
 import json
 import zlib
@@ -441,7 +442,3 @@ cdef class CyAdvancedRedisClient:
         """Async bulk get."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, self.mget, keys)
-
-
-# Import asyncio for async methods
-import asyncio

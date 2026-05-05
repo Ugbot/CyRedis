@@ -31,7 +31,11 @@ def setup_python_path():
     """Add project root to Python path for imports."""
     project_root = Path(__file__).parent.parent
     sys.path.insert(0, str(project_root))
+    # Also ensure cy_redis package root is importable
+    cy_path = project_root / "cy_redis"
+    sys.path.insert(0, str(cy_path))
     yield
+    sys.path.remove(str(cy_path))
     sys.path.remove(str(project_root))
 
 

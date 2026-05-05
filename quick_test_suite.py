@@ -8,30 +8,31 @@ import sys
 import time
 import subprocess
 import json
+from typing import Callable, Any
 
 # Color codes
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-YELLOW = '\033[1;33m'
-BLUE = '\033[0;34m'
-NC = '\033[0m'  # No Color
+RED: str = '\033[0;31m'
+GREEN: str = '\033[0;32m'
+YELLOW: str = '\033[1;33m'
+BLUE: str = '\033[0;34m'
+NC: str = '\033[0m'  # No Color
 
 
 class TestRunner:
     """Automated test runner"""
 
-    def __init__(self):
-        self.passed = 0
-        self.failed = 0
-        self.skipped = 0
+    def __init__(self) -> None:
+        self.passed: int = 0
+        self.failed: int = 0
+        self.skipped: int = 0
 
-    def print_header(self, text):
+    def print_header(self, text: str) -> None:
         """Print section header"""
         print(f"\n{BLUE}{'=' * 70}{NC}")
         print(f"{BLUE}{text}{NC}")
         print(f"{BLUE}{'=' * 70}{NC}\n")
 
-    def run_test(self, name, func):
+    def run_test(self, name: str, func: Callable[[], None]) -> bool:
         """Run a single test"""
         print(f"  Testing: {name}...", end=" ", flush=True)
         try:
@@ -50,7 +51,7 @@ class TestRunner:
             self.skipped += 1
             return False
 
-    def print_summary(self, duration):
+    def print_summary(self, duration: float) -> bool:
         """Print test summary"""
         self.print_header("TEST SUMMARY")
         total = self.passed + self.failed + self.skipped
@@ -80,7 +81,7 @@ class TestRunner:
             return False
 
 
-def test_redis_connection():
+def test_redis_connection() -> None:
     """Test Redis is accessible"""
     result = subprocess.run(
         ['redis-cli', 'ping'],
@@ -92,7 +93,7 @@ def test_redis_connection():
     assert 'PONG' in result.stdout, "Unexpected Redis response"
 
 
-def test_redis_set_get():
+def test_redis_set_get() -> None:
     """Test basic SET/GET operations"""
     # SET
     result = subprocess.run(
@@ -319,7 +320,7 @@ def test_lua_scripts_directory():
     assert len(lua_files) >= 4, f"Expected at least 4 Lua scripts, found {len(lua_files)}"
 
 
-def main():
+def main() -> int:
     """Main test runner"""
     print()
     print("╔" + "=" * 68 + "╗")

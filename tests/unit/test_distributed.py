@@ -5,8 +5,8 @@ import pytest
 import time
 import threading
 import uuid
-from cy_redis.distributed import CyDistributedLock, CyReadWriteLock
-from cy_redis.cy_redis_client import CyRedisClient
+from cy_redis.features.distributed import CyDistributedLock, CyReadWriteLock
+from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 @pytest.fixture

@@ -6,9 +6,10 @@ This file contains shared fixtures and configuration for all unit tests.
 import pytest
 import os
 import sys
+from typing import Any, List
 
 
-def pytest_configure(config):
+def pytest_configure(config: Any) -> None:
     """Configure pytest"""
     # Add custom markers
     config.addinivalue_line(
@@ -23,10 +24,16 @@ def pytest_configure(config):
 
 
 @pytest.fixture(scope="session")
-def redis_available():
+def redis_available() -> bool:
     """Check if Redis is available for testing"""
     try:
-        from cy_redis.cy_redis_client import CyRedisClient
+        # Prefer the compiled core client; fallback to top-level if present
+        try:
+            from cy_redis.core.cy_redis_client import CyRedisClient
+        except ImportError:
+            from cy_redis.core.cy_redis_client import CyRedisClient
+        if CyRedisClient is None:
+            return False
         client = CyRedisClient(host="localhost", port=6379)
         client.set("pytest_test", "ok")
         result = client.get("pytest_test")
@@ -37,14 +44,14 @@ def redis_available():
 
 
 @pytest.fixture(autouse=True)
-def check_redis(request, redis_available):
+def check_redis(request: Any, redis_available: bool) -> None:
     """Automatically skip tests that require Redis if it's not available"""
     if request.node.get_closest_marker('redis'):
         if not redis_available:
             pytest.skip('Redis not available')
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config: Any, items: List[Any]) -> None:
     """Modify test collection"""
     for item in items:
         # Automatically mark tests that use redis_client fixture

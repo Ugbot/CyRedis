@@ -14,8 +14,9 @@ import os
 import time
 import psycopg2
 from pathlib import Path
+from typing import Optional, Tuple, List, Dict, Any
 
-def check_redis_module():
+def check_redis_module() -> bool:
     """Check if pgcache module is loaded in Redis"""
     try:
         result = subprocess.run(
@@ -34,7 +35,7 @@ def check_redis_module():
         print(f"❌ Failed to check Redis modules: {e}")
         return False
 
-def load_redis_module():
+def load_redis_module() -> bool:
     """Load pgcache module into Redis"""
     try:
         # Assuming the module is built and available

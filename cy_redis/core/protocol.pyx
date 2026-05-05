@@ -43,9 +43,9 @@ DEF REDIS_REPLY_VERBATIM = 12
 DEF REDIS_REPLY_BIGNUM = 13
 DEF REDIS_REPLY_ATTRIBUTE = 14
 
-# Protocol version constants
-DEF RESP2 = 2
-DEF RESP3 = 3
+# Protocol version constants (module-level for Python import and default params)
+RESP2 = 2
+RESP3 = 3
 
 # Exception classes
 class RedisProtocolError(Exception):
@@ -63,7 +63,7 @@ cdef class PushMessageHandler:
     """
 
     cdef list push_messages
-    cdef object push_callback
+    cdef public object push_callback
 
     def __cinit__(self):
         self.push_messages = []
@@ -99,8 +99,8 @@ cdef class RESPParser:
     High-performance RESP2/3 parser with support for all data types
     """
 
-    cdef int protocol_version
-    cdef PushMessageHandler push_handler
+    cdef readonly int protocol_version
+    cdef readonly PushMessageHandler push_handler
 
     def __cinit__(self, int protocol_version=RESP2):
         self.protocol_version = protocol_version
@@ -287,12 +287,12 @@ cdef class ConnectionState:
     Tracks connection state including protocol version and capabilities
     """
 
-    cdef int protocol_version
-    cdef bint supports_resp3
+    cdef public int protocol_version
+    cdef public bint supports_resp3
     cdef bint supports_pipelining
     cdef bint supports_scripts
     cdef bint supports_pubsub
-    cdef dict server_info
+    cdef public dict server_info
 
     def __cinit__(self):
         self.protocol_version = RESP2

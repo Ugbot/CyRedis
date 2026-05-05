@@ -9,7 +9,12 @@ This module contains the fundamental building blocks of CyRedis:
 - Core Redis operations
 """
 
+from typing import Optional, Any, Callable
+
 # Import async client
+_async_available: bool
+AsyncRedisClient: Optional[Any]
+create_async_client: Optional[Callable]
 try:
     from .async_core import AsyncRedisClient, create_async_client
     _async_available = True

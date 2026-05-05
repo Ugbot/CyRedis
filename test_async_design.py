@@ -6,11 +6,12 @@ Test script to validate the async Redis design
 import asyncio
 import sys
 import os
+from typing import Coroutine, Any
 
 # Add the package to path for testing
 sys.path.insert(0, os.path.dirname(__file__))
 
-async def test_async_design():
+async def test_async_design() -> bool:
     """Test the async Redis client design"""
 
     try:

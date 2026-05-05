@@ -3,9 +3,11 @@
 Advanced Redis Client - High-performance Redis with compression, bulk ops, and monitoring
 """
 
+from typing import Any, Optional, List, Dict, Union, Coroutine
+
 try:
     from cy_redis.advanced import CyAdvancedRedisClient as AdvancedRedisClient
-    _ADVANCED_AVAILABLE = True
+    _ADVANCED_AVAILABLE: bool = True
     print("✓ Advanced CyRedis features loaded")
 except ImportError:
     _ADVANCED_AVAILABLE = False
@@ -19,7 +21,7 @@ class AdvancedRedis:
     Advanced Redis client with compression, bulk operations, metrics, and circuit breakers.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         if _ADVANCED_AVAILABLE:
             # Use optimized Cython implementation
             redis_client = OptimizedRedis(**kwargs).client
@@ -29,20 +31,20 @@ class AdvancedRedis:
             self._impl = OptimizedRedis(**kwargs)
 
     # Core operations with advanced features
-    def get(self, key):
+    def get(self, key: Any) -> Any:
         """Get with compression and metrics."""
         return self._impl.get(key)
 
-    def set(self, key, value, ex=None, px=None, nx=False, xx=False):
+    def set(self, key: Any, value: Any, ex: Optional[int] = None, px: Optional[int] = None, nx: bool = False, xx: bool = False) -> str:
         """Set with compression and metrics."""
         return self._impl.set(key, value)
 
-    def delete(self, key):
+    def delete(self, key: Any) -> int:
         """Delete operation."""
         return self._impl.delete(key)
 
     # Bulk operations
-    def mget(self, keys):
+    def mget(self, keys: List[Any]) -> List[Any]:
         """Bulk get with optimizations."""
         if hasattr(self._impl, 'mget'):
             return self._impl.mget(keys)
@@ -50,7 +52,7 @@ class AdvancedRedis:
             # Fallback to individual gets
             return [self.get(key) for key in keys]
 
-    def mset(self, data):
+    def mset(self, data: Dict[Any, Any]) -> str:
         """Bulk set with optimizations."""
         if hasattr(self._impl, 'bulk_ops'):
             self._impl.bulk_ops.mset_bulk(data)
@@ -62,20 +64,20 @@ class AdvancedRedis:
             return "OK"
 
     # Advanced features
-    def get_metrics(self):
+    def get_metrics(self) -> Dict[str, Any]:
         """Get comprehensive metrics."""
         if hasattr(self._impl, 'get_metrics'):
             return self._impl.get_metrics()
         return {"status": "metrics not available"}
 
-    def get_circuit_breaker_state(self):
+    def get_circuit_breaker_state(self) -> Dict[str, Any]:
         """Get circuit breaker state."""
         if hasattr(self._impl, 'get_circuit_breaker_state'):
             return self._impl.get_circuit_breaker_state()
         return {"status": "circuit breaker not available"}
 
     # Async versions
-    async def get_async(self, key):
+    async def get_async(self, key: Any) -> Any:
         """Async get with full optimizations."""
         if hasattr(self._impl, 'get_async'):
             return await self._impl.get_async(key)
@@ -83,14 +85,14 @@ class AdvancedRedis:
             # Fallback - this would need proper async implementation
             raise NotImplementedError("Async not available in fallback mode")
 
-    async def set_async(self, key, value):
+    async def set_async(self, key: Any, value: Any) -> str:
         """Async set with full optimizations."""
         if hasattr(self._impl, 'set_async'):
             return await self._impl.set_async(key, value)
         else:
             raise NotImplementedError("Async not available in fallback mode")
 
-    async def mget_async(self, keys):
+    async def mget_async(self, keys: List[Any]) -> List[Any]:
         """Async bulk get."""
         if hasattr(self._impl, 'mget_async'):
             return await self._impl.mget_async(keys)
@@ -99,6 +101,6 @@ class AdvancedRedis:
 
 
 # Convenience function to create advanced client
-def create_advanced_client(**kwargs):
+def create_advanced_client(**kwargs: Any) -> AdvancedRedis:
     """Create an advanced Redis client with all optimizations."""
     return AdvancedRedis(**kwargs)

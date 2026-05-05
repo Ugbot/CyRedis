@@ -5,18 +5,19 @@ import pytest
 import time
 import threading
 import uuid
-from cy_redis.shared_dict import CySharedDict, CySharedDictManager
-from cy_redis.cy_redis_client import CyRedisClient
+from typing import Generator, Any
+from cy_redis.data.shared_dict import CySharedDict, CySharedDictManager
+from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 @pytest.fixture
-def redis_client():
+def redis_client() -> CyRedisClient:
     """Create a Redis client for testing"""
     return CyRedisClient(host="localhost", port=6379)
 
 
 @pytest.fixture
-def shared_dict(redis_client):
+def shared_dict(redis_client: CyRedisClient) -> Generator[CySharedDict, None, None]:
     """Create a shared dictionary for testing"""
     dict_key = f"test_dict_{uuid.uuid4().hex[:8]}"
     sd = CySharedDict(redis_client, dict_key, cache_ttl=5)
@@ -31,7 +32,7 @@ def shared_dict(redis_client):
 
 
 @pytest.fixture
-def dict_manager(redis_client):
+def dict_manager(redis_client: CyRedisClient) -> Generator[CySharedDictManager, None, None]:
     """Create a shared dict manager for testing"""
     manager = CySharedDictManager(redis_client)
     yield manager
