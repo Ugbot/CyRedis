@@ -88,7 +88,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cy_redis*"]
+include = ["cy_redis*", "cyredis_game*"]
 exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "lua_scripts*", "hiredis*"]
 
 # Core Infrastructure (minimal buildable set)
@@ -253,6 +253,12 @@ language = "c++"
 
 [tool.setuptools.dynamic]
 version = {attr = "cy_redis.__version__"}
+
+[[tool.setuptools.ext-modules]]
+name = "cyredis_game.game_engine"
+sources = ["cyredis_game/game_engine.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
 
 [tool.cython]
 language_level = 3
