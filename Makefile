@@ -4,6 +4,7 @@
 .PHONY: help test test-unit test-integration test-fast test-coverage test-apps
 .PHONY: docker-up docker-down docker-clean test-all test-watch
 .PHONY: clean build install dev-install lint format
+.PHONY: module module-clean module-fetch
 
 # Python/UV configuration
 PYTHON := python3
@@ -187,5 +188,22 @@ info: ## Show project information
 		echo "$(BLUE)Docker Services$(NC)"; \
 		$(DOCKER_COMPOSE) ps; \
 	fi
+
+##@ Redis C Module (cy_game.so)
+
+module-fetch: ## Fetch FLECS + redismodule.h vendor headers (requires internet)
+	@echo "$(BLUE)Fetching vendor headers for cy_game module...$(NC)"
+	$(MAKE) -C cyredis_game/module fetch-headers
+	@echo "$(GREEN)Vendor headers fetched$(NC)"
+
+module: ## Build cy_game.so Redis module
+	@echo "$(BLUE)Building cy_game Redis module...$(NC)"
+	$(MAKE) -C cyredis_game/module
+	@echo "$(GREEN)cy_game.so built: cyredis_game/module/cy_game.so$(NC)"
+
+module-clean: ## Clean cy_game.so build artifacts
+	@echo "$(BLUE)Cleaning cy_game module build artifacts...$(NC)"
+	$(MAKE) -C cyredis_game/module clean
+	@echo "$(GREEN)Module clean completed$(NC)"
 
 .DEFAULT_GOAL := help

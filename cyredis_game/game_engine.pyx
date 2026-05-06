@@ -244,6 +244,11 @@ cdef class CyZone:
         self.spatial_index = f"cy:spatial:{{{world_id}:{zone_id}}}"
         self.schedule_zset = f"cy:sched:{{{world_id}:{zone_id}}}"
 
+        # Subsystems initialised lazily
+        self._pathfinder = None
+        self._physics    = None
+        self._module_mgr = None
+
     def get_entity_key(self, str entity_id):
         """Get the full entity key for this zone"""
         return f"cy:ent:{{{self.world_id}:{self.zone_id}}}:{entity_id}"
@@ -438,6 +443,129 @@ cdef class CyZone:
         except Exception:
             return []
 
+    # ── Key helpers ────────────────────────────────────────────────────────
+
+    cpdef str get_nav_grid_key(self):
+        return f"cy:nav:{{{self.world_id}:{self.zone_id}}}:grid"
+
+    cpdef str get_ws_key(self, str agent_id):
+        return f"cy:ws:{{{self.world_id}:{self.zone_id}}}:{agent_id}"
+
+    cpdef str get_actions_key(self):
+        return f"cy:actions:{{{self.world_id}:{self.zone_id}}}"
+
+    # ── Subsystem delegation — CYPATH (A*) ─────────────────────────────────
+
+    cpdef list find_path(self, int sx, int sy, int gx, int gy, int max_steps=1024):
+        """Find a path on the zone's nav grid using the CYPATH C module.
+
+        Returns a list of (x, y) tuples or [] if no path exists.
+        Requires the cy_game Redis module to be loaded.
+        """
+        try:
+            result = self.redis.execute_command([
+                "CYPATH.FIND", self.get_nav_grid_key(),
+                str(sx), str(sy), str(gx), str(gy), str(max_steps),
+            ])
+        except Exception:
+            return []
+        if not result:
+            return []
+        path = []
+        cdef int i
+        for i in range(0, len(result) - 1, 2):
+            try:
+                path.append((int(result[i]), int(result[i + 1])))
+            except (ValueError, TypeError):
+                pass
+        return path
+
+    # ── Subsystem delegation — CYPHYS (circle query) ───────────────────────
+
+    cpdef list physics_circle_query(self, double cx, double cy, double radius, int limit=50):
+        """Query entities within radius of (cx, cy) using the spatial ZSET.
+
+        Returns a list of (entity_id, distance_str) tuples sorted by distance.
+        Requires the cy_game Redis module to be loaded.
+        """
+        try:
+            raw = self.redis.execute_command([
+                "CYPHYS.CIRCLE", self.spatial_index,
+                str(cx), str(cy), str(radius), str(limit),
+            ])
+        except Exception:
+            return []
+        if not raw:
+            return []
+        results = []
+        cdef int j
+        for j in range(0, len(raw) - 1, 2):
+            results.append((raw[j], raw[j + 1]))
+        return results
+
+    # ── Subsystem delegation — FLECS ECS ───────────────────────────────────
+
+    cpdef list flecs_query(self, str filter_string):
+        """Query entity IDs from the FLECS world matching a component filter.
+
+        filter_string is a comma-separated list of component names, e.g.
+        ``"Position, Health"``.  Returns a list of entity ID strings.
+        Requires the cy_game Redis module + FLECS.INIT for this world.
+        """
+        try:
+            result = self.redis.execute_command([
+                "FLECS.QUERY", self.world_id, filter_string, self.zone_id,
+            ])
+            return list(result) if result else []
+        except Exception:
+            return []
+
+    cpdef dict flecs_spawn(self, str entity_id, str entity_type,
+                           double x, double y, double vx=0.0, double vy=0.0, int hp=100):
+        """Spawn entity in both FLECS world and Redis persistence layer.
+
+        Delegates to FLECS.SPAWN which handles both at once.
+        Falls back to the Lua-backed spawn if the module is not loaded.
+        """
+        try:
+            result = self.redis.execute_command([
+                "FLECS.SPAWN", self.world_id, self.zone_id,
+                entity_id, entity_type,
+                str(x), str(y), str(vx), str(vy), str(hp),
+            ])
+            if result == 1:
+                return {'success': True, 'status': 'ok', 'backend': 'flecs'}
+            return {'success': False, 'status': 'duplicate', 'backend': 'flecs'}
+        except Exception:
+            # Module not loaded — fall back to Lua-backed spawn
+            return self.spawn_entity(entity_id, entity_type, x, y, vx, vy)
+
+    cpdef dict flecs_tick(self, long dt_ms=_TICK_MS, int budget=_MAX_INTENTS):
+        """Run FLECS.TICK for this zone.
+
+        Returns {'tick': N, 'entities': N, 'intents': N} or falls back to
+        the Lua-backed step_tick if the module is not loaded.
+        """
+        import time as _time
+        now_ms = int(_time.time() * 1000)
+        try:
+            raw = self.redis.execute_command([
+                "FLECS.TICK", self.world_id, self.zone_id,
+                str(dt_ms), str(budget),
+            ])
+            if raw and len(raw) >= 6:
+                return {
+                    'tick':     raw[1] if len(raw) > 1 else 0,
+                    'entities': raw[3] if len(raw) > 3 else 0,
+                    'intents':  raw[5] if len(raw) > 5 else 0,
+                    'backend':  'flecs',
+                }
+            return {'tick': 0, 'entities': 0, 'intents': 0, 'backend': 'flecs'}
+        except Exception:
+            result = self.step_tick(now_ms, dt_ms, budget)
+            result['backend'] = 'lua'
+            return result
+
 
 # World manager
 cdef class CyGameWorld:
@@ -601,6 +729,31 @@ class GameEngine:
     def load_functions(self):
         """Load game engine Redis Functions"""
         self._engine.load_game_functions()
+
+    def load_module(self, path: str = None):
+        """Load cy_game.so into Redis.
+
+        Defaults to cyredis_game/module/cy_game.so relative to the package.
+        Idempotent — safe to call even if already loaded.
+        """
+        from cyredis_game.module_manager import CyGameModule
+        mod = CyGameModule(self.redis)
+        mod.load(path or "")
+
+    def init_world(self, world_id: str):
+        """Initialise a FLECS world (idempotent)."""
+        self.redis.execute_command(["FLECS.INIT", world_id])
+
+    def restore_world(self, world_id: str) -> int:
+        """Restore FLECS world from Redis-persisted entity hashes.
+
+        Returns the number of entities loaded.
+        """
+        result = self.redis.execute_command(["FLECS.RESTORE", world_id])
+        try:
+            return int(result)
+        except Exception:
+            return 0
 
     def get_world(self, world_id: str):
         """Get a game world"""

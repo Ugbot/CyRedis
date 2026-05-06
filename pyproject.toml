@@ -260,6 +260,36 @@ sources = ["cyredis_game/game_engine.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
+[[tool.setuptools.ext-modules]]
+name = "cyredis_game.module_manager"
+sources = ["cyredis_game/module_manager.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cyredis_game.pathfinding"
+sources = ["cyredis_game/pathfinding.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cyredis_game.physics"
+sources = ["cyredis_game/physics.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cyredis_game.goap"
+sources = ["cyredis_game/goap.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cyredis_game.chain"
+sources = ["cyredis_game/chain.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
 [tool.cython]
 language_level = 3
 
