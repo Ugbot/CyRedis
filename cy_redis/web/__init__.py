@@ -1,13 +1,47 @@
 """
 Web Integration Components for CyRedis.
 
-This module contains web application support:
-- HTTP caching with FastAPI-style API
-- Web application support with authentication and sessions
-- Web-specific Redis patterns
+This module provides:
+- Distributed WebSocket channels with Redis-backed pub/sub and stream rewind
+- HTTP response caching with ETag and Cache-Control support
+- Web application support with authentication and session management
+- FastAPI / Starlette integration helpers
 """
 
 __all__ = [
+    # Channel manager (WebSocket + pub/sub + stream rewind)
+    'CyChannelManager',
+    'CyChannelConnection',
+    # FastAPI glue
+    'create_redis_lifespan',
+    'CyRedisMiddleware',
+    'get_redis',
+    'get_channels',
+    # Caching
     'WebCache',
-    'WebAppSupport'
+    # Auth / session
+    'WebAppSupport',
 ]
+
+from cy_redis.web.fastapi_integration import (
+    create_redis_lifespan,
+    CyRedisMiddleware,
+    get_redis,
+    get_channels,
+)
+
+try:
+    from cy_redis.web.channels import CyChannelManager, CyChannelConnection
+except ImportError:
+    CyChannelManager = None
+    CyChannelConnection = None
+
+try:
+    from cy_redis.web.web_cache import WebCache
+except ImportError:
+    WebCache = None
+
+try:
+    from cy_redis.web.web_app_support import WebAppSupport
+except ImportError:
+    WebAppSupport = None

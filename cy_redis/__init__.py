@@ -117,11 +117,13 @@ _iterators_available: bool
 RedisStreamIterator: Optional[Any]
 RedisListIterator: Optional[Any]
 RedisPubSubIterator: Optional[Any]
+RedisPSubIterator: Optional[Any]
 try:
     from cy_redis.utils.redis_iterators import (
         RedisStreamIterator,
         RedisListIterator,
         RedisPubSubIterator,
+        RedisPSubIterator,
     )
     _iterators_available = True
 except ImportError:
@@ -129,6 +131,18 @@ except ImportError:
     RedisStreamIterator = None
     RedisListIterator = None
     RedisPubSubIterator = None
+    RedisPSubIterator = None
+
+_channels_available: bool
+CyChannelManager: Optional[Any]
+CyChannelConnection: Optional[Any]
+try:
+    from cy_redis.web.channels import CyChannelManager, CyChannelConnection
+    _channels_available = True
+except ImportError:
+    _channels_available = False
+    CyChannelManager = None
+    CyChannelConnection = None
 
 # Make submodules available for advanced usage
 core: Optional[Any]
@@ -203,6 +217,11 @@ __all__ = [
     'RedisStreamIterator',
     'RedisListIterator',
     'RedisPubSubIterator',
+    'RedisPSubIterator',
+
+    # Channels (WebSocket + pub/sub + stream rewind)
+    'CyChannelManager',
+    'CyChannelConnection',
 
     # Data structures
     'CySharedDict',

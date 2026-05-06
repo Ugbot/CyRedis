@@ -263,6 +263,12 @@ sources = ["cy_redis/web/web_app_support.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.web.channels"
+sources = ["cy_redis/web/channels.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
 # ── cy_redis utils / communication ────────────────────────────────────────────
 
 [[tool.setuptools.ext-modules]]

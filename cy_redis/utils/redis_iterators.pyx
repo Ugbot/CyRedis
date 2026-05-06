@@ -275,6 +275,124 @@ cdef class RedisListIterator:
         self.close()
 
 
+cdef class RedisPSubIterator:
+    """
+    Async iterator for Redis pattern subscriptions (PSUBSCRIBE).
+
+    Subscribes to a glob pattern (e.g. ``cy:chan:*:events``) on a single
+    dedicated connection.  Each message yielded is a dict::
+
+        {'pattern': str, 'channel': str, 'data': str}
+
+    The iterator must be closed explicitly (or used as an async context
+    manager) to release the underlying connection.
+    """
+
+    def __cinit__(self, CyRedisClient redis_client, str pattern,
+                  int timeout_ms=1000):
+        self.redis_client = redis_client
+        self.pattern = pattern
+        self.timeout_ms = timeout_ms
+        self.is_closed = False
+        self.pubsub = None
+
+    async def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.is_closed:
+            raise StopAsyncIteration
+
+        try:
+            if not self.pubsub:
+                await self._initialize_psub()
+
+            message = await self._get_next_message()
+
+            if message is None:
+                # timeout — caller can retry; don't terminate the iterator
+                return None
+
+            return message
+
+        except StopAsyncIteration:
+            raise
+        except Exception as e:
+            self.is_closed = True
+            raise StopAsyncIteration from e
+
+    async def _initialize_psub(self):
+        """Open a dedicated connection, send PSUBSCRIBE, start reader thread."""
+        import threading
+
+        loop = asyncio.get_running_loop()
+        pattern = self.pattern
+
+        def _setup():
+            from cy_redis.core.cy_redis_client import CyRedisConnection
+            conn = CyRedisConnection(
+                self.redis_client.pool.get_host(),
+                self.redis_client.pool.get_port(),
+            )
+            if conn.connect() != 0:
+                raise ConnectionError("PSubIterator connection failed")
+            conn.execute_command(['PSUBSCRIBE', pattern])
+            return conn
+
+        conn = await loop.run_in_executor(None, _setup)
+        self.pubsub = conn
+        self._msg_queue = asyncio.Queue()
+
+        def _reader():
+            while not self.is_closed:
+                try:
+                    reply = conn.read_reply()
+                    # pmessage frame: ['pmessage', pattern, channel, data]
+                    if isinstance(reply, list) and len(reply) == 4:
+                        kind = reply[0]
+                        if isinstance(kind, bytes):
+                            kind = kind.decode()
+                        if kind == 'pmessage':
+                            pat = reply[1].decode() if isinstance(reply[1], bytes) else reply[1]
+                            chan = reply[2].decode() if isinstance(reply[2], bytes) else reply[2]
+                            data = reply[3].decode() if isinstance(reply[3], bytes) else reply[3]
+                            msg = {'pattern': pat, 'channel': chan, 'data': data}
+                            loop.call_soon_threadsafe(self._msg_queue.put_nowait, msg)
+                except Exception:
+                    if not self.is_closed:
+                        loop.call_soon_threadsafe(self._msg_queue.put_nowait, None)
+                    break
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
+
+    async def _get_next_message(self):
+        if not hasattr(self, '_msg_queue'):
+            return None
+        try:
+            return await asyncio.wait_for(
+                self._msg_queue.get(), timeout=self.timeout_ms / 1000
+            )
+        except asyncio.TimeoutError:
+            return None
+
+    def close(self):
+        self.is_closed = True
+        if self.pubsub is not None:
+            try:
+                self.pubsub.execute_command(['PUNSUBSCRIBE', self.pattern])
+                self.pubsub.disconnect()
+            except Exception:
+                pass
+            self.pubsub = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
 cdef class RedisPubSubIterator:
     """
     Async iterator for Redis pub/sub.
