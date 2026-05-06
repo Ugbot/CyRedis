@@ -109,6 +109,8 @@ cdef class CyRedisClient:
     cdef object _executor
     cdef dict _stream_offsets
     cdef object _offset_lock
+    cdef str _server_type   # "redis" | "valkey" | None (undetected)
 
     cdef list _parse_xread_result(self, list result)
     cdef void _negotiate_protocol(self)
+    cdef str _parse_server_type(self, object info_response)

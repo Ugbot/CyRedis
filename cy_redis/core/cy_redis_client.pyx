@@ -503,6 +503,7 @@ cdef class CyRedisClient:
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._stream_offsets = {}
         self._offset_lock = threading.Lock()
+        self._server_type = None
 
         # Protocol negotiation will be done lazily on first command
 
@@ -2117,6 +2118,51 @@ cdef class CyRedisClient:
             return conn.execute_command(['INFO'])
         finally:
             self.pool.return_connection(conn)
+
+    def detect_server_type(self) -> str:
+        """
+        Return 'redis' or 'valkey' based on INFO server output.
+
+        Result is cached on first call; subsequent calls return the cached value.
+        Raises RuntimeError if the server type cannot be determined.
+        """
+        if self._server_type is not None:
+            return self._server_type
+
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            response = conn.execute_command(['INFO', 'server'])
+        finally:
+            self.pool.return_connection(conn)
+
+        detected = self._parse_server_type(response)
+        if detected is None:
+            raise RuntimeError("Could not determine server type from INFO server response")
+        self._server_type = detected
+        return self._server_type
+
+    @property
+    def server_type(self) -> str:
+        """Cached server type ('redis' or 'valkey'). None if not yet detected."""
+        return self._server_type
+
+    cdef str _parse_server_type(self, object info_response):
+        """Parse INFO server bytes/str response and return 'redis' or 'valkey'."""
+        cdef str text
+        if isinstance(info_response, bytes):
+            text = info_response.decode('utf-8', errors='replace')
+        elif isinstance(info_response, str):
+            text = info_response
+        else:
+            return None
+
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith('valkey_version:'):
+                return 'valkey'
+            if line.startswith('redis_version:'):
+                return 'redis'
+        return None
 
     # ===== CLUSTER OPERATIONS =====
 
