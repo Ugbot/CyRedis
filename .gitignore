@@ -221,3 +221,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# hiredis build artifacts (vendored source in hiredis/)
+hiredis/*.o
+hiredis/libhiredis.a
+hiredis/libhiredis.dylib
+hiredis/libhiredis.so*
