@@ -1,3 +1,16 @@
+# macOS
+.DS_Store
+**/.DS_Store
+*.dSYM/
+
+# Claude Code session data
+.claude/
+
+# Generated implementation summary docs (created by AI sessions)
+COMPLETE_IMPLEMENTATION_SUMMARY.md
+IMPLEMENTED_FEATURES.md
+NEW_COMMANDS_ADDED.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

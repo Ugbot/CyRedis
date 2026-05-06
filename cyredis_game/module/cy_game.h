@@ -4,21 +4,11 @@
 #include <string.h>
 
 /* ── FLECS configuration (must precede flecs.h) ─────────────────────────── */
-#define FLECS_CUSTOM_BUILD
-#define FLECS_SYSTEM
-#define FLECS_PIPELINE
-#define FLECS_QUERY_DSL
+/* Disable only the addons that pull in network/REST/script dependencies.
+ * Everything else (ECS core, queries, systems, pipelines) stays enabled. */
 #define FLECS_NO_HTTP
 #define FLECS_NO_REST
-#define FLECS_NO_SCRIPT
-#define FLECS_NO_JSON
-#define FLECS_NO_ALERTS
-#define FLECS_NO_TIMER
 #define FLECS_NO_APP
-#define FLECS_NO_METRICS
-#define FLECS_NO_DOC
-#define FLECS_NO_META
-#define FLECS_NO_LOG
 #include "vendor/flecs.h"
 #include "vendor/redismodule.h"
 

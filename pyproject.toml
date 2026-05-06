@@ -47,6 +47,8 @@ classifiers = [
 dependencies = [
     "Cython>=0.29.0",
     "pytest-asyncio>=1.2.0",
+    "pytest-timeout>=2.4.0",
+    "redis>=7.0.1",
 ]
 
 [project.optional-dependencies]
