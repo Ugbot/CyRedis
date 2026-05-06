@@ -8,11 +8,16 @@ import os
 from typing import Generator
 
 try:
+    import redis as redis_py
     from redis import Redis
     from redis.cluster import RedisCluster
     from redis.sentinel import Sentinel
     REDIS_PY_AVAILABLE = True
 except ImportError:
+    redis_py = None
+    Redis = None
+    RedisCluster = None
+    Sentinel = None
     REDIS_PY_AVAILABLE = False
 
 # Import CyRedis components
@@ -59,12 +64,14 @@ def redis_available() -> bool:
 
 
 @pytest.fixture
-def redis_client(redis_available) -> Generator[Redis, None, None]:
+def redis_client(redis_available):
     """Provide a standard Redis client for testing."""
+    if not REDIS_PY_AVAILABLE:
+        pytest.skip("redis-py not available")
     if not redis_available:
         pytest.skip("Redis not available")
 
-    client = Redis(
+    client = redis_py.Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,
         db=REDIS_DB,
@@ -86,7 +93,7 @@ def redis_client(redis_available) -> Generator[Redis, None, None]:
 
 
 @pytest.fixture
-def cyredis_client(redis_available) -> Generator[CyRedisClient, None, None]:
+def cyredis_client(redis_available):
     """Provide a CyRedis client for testing."""
     if not redis_available:
         pytest.skip("Redis not available")
@@ -112,7 +119,7 @@ def cyredis_client(redis_available) -> Generator[CyRedisClient, None, None]:
 
 
 @pytest.fixture
-def hp_redis_client(redis_available) -> Generator[HighPerformanceRedis, None, None]:
+def hp_redis_client(redis_available):
     """Provide a HighPerformanceRedis client for testing."""
     if not redis_available:
         pytest.skip("Redis not available")
@@ -140,7 +147,7 @@ def hp_redis_client(redis_available) -> Generator[HighPerformanceRedis, None, No
 
 
 @pytest.fixture
-def redis_cluster_client(redis_available) -> Generator[RedisCluster, None, None]:
+def redis_cluster_client(redis_available):
     """Provide a Redis Cluster client for testing."""
     if not redis_available:
         pytest.skip("Redis not available")
@@ -177,7 +184,7 @@ def redis_cluster_client(redis_available) -> Generator[RedisCluster, None, None]
 
 
 @pytest.fixture
-def redis_sentinel_client(redis_available) -> Generator[Redis, None, None]:
+def redis_sentinel_client(redis_available):
     """Provide a Redis Sentinel client for testing."""
     if not redis_available:
         pytest.skip("Redis not available")
@@ -237,21 +244,21 @@ def cleanup_keys(redis_client):
 
 
 @pytest.fixture
-def distributed_lock(hp_redis_client, unique_key) -> DistributedLock:
+def distributed_lock(hp_redis_client, unique_key):
     """Provide a distributed lock for testing."""
     lock_key = f"{unique_key}:lock"
     return DistributedLock(hp_redis_client, lock_key)
 
 
 @pytest.fixture
-def reliable_queue(hp_redis_client, unique_key) -> ReliableQueue:
+def reliable_queue(hp_redis_client, unique_key):
     """Provide a reliable queue for testing."""
     queue_name = f"{unique_key}:queue"
     return ReliableQueue(hp_redis_client, queue_name)
 
 
 @pytest.fixture
-def worker_queue(hp_redis_client, unique_key) -> WorkerQueue:
+def worker_queue(hp_redis_client, unique_key):
     """Provide a worker queue for testing."""
     queue_name = f"{unique_key}:worker"
     return WorkerQueue(hp_redis_client, queue_name)
@@ -273,4 +280,7 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "performance: mark test as performance benchmark"
+    )
+    config.addinivalue_line(
+        "markers", "game_module: mark test as requiring cy_game Redis module on port 6380"
     )

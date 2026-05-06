@@ -176,8 +176,8 @@ static int CyGOAP_Plan(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
             RedisModuleCallReply *k = RedisModule_CallReplyArrayElement(ws_rep, i);
             RedisModuleCallReply *v = RedisModule_CallReplyArrayElement(ws_rep, i+1);
             size_t klen, vlen;
-            const char *ks = RedisModule_CallReplyStringBuffer(k, &klen);
-            const char *vs = RedisModule_CallReplyStringBuffer(v, &vlen);
+            const char *ks = RedisModule_CallReplyStringPtr(k, &klen);
+            const char *vs = RedisModule_CallReplyStringPtr(v, &vlen);
             if (!ks || klen >= GOAP_MAX_FACTS) continue;
             memcpy(start_node->facts[start_node->count].key, ks, klen);
             start_node->facts[start_node->count].key[klen] = '\0';
@@ -204,8 +204,8 @@ static int CyGOAP_Plan(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
             RedisModuleCallReply *k = RedisModule_CallReplyArrayElement(act_rep, i);
             RedisModuleCallReply *v = RedisModule_CallReplyArrayElement(act_rep, i+1);
             size_t klen, vlen;
-            const char *ks = RedisModule_CallReplyStringBuffer(k, &klen);
-            const char *vs = RedisModule_CallReplyStringBuffer(v, &vlen);
+            const char *ks = RedisModule_CallReplyStringPtr(k, &klen);
+            const char *vs = RedisModule_CallReplyStringPtr(v, &vlen);
             if (!ks || !vs || klen >= 64) continue;
             GAction *a = &actions[action_count];
             memcpy(a->name, ks, klen); a->name[klen] = '\0';
@@ -285,7 +285,7 @@ static int CyGOAP_Plan(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 
     RedisModule_ReplyWithArray(ctx, plan_len);
     for (int i = plan_len - 1; i >= 0; i--)
-        RedisModule_ReplyWithSimpleString(ctx, plan[i]);
+        RedisModule_ReplyWithCString(ctx, plan[i]);
 
     RedisModule_Free(nodes); RedisModule_Free(actions);
     return REDISMODULE_OK;
@@ -299,13 +299,13 @@ static int CyGOAP_Apply(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     if (!rep || RedisModule_CallReplyType(rep) == REDISMODULE_REPLY_NULL) {
         if (rep) RedisModule_FreeCallReply(rep);
         RedisModule_ReplyWithArray(ctx, 2);
-        RedisModule_ReplyWithSimpleString(ctx, "failed");
-        RedisModule_ReplyWithSimpleString(ctx, "action_not_found");
+        RedisModule_ReplyWithCString(ctx, "failed");
+        RedisModule_ReplyWithCString(ctx, "action_not_found");
         return REDISMODULE_OK;
     }
 
     size_t vlen;
-    const char *vs = RedisModule_CallReplyStringBuffer(rep, &vlen);
+    const char *vs = RedisModule_CallReplyStringPtr(rep, &vlen);
     GAction a; memset(&a, 0, sizeof(a));
     /* Parse pre / eff from combined JSON */
     const char *pre_start = strstr(vs, "\"pre\":");
@@ -335,8 +335,8 @@ static int CyGOAP_Apply(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
         size_t n = RedisModule_CallReplyLength(ws_rep);
         for (size_t i = 0; i+1 < n && ws_count < GOAP_MAX_FACTS; i += 2) {
             size_t klen, vl;
-            const char *ks = RedisModule_CallReplyStringBuffer(RedisModule_CallReplyArrayElement(ws_rep, i), &klen);
-            const char *vv = RedisModule_CallReplyStringBuffer(RedisModule_CallReplyArrayElement(ws_rep, i+1), &vl);
+            const char *ks = RedisModule_CallReplyStringPtr(RedisModule_CallReplyArrayElement(ws_rep, i), &klen);
+            const char *vv = RedisModule_CallReplyStringPtr(RedisModule_CallReplyArrayElement(ws_rep, i+1), &vl);
             if (!ks || klen >= 64) continue;
             memcpy(ws_facts[ws_count].key, ks, klen); ws_facts[ws_count].key[klen] = '\0';
             ws_facts[ws_count].value = (vv && (vv[0]=='1'||vv[0]=='t')) ? 1 : 0;
@@ -352,8 +352,8 @@ static int CyGOAP_Apply(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
             if (strcmp(ws_facts[j].key, a.pre[i].key) == 0) {
                 if (ws_facts[j].value != a.pre[i].value) {
                     RedisModule_ReplyWithArray(ctx, 2);
-                    RedisModule_ReplyWithSimpleString(ctx, "failed");
-                    RedisModule_ReplyWithSimpleString(ctx, a.pre[i].key);
+                    RedisModule_ReplyWithCString(ctx, "failed");
+                    RedisModule_ReplyWithCString(ctx, a.pre[i].key);
                     return REDISMODULE_OK;
                 }
                 ok = 1; break;
@@ -361,8 +361,8 @@ static int CyGOAP_Apply(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
         }
         if (!ok && a.pre[i].value != 0) {
             RedisModule_ReplyWithArray(ctx, 2);
-            RedisModule_ReplyWithSimpleString(ctx, "failed");
-            RedisModule_ReplyWithSimpleString(ctx, a.pre[i].key);
+            RedisModule_ReplyWithCString(ctx, "failed");
+            RedisModule_ReplyWithCString(ctx, a.pre[i].key);
             return REDISMODULE_OK;
         }
     }
@@ -374,7 +374,7 @@ static int CyGOAP_Apply(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     }
 
     RedisModule_ReplyWithArray(ctx, 1);
-    RedisModule_ReplyWithSimpleString(ctx, "applied");
+    RedisModule_ReplyWithCString(ctx, "applied");
     return REDISMODULE_OK;
 }
 

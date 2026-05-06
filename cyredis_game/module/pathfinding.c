@@ -154,7 +154,7 @@ static int CyPath_Clear(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 
 /* ── CYPATH.FIND grid_key sx sy gx gy [max_steps] ───────────────────────── */
 static int CyPath_Find(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    if (argc < 7 || argc > 8) return RedisModule_WrongArity(ctx);
+    if (argc < 6 || argc > 7) return RedisModule_WrongArity(ctx);
 
     long long sx, sy, gx, gy, max_steps = 1024;
     if (RedisModule_StringToLongLong(argv[2], &sx) != REDISMODULE_OK ||
@@ -162,7 +162,7 @@ static int CyPath_Find(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         RedisModule_StringToLongLong(argv[4], &gx) != REDISMODULE_OK ||
         RedisModule_StringToLongLong(argv[5], &gy) != REDISMODULE_OK)
         return RedisModule_ReplyWithError(ctx, "ERR invalid coordinates");
-    if (argc == 8 && RedisModule_StringToLongLong(argv[7], &max_steps) != REDISMODULE_OK)
+    if (argc == 7 && RedisModule_StringToLongLong(argv[6], &max_steps) != REDISMODULE_OK)
         return RedisModule_ReplyWithError(ctx, "ERR invalid max_steps");
     if (max_steps < 1 || max_steps > ASTAR_MAX_NODES) max_steps = 1024;
 
@@ -234,8 +234,8 @@ static int CyPath_Find(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     int path_len = 0;
     int n = goal_node;
     while (n >= 0) {
-        path[path_len++] = astar->nodes[n].y;
         path[path_len++] = astar->nodes[n].x;
+        path[path_len++] = astar->nodes[n].y;
         n = astar->nodes[n].parent;
     }
     /* Skip start node (path_len-2, path_len-1 are start coords) */
@@ -246,9 +246,9 @@ static int CyPath_Find(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     for (int i = result_len - 1; i >= 0; i -= 2) {
         char buf[32];
         snprintf(buf, sizeof(buf), "%d", path[i - 1]);  /* x */
-        RedisModule_ReplyWithSimpleString(ctx, buf);
+        RedisModule_ReplyWithCString(ctx, buf);
         snprintf(buf, sizeof(buf), "%d", path[i]);       /* y */
-        RedisModule_ReplyWithSimpleString(ctx, buf);
+        RedisModule_ReplyWithCString(ctx, buf);
     }
     return REDISMODULE_OK;
 }

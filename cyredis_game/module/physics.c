@@ -18,7 +18,7 @@ static double reply_to_double(RedisModuleCallReply *rep, double def) {
     if (RedisModule_CallReplyType(rep) == REDISMODULE_REPLY_INTEGER)
         return (double)RedisModule_CallReplyInteger(rep);
     size_t len;
-    const char *s = RedisModule_CallReplyStringBuffer(rep, &len);
+    const char *s = RedisModule_CallReplyStringPtr(rep, &len);
     if (!s) return def;
     char buf[64];
     if (len >= sizeof(buf)) return def;
@@ -110,14 +110,14 @@ static int CyPhys_Sweep(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     RedisModule_ReplyWithArray(ctx, 5);
     char buf[32];
     snprintf(buf, sizeof(buf), "%.6f", nx);
-    RedisModule_ReplyWithSimpleString(ctx, buf);
+    RedisModule_ReplyWithCString(ctx, buf);
     snprintf(buf, sizeof(buf), "%.6f", ny);
-    RedisModule_ReplyWithSimpleString(ctx, buf);
+    RedisModule_ReplyWithCString(ctx, buf);
     RedisModule_ReplyWithLongLong(ctx, hit);
     snprintf(buf, sizeof(buf), "%.1f", hit_nx);
-    RedisModule_ReplyWithSimpleString(ctx, buf);
+    RedisModule_ReplyWithCString(ctx, buf);
     snprintf(buf, sizeof(buf), "%.1f", hit_ny);
-    RedisModule_ReplyWithSimpleString(ctx, buf);
+    RedisModule_ReplyWithCString(ctx, buf);
     return REDISMODULE_OK;
 }
 
@@ -143,9 +143,9 @@ static int CyPhys_Circle(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
     char slim[32];
     snprintf(slim, sizeof(slim), "%lld", limit * 4);  /* oversample, filter below */
 
-    RedisModuleCallReply *rep = RedisModule_Call(ctx, "ZRANGEBYSCORE", "scccc",
-        argv[1], smin, smax, "LIMIT", "0");
-    /* Note: ZRANGEBYSCORE LIMIT 0 N */
+    RedisModuleCallReply *rep = RedisModule_Call(ctx, "ZRANGEBYSCORE", "sccccc",
+        argv[1], smin, smax, "LIMIT", "0", slim);
+    /* ZRANGEBYSCORE key min max LIMIT offset count */
     if (!rep) { RedisModule_ReplyWithArray(ctx, 0); return REDISMODULE_OK; }
 
     typedef struct { char eid[128]; double dist; } Hit;
@@ -158,7 +158,7 @@ static int CyPhys_Circle(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
             RedisModuleCallReply *elem = RedisModule_CallReplyArrayElement(rep, i);
             if (!elem) continue;
             size_t elen;
-            const char *estr = RedisModule_CallReplyStringBuffer(elem, &elen);
+            const char *estr = RedisModule_CallReplyStringPtr(elem, &elen);
             /* To get actual position we need ZSCORE + decode. For simplicity,
              * use approximate distance from score encoding. */
             RedisModuleCallReply *sc = RedisModule_Call(ctx, "ZSCORE", "ss", argv[1],
@@ -166,7 +166,7 @@ static int CyPhys_Circle(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
             if (!sc) continue;
             double score_d = 0;
             size_t slen;
-            const char *ss = RedisModule_CallReplyStringBuffer(sc, &slen);
+            const char *ss = RedisModule_CallReplyStringPtr(sc, &slen);
             if (ss) { char sbuf[32]; if (slen<32){memcpy(sbuf,ss,slen);sbuf[slen]=0;score_d=strtod(sbuf,NULL);} }
             RedisModule_FreeCallReply(sc);
 
@@ -195,10 +195,10 @@ static int CyPhys_Circle(RedisModuleCtx *ctx, RedisModuleString **argv, int argc
 
     RedisModule_ReplyWithArray(ctx, nhits * 2);
     for (int i = 0; i < nhits; i++) {
-        RedisModule_ReplyWithSimpleString(ctx, hits[i].eid);
+        RedisModule_ReplyWithCString(ctx, hits[i].eid);
         char dbuf[32];
         snprintf(dbuf, sizeof(dbuf), "%.4f", hits[i].dist);
-        RedisModule_ReplyWithSimpleString(ctx, dbuf);
+        RedisModule_ReplyWithCString(ctx, dbuf);
     }
     return REDISMODULE_OK;
 }
@@ -223,8 +223,8 @@ static int CyPhys_Resolve(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
     double overlap_y = (ah + bh) - fabs(ay - by);
     if (overlap_x <= 0 || overlap_y <= 0) {
         RedisModule_ReplyWithArray(ctx, 2);
-        RedisModule_ReplyWithSimpleString(ctx, "0");
-        RedisModule_ReplyWithSimpleString(ctx, "0");
+        RedisModule_ReplyWithCString(ctx, "0");
+        RedisModule_ReplyWithCString(ctx, "0");
         return REDISMODULE_OK;
     }
 
@@ -249,8 +249,8 @@ static int CyPhys_Resolve(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
     char dxbuf[32], dybuf[32];
     snprintf(dxbuf, sizeof(dxbuf), "%.6f", dx);
     snprintf(dybuf, sizeof(dybuf), "%.6f", dy);
-    RedisModule_ReplyWithSimpleString(ctx, dxbuf);
-    RedisModule_ReplyWithSimpleString(ctx, dybuf);
+    RedisModule_ReplyWithCString(ctx, dxbuf);
+    RedisModule_ReplyWithCString(ctx, dybuf);
     return REDISMODULE_OK;
 }
 

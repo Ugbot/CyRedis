@@ -29,18 +29,8 @@
 #include <stdio.h>
 #include <math.h>
 
-/* ── Memory shims (ecs_size_t is int32_t) ────────────────────────────────── */
-static void *cy_malloc(ecs_size_t sz)  { return RedisModule_Alloc((size_t)sz); }
-static void  cy_free(void *p)          { RedisModule_Free(p); }
-static void *cy_realloc(void *p, ecs_size_t sz) {
-    return RedisModule_Realloc(p, (size_t)sz);
-}
-static void *cy_calloc(ecs_size_t n, ecs_size_t sz) {
-    size_t total = (size_t)n * (size_t)sz;
-    void *p = RedisModule_Alloc(total);
-    if (p) memset(p, 0, total);
-    return p;
-}
+/* FLECS uses its own pool allocator internally; we let it use default malloc.
+ * The Redis allocator override was causing bootstrap crashes in ecs_init(). */
 
 /* ── World registry ──────────────────────────────────────────────────────── */
 static CyWorld g_worlds[CY_MAX_WORLDS];
@@ -191,17 +181,6 @@ static void hset_str(RedisModuleCtx *ctx, RedisModuleString *key,
     if (r) RedisModule_FreeCallReply(r);
 }
 
-/* ── Helper: build Redis key string ─────────────────────────────────────── */
-static RedisModuleString *make_key(RedisModuleCtx *ctx,
-                                   const char *fmt, ...) {
-    char buf[256];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    return RedisModule_CreateString(ctx, buf, strlen(buf));
-}
-
 /* ── FLECS.INIT world_id ─────────────────────────────────────────────────── */
 static int Cmd_FLECS_INIT(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if (argc != 2) return RedisModule_WrongArity(ctx);
@@ -235,11 +214,11 @@ static int Cmd_FLECS_STATS(RedisModuleCtx *ctx, RedisModuleString **argv, int ar
 
     int64_t entity_count = ecs_count_id(w->ecs, 0);
     RedisModule_ReplyWithArray(ctx, 6);
-    RedisModule_ReplyWithSimpleString(ctx, "entities");
+    RedisModule_ReplyWithCString(ctx, "entities");
     RedisModule_ReplyWithLongLong(ctx, entity_count);
-    RedisModule_ReplyWithSimpleString(ctx, "indexed_entities");
+    RedisModule_ReplyWithCString(ctx, "indexed_entities");
     RedisModule_ReplyWithLongLong(ctx, w->entity_count);
-    RedisModule_ReplyWithSimpleString(ctx, "world");
+    RedisModule_ReplyWithCString(ctx, "world");
     RedisModule_ReplyWithCString(ctx, w->id);
     return REDISMODULE_OK;
 }
@@ -386,36 +365,36 @@ static int Cmd_FLECS_GETCOMP(RedisModuleCtx *ctx, RedisModuleString **argv, int 
         const Position *p = (const Position *)ecs_get_id(w->ecs, e, w->comp_Position);
         if (!p) { RedisModule_ReplyWithArray(ctx, 0); return REDISMODULE_OK; }
         RedisModule_ReplyWithArray(ctx, 4);
-        RedisModule_ReplyWithSimpleString(ctx, "x");
+        RedisModule_ReplyWithCString(ctx, "x");
         snprintf(xbuf, sizeof(xbuf), "%.6f", p->x);
-        RedisModule_ReplyWithSimpleString(ctx, xbuf);
-        RedisModule_ReplyWithSimpleString(ctx, "y");
+        RedisModule_ReplyWithCString(ctx, xbuf);
+        RedisModule_ReplyWithCString(ctx, "y");
         snprintf(ybuf, sizeof(ybuf), "%.6f", p->y);
-        RedisModule_ReplyWithSimpleString(ctx, ybuf);
+        RedisModule_ReplyWithCString(ctx, ybuf);
     } else if (strcmp(comp, "Velocity") == 0) {
         const Velocity *v = (const Velocity *)ecs_get_id(w->ecs, e, w->comp_Velocity);
         if (!v) { RedisModule_ReplyWithArray(ctx, 0); return REDISMODULE_OK; }
         RedisModule_ReplyWithArray(ctx, 4);
-        RedisModule_ReplyWithSimpleString(ctx, "vx");
+        RedisModule_ReplyWithCString(ctx, "vx");
         snprintf(xbuf, sizeof(xbuf), "%.6f", v->vx);
-        RedisModule_ReplyWithSimpleString(ctx, xbuf);
-        RedisModule_ReplyWithSimpleString(ctx, "vy");
+        RedisModule_ReplyWithCString(ctx, xbuf);
+        RedisModule_ReplyWithCString(ctx, "vy");
         snprintf(ybuf, sizeof(ybuf), "%.6f", v->vy);
-        RedisModule_ReplyWithSimpleString(ctx, ybuf);
+        RedisModule_ReplyWithCString(ctx, ybuf);
     } else if (strcmp(comp, "Health") == 0) {
         const Health *h = (const Health *)ecs_get_id(w->ecs, e, w->comp_Health);
         if (!h) { RedisModule_ReplyWithArray(ctx, 0); return REDISMODULE_OK; }
         RedisModule_ReplyWithArray(ctx, 4);
-        RedisModule_ReplyWithSimpleString(ctx, "hp");
+        RedisModule_ReplyWithCString(ctx, "hp");
         RedisModule_ReplyWithLongLong(ctx, h->hp);
-        RedisModule_ReplyWithSimpleString(ctx, "max_hp");
+        RedisModule_ReplyWithCString(ctx, "max_hp");
         RedisModule_ReplyWithLongLong(ctx, h->max_hp);
     } else if (strcmp(comp, "ZoneId") == 0) {
         const ZoneId *z = (const ZoneId *)ecs_get_id(w->ecs, e, w->comp_ZoneId);
         if (!z) { RedisModule_ReplyWithArray(ctx, 0); return REDISMODULE_OK; }
         RedisModule_ReplyWithArray(ctx, 2);
-        RedisModule_ReplyWithSimpleString(ctx, "zone");
-        RedisModule_ReplyWithSimpleString(ctx, z->zone);
+        RedisModule_ReplyWithCString(ctx, "zone");
+        RedisModule_ReplyWithCString(ctx, z->zone);
     } else {
         return RedisModule_ReplyWithError(ctx, "ERR unknown component (Position|Velocity|Health|ZoneId)");
     }
@@ -541,7 +520,7 @@ static int Cmd_FLECS_TICK(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
             if (!id_rep || !fv_rep) continue;
 
             size_t idlen;
-            const char *msg_id = RedisModule_CallReplyStringBuffer(id_rep, &idlen);
+            const char *msg_id = RedisModule_CallReplyStringPtr(id_rep, &idlen);
 
             /* Parse intent: expect fields: eid, action, [dx, dy, target, ...] */
             size_t nfv = RedisModule_CallReplyLength(fv_rep);
@@ -553,8 +532,8 @@ static int Cmd_FLECS_TICK(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
                 RedisModuleCallReply *fv = RedisModule_CallReplyArrayElement(fv_rep, fi + 1);
                 if (!fk || !fv) continue;
                 size_t kl, vl;
-                const char *k = RedisModule_CallReplyStringBuffer(fk, &kl);
-                const char *v = RedisModule_CallReplyStringBuffer(fv, &vl);
+                const char *k = RedisModule_CallReplyStringPtr(fk, &kl);
+                const char *v = RedisModule_CallReplyStringPtr(fv, &vl);
                 if (!k || !v) continue;
                 if      (strncmp(k, "eid",    kl) == 0 && kl == 3) { size_t cp = vl < 127 ? vl : 127; memcpy(eid_buf, v, cp); eid_buf[cp] = 0; }
                 else if (strncmp(k, "action", kl) == 0 && kl == 6) { size_t cp = vl < 63  ? vl : 63;  memcpy(action_buf, v, cp); action_buf[cp] = 0; }
@@ -602,10 +581,7 @@ static int Cmd_FLECS_TICK(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 
     /* ── 2. FLECS movement tick ──────────────────────────────────────────── */
     long long entities_processed = 0;
-    long long events_emitted = 0;
 
-    char events_key[256];
-    snprintf(events_key, sizeof(events_key), "cy:events:{%s:%s}", wid, zone);
     char spatial_key[256];
     snprintf(spatial_key, sizeof(spatial_key), "cy:spatial:{%s:%s}", wid, zone);
 
@@ -615,14 +591,11 @@ static int Cmd_FLECS_TICK(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
             Position  *positions  = ecs_field(&it, Position,  0);
             Velocity  *velocities = ecs_field(&it, Velocity,  1);
             ZoneId    *zones      = ecs_field(&it, ZoneId,    2);
-            EntityKey *keys       = NULL;
-            /* EntityKey may not be in the query terms — look it up per entity */
 
             for (int i = 0; i < it.count; i++) {
                 /* Only process entities in the requested zone */
                 if (strcmp(zones[i].zone, zone) != 0) continue;
 
-                double old_x = positions[i].x, old_y = positions[i].y;
                 positions[i].x += velocities[i].vx * dt;
                 positions[i].y += velocities[i].vy * dt;
 
@@ -646,7 +619,6 @@ static int Cmd_FLECS_TICK(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
                 }
                 entities_processed++;
             }
-            (void)keys;
         }
     }
 
@@ -663,16 +635,20 @@ static int Cmd_FLECS_TICK(RedisModuleCtx *ctx, RedisModuleString **argv, int arg
 
     /* Reply: [tick_num, entities_processed, events_emitted] */
     RedisModule_ReplyWithArray(ctx, 6);
-    RedisModule_ReplyWithSimpleString(ctx, "tick");
+    RedisModule_ReplyWithCString(ctx, "tick");
     RedisModule_ReplyWithLongLong(ctx, tick_num);
-    RedisModule_ReplyWithSimpleString(ctx, "entities");
+    RedisModule_ReplyWithCString(ctx, "entities");
     RedisModule_ReplyWithLongLong(ctx, entities_processed);
-    RedisModule_ReplyWithSimpleString(ctx, "intents");
+    RedisModule_ReplyWithCString(ctx, "intents");
     RedisModule_ReplyWithLongLong(ctx, intents_processed);
     return REDISMODULE_OK;
 }
 
 /* ── FLECS.QUERY world filter [zone] ─────────────────────────────────────── */
+/* Filter is comma-separated component names: "Position, Health"
+ * We walk the entity hash map and check ecs_has_id() for each requested
+ * component — avoiding dynamic query creation which can crash with
+ * uncached queries in FLECS v4 at module init time. */
 static int Cmd_FLECS_QUERY(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     if (argc < 3 || argc > 4) return RedisModule_WrongArity(ctx);
     size_t wlen, flen;
@@ -686,78 +662,49 @@ static int Cmd_FLECS_QUERY(RedisModuleCtx *ctx, RedisModuleString **argv, int ar
     CyWorld *w = cy_world_get(wid);
     if (!w) return RedisModule_ReplyWithError(ctx, "ERR world not found");
 
-    /* Parse simple filter: comma-separated component names */
-    /* Build a query with up to 8 terms */
-    ecs_query_desc_t qdesc = {0};
-    int nterms = 0;
+    /* Parse required component IDs from filter string */
+    ecs_entity_t required[8];
+    int nreq = 0;
     char fbuf[256];
-    strncpy(fbuf, filter, sizeof(fbuf) - 1);
+    strncpy(fbuf, filter, sizeof(fbuf) - 1); fbuf[sizeof(fbuf)-1] = 0;
     char *tok = strtok(fbuf, ",");
-    while (tok && nterms < 8) {
-        /* trim spaces */
+    while (tok && nreq < 8) {
         while (*tok == ' ') tok++;
         char *end = tok + strlen(tok) - 1;
         while (end > tok && *end == ' ') { *end = 0; end--; }
-
         ecs_entity_t cid = 0;
         if      (strcmp(tok, "Position")  == 0) cid = w->comp_Position;
         else if (strcmp(tok, "Velocity")  == 0) cid = w->comp_Velocity;
         else if (strcmp(tok, "Health")    == 0) cid = w->comp_Health;
         else if (strcmp(tok, "ZoneId")    == 0) cid = w->comp_ZoneId;
         else if (strcmp(tok, "EntityKey") == 0) cid = w->comp_EntityKey;
-
-        if (cid) {
-            qdesc.terms[nterms].id = cid;
-            nterms++;
-        }
+        if (cid) required[nreq++] = cid;
         tok = strtok(NULL, ",");
     }
 
-    /* Always include EntityKey so we can return string IDs */
-    int has_ek = 0;
-    for (int i = 0; i < nterms; i++)
-        if (qdesc.terms[i].id == w->comp_EntityKey) { has_ek = 1; break; }
-    if (!has_ek && nterms < 8) {
-        qdesc.terms[nterms].id = w->comp_EntityKey;
-        nterms++;
-    }
-
-    ecs_query_t *q = ecs_query_init(w->ecs, &qdesc);
-    if (!q) { RedisModule_ReplyWithArray(ctx, 0); return REDISMODULE_OK; }
-
-    /* Collect results */
+    /* Walk entity hash map: check each entity for requested components */
     char *results[4096];
     int nresults = 0;
 
-    ecs_iter_t it = ecs_query_iter(w->ecs, q);
-    while (ecs_query_next(&it)) {
-        /* Find EntityKey field index */
-        int ek_term = -1;
-        for (int t = 0; t < it.field_count; t++) {
-            if (ecs_field_id(&it, t) == w->comp_EntityKey) { ek_term = t; break; }
-        }
-        /* Find ZoneId field index (optional) */
-        int zone_term = -1;
+    for (int s = 0; s < CY_ENTITY_BUCKETS && nresults < 4096; s++) {
+        if (!w->slots[s].used) continue;
+        ecs_entity_t e = w->slots[s].fid;
+
+        /* Filter by zone if requested */
         if (zone_filter) {
-            for (int t = 0; t < it.field_count; t++) {
-                if (ecs_field_id(&it, t) == w->comp_ZoneId) { zone_term = t; break; }
-            }
+            const ZoneId *zi = (const ZoneId *)ecs_get_id(w->ecs, e, w->comp_ZoneId);
+            if (!zi || strcmp(zi->zone, zone_filter) != 0) continue;
         }
 
-        for (int i = 0; i < it.count && nresults < 4096; i++) {
-            if (zone_filter && zone_term >= 0) {
-                const ZoneId *zi = (const ZoneId *)ecs_field_at(&it, zone_term, i);
-                if (!zi || strcmp(zi->zone, zone_filter) != 0) continue;
-            }
-            if (ek_term >= 0) {
-                const EntityKey *ek = (const EntityKey *)ecs_field_at(&it, ek_term, i);
-                if (ek && ek->eid[0]) {
-                    results[nresults++] = (char *)ek->eid;
-                }
-            }
+        /* Check each required component */
+        int match = 1;
+        for (int c = 0; c < nreq; c++) {
+            if (!ecs_has_id(w->ecs, e, required[c])) { match = 0; break; }
         }
+        if (!match) continue;
+
+        results[nresults++] = w->slots[s].eid;
     }
-    ecs_query_fini(q);
 
     RedisModule_ReplyWithArray(ctx, nresults);
     for (int i = 0; i < nresults; i++)
@@ -786,7 +733,7 @@ static int Cmd_FLECS_RESTORE(RedisModuleCtx *ctx, RedisModuleString **argv, int 
     do {
         char cursor_str[32];
         snprintf(cursor_str, sizeof(cursor_str), "%lld", cursor);
-        RedisModuleCallReply *scan = RedisModule_Call(ctx, "SCAN", "cccc",
+        RedisModuleCallReply *scan = RedisModule_Call(ctx, "SCAN", "ccccc",
             cursor_str, "MATCH", pattern, "COUNT", "100");
         if (!scan) break;
 
@@ -795,7 +742,7 @@ static int Cmd_FLECS_RESTORE(RedisModuleCtx *ctx, RedisModuleString **argv, int 
         if (!cursor_rep || !keys_rep) { RedisModule_FreeCallReply(scan); break; }
 
         size_t clen;
-        const char *cs = RedisModule_CallReplyStringBuffer(cursor_rep, &clen);
+        const char *cs = RedisModule_CallReplyStringPtr(cursor_rep, &clen);
         char cbuf[32]; if (clen < 32) { memcpy(cbuf, cs, clen); cbuf[clen] = 0; }
         cursor = strtoll(cbuf, NULL, 10);
 
@@ -804,7 +751,7 @@ static int Cmd_FLECS_RESTORE(RedisModuleCtx *ctx, RedisModuleString **argv, int 
             RedisModuleCallReply *key_rep = RedisModule_CallReplyArrayElement(keys_rep, ki);
             if (!key_rep) continue;
             size_t kl;
-            const char *key_str = RedisModule_CallReplyStringBuffer(key_rep, &kl);
+            const char *key_str = RedisModule_CallReplyStringPtr(key_rep, &kl);
             if (!key_str) continue;
 
             /* HGETALL the entity hash */
@@ -821,8 +768,8 @@ static int Cmd_FLECS_RESTORE(RedisModuleCtx *ctx, RedisModuleString **argv, int 
                 RedisModuleCallReply *fv = RedisModule_CallReplyArrayElement(hga, fi + 1);
                 if (!fk || !fv) continue;
                 size_t fl, vl2;
-                const char *f = RedisModule_CallReplyStringBuffer(fk, &fl);
-                const char *v = RedisModule_CallReplyStringBuffer(fv, &vl2);
+                const char *f = RedisModule_CallReplyStringPtr(fk, &fl);
+                const char *v = RedisModule_CallReplyStringPtr(fv, &vl2);
                 if (!f || !v) continue;
                 char vbuf[128]; size_t cp = vl2 < 127 ? vl2 : 127;
                 memcpy(vbuf, v, cp); vbuf[cp] = 0;
@@ -870,14 +817,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 
     if (RedisModule_Init(ctx, "cy_game", 1, REDISMODULE_APIVER_1) != REDISMODULE_OK)
         return REDISMODULE_ERR;
-
-    /* Wire FLECS allocator to Redis Module allocator */
-    ecs_os_api_t api = ecs_os_get_api();
-    api.malloc_  = cy_malloc;
-    api.realloc_ = cy_realloc;
-    api.free_    = cy_free;
-    api.calloc_  = cy_calloc;
-    ecs_os_set_api(&api);
 
     memset(g_worlds, 0, sizeof(g_worlds));
 
