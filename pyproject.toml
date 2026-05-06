@@ -1,19 +1,19 @@
 [build-system]
-requires = ["setuptools", "Cython>=0.29.0"]
+requires = ["setuptools>=68", "Cython>=3.0,<4", "numpy>=1.21"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cy-redis"
-version = "0.1.0"
-description = "High-performance threaded Redis client using Cython and hiredis"
+dynamic = ["version"]
+description = "High-performance Redis client built with Cython and hiredis"
 readme = "README_CYREDIS.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    {name = "Ben Gamble", email = "ben@example.com"},
+    {name = "Ben Gamble", email = "ben.gamble@ververica.com"},
 ]
 maintainers = [
-    {name = "Ben Gamble", email = "ben@example.com"},
+    {name = "Ben Gamble", email = "ben.gamble@ververica.com"},
 ]
 keywords = [
     "redis",
@@ -30,73 +30,76 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
-    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Cython",
     "Topic :: Database",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Networking",
 ]
-dependencies = [
-    "Cython>=0.29.0",
-    "pytest-asyncio>=1.2.0",
-    "pytest-timeout>=2.4.0",
-    "redis>=7.0.1",
-]
+# No runtime Python dependencies — all Redis communication goes through
+# the vendored hiredis C library baked into the Cython extensions.
+dependencies = []
 
 [project.optional-dependencies]
 async = [
     "uvloop>=0.17.0",
 ]
 ai = [
-    "numpy>=1.19.0",
+    "numpy>=1.21.0",
 ]
 dev = [
-    "pytest>=6.0",
-    "pytest-asyncio>=0.15",
-    "black>=21.0",
-    "flake8>=3.9",
-    "mypy>=0.900",
-    "isort>=5.8.0",
-]
-docs = [
-    "sphinx>=4.0",
-    "sphinx-rtd-theme>=1.0",
-    "myst-parser>=0.15",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.1",
+    "black>=23.0",
+    "flake8>=6.0",
+    "isort>=5.12",
+    "mypy>=1.0",
 ]
 test = [
-    "pytest>=6.0",
-    "pytest-asyncio>=0.15",
-    "pytest-cov>=2.10",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.1",
+    "redis>=5.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-repo/cy-redis"
-Documentation = "https://cy-redis.readthedocs.io/"
-Repository = "https://github.com/your-repo/cy-redis"
-Issues = "https://github.com/your-repo/cy-redis/issues"
-Changelog = "https://github.com/your-repo/cy-redis/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/bengamble/cy-redis"
+Repository = "https://github.com/bengamble/cy-redis"
+Issues = "https://github.com/bengamble/cy-redis/issues"
+Changelog = "https://github.com/bengamble/cy-redis/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 zip-safe = false
 include-package-data = true
 
+[tool.setuptools.dynamic]
+version = {attr = "cy_redis.__version__"}
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cy_redis*", "cyredis_game*"]
-exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "lua_scripts*", "hiredis*"]
+exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "hiredis*"]
 
-# Core Infrastructure (minimal buildable set)
+# ── cy_redis core ──────────────────────────────────────────────────────────────
+
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.core.cy_redis_client"
 sources = ["cy_redis/core/cy_redis_client.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.redis_core"
+sources = ["cy_redis/core/redis_core.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
@@ -106,7 +109,14 @@ sources = ["cy_redis/core/protocol.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Advanced Features (keep stable ones)
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.async_core"
+sources = ["cy_redis/core/async_core.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+# ── cy_redis features ──────────────────────────────────────────────────────────
+
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.features.advanced"
 sources = ["cy_redis/features/advanced.pyx"]
@@ -114,21 +124,59 @@ include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 libraries = ["z"]
 
-# Distributed primitives
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.features.distributed"
 sources = ["cy_redis/features/distributed.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Web Integration
 [[tool.setuptools.ext-modules]]
-name = "cy_redis.web.web_cache"
-sources = ["cy_redis/web/web_cache.pyx"]
+name = "cy_redis.features.functions"
+sources = ["cy_redis/features/functions.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Auth components (build before workers/web support)
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.script_manager"
+sources = ["cy_redis/features/script_manager.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.probabilistic"
+sources = ["cy_redis/features/probabilistic.pyx"]
+include-dirs = [".", "hiredis", "cy_redis/cpp"]
+extra-objects = ["hiredis/libhiredis.a"]
+language = "c++"
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.json_ops"
+sources = ["cy_redis/features/json_ops.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.search"
+sources = ["cy_redis/features/search.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.graph"
+sources = ["cy_redis/features/graph.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.ai"
+sources = ["cy_redis/features/ai.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+language = "c++"
+# numpy include dir injected at build time by setup.py cmdclass
+
+# ── cy_redis auth ──────────────────────────────────────────────────────────────
+
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.auth.token_manager"
 sources = ["cy_redis/auth/token_manager.pyx"]
@@ -153,7 +201,8 @@ sources = ["cy_redis/auth/password_reset_manager.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Worker components
+# ── cy_redis workers ───────────────────────────────────────────────────────────
+
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.workers.worker_queue"
 sources = ["cy_redis/workers/worker_queue.pyx"]
@@ -178,26 +227,8 @@ sources = ["cy_redis/workers/multi_session_tracker.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Data / utils needed by web_app_support
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.data.shared_state_manager"
-sources = ["cy_redis/data/shared_state_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
+# ── cy_redis data ──────────────────────────────────────────────────────────────
 
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.utils.redis_iterators"
-sources = ["cy_redis/utils/redis_iterators.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# Web app support (after dependencies)
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.web.web_app_support"
-sources = ["cy_redis/web/web_app_support.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-# Data Structures
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.data.shared_dict"
 sources = ["cy_redis/data/shared_dict.pyx"]
@@ -212,49 +243,41 @@ include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 libraries = ["z"]
 
-# Async core client (uses cy_redis_client)
 [[tool.setuptools.ext-modules]]
-name = "cy_redis.core.async_core"
-sources = ["cy_redis/core/async_core.pyx"]
+name = "cy_redis.data.shared_state_manager"
+sources = ["cy_redis/data/shared_state_manager.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Redis core wrapper (hiredis)
+# ── cy_redis web ───────────────────────────────────────────────────────────────
+
 [[tool.setuptools.ext-modules]]
-name = "cy_redis.core.redis_core"
-sources = ["cy_redis/core/redis_core.pyx"]
+name = "cy_redis.web.web_cache"
+sources = ["cy_redis/web/web_cache.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Messaging primitives (no messaging_core dependency)
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.web.web_app_support"
+sources = ["cy_redis/web/web_app_support.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+# ── cy_redis utils / communication ────────────────────────────────────────────
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.utils.redis_iterators"
+sources = ["cy_redis/utils/redis_iterators.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.communication.messaging"
 sources = ["cy_redis/communication/messaging.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
-# Functions and script manager
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.features.functions"
-sources = ["cy_redis/features/functions.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.features.script_manager"
-sources = ["cy_redis/features/script_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.features.probabilistic"
-sources = ["cy_redis/features/probabilistic.pyx"]
-include-dirs = [".", "hiredis", "cy_redis/cpp"]
-extra-objects = ["hiredis/libhiredis.a"]
-language = "c++"
-
-[tool.setuptools.dynamic]
-version = {attr = "cy_redis.__version__"}
+# ── cyredis_game ───────────────────────────────────────────────────────────────
 
 [[tool.setuptools.ext-modules]]
 name = "cyredis_game.game_engine"
@@ -292,66 +315,70 @@ sources = ["cyredis_game/chain.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
+# ── Tool configuration ─────────────────────────────────────────────────────────
+
 [tool.cython]
 language_level = 3
 
 [tool.black]
 line-length = 88
-target-version = ['py36']
-include = '\.pyi?$'
+target-version = ["py39", "py310", "py311", "py312"]
 extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
+/(\.eggs|\.git|\.venv|build|dist)/
 '''
 
 [tool.isort]
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["cy_redis"]
+known_first_party = ["cy_redis", "cyredis_game"]
 known_third_party = ["Cython"]
 
 [tool.mypy]
-python_version = "3.6"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
-warn_unreachable = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = [
-    "Cython.*",
-    "setuptools.*",
-]
+module = ["Cython.*", "setuptools.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q --cov=cy_redis --cov-report=html --cov-report=term-missing"
-testpaths = [
-    "tests",
+minversion = "7.0"
+addopts = "-ra --strict-markers --strict-config --tb=short"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+timeout = 300
+timeout_method = "thread"
+markers = [
+    "unit: Unit tests that don't require external services",
+    "integration: Integration tests requiring external services",
+    "slow: Tests that take significant time to complete",
+    "cluster: Tests requiring Redis cluster setup",
+    "sentinel: Tests requiring Redis sentinel setup",
+    "async_test: Asynchronous tests",
+    "benchmark: Performance/benchmark tests",
+    "docker: Tests that require Docker to be running",
+    "pgcache: Tests for PostgreSQL cache module",
+    "messaging: Tests for messaging functionality",
+    "rpc: Tests for RPC functionality",
+    "distributed: Tests for distributed features",
+    "worker_coordination: Tests for worker coordination and recovery features",
+    "requires_redis: Tests that require Redis to be running",
+    "game_module: Tests requiring cy_game Redis module on port 6380",
+    "requires_postgres: Tests that require PostgreSQL to be running",
+    "skip_ci: Tests to skip in CI environment",
 ]
 filterwarnings = [
     "error",
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
 ]
 
 [dependency-groups]
@@ -364,4 +391,3 @@ package = true
 
 [tool.uv.sources]
 # Vendored libraries are built locally — never resolved from PyPI
-# arrow, tonbo, rocksdb come from the vendored copies in this repo

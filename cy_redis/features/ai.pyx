@@ -2,6 +2,7 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 # cython: cdivision=True
+# distutils: language = c++
 
 """
 High-performance RedisAI module for AI/ML model inference
@@ -20,7 +21,6 @@ import asyncio
 from typing import Any, Dict, List, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 
-cnp.import_array()  # Initialize NumPy C API
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
 
@@ -248,7 +248,7 @@ cdef class CyRedisAI:
         finally:
             self.pool.return_connection(conn)
 
-    cdef dict _parse_tensor_result(self, result, cpp_bool with_blob):
+    cdef dict _parse_tensor_result(self, result, bint with_blob):
         """Parse tensor result into NumPy array"""
         if not result or not isinstance(result, list):
             return {}
