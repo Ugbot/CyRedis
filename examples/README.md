@@ -1,118 +1,77 @@
-# CyRedis Examples
+# Examples
 
-This directory contains comprehensive examples demonstrating CyRedis features, usage patterns, and best practices.
+← [README](../README.md)
 
-## 📚 Available Examples
-
-### Core Functionality
-- **`example_usage.py`** - Basic Redis operations, async/sync usage, threading
-- **`example_protocol_support.py`** - RESP2/3 protocol features, pipelining, connection pooling
-- **`example_production_redis.py`** - Production-ready configurations and patterns
-
-### Advanced Features
-- **`example_redis_functions.py`** - Redis Functions library usage, atomic operations
-- **`example_lua_scripts.py`** - Lua script management, custom scripting
-- **`example_atomic_script_deployment.py`** - Script deployment and testing patterns
-- **`example_shared_dict.py`** - Distributed shared dictionaries with concurrency control
-
-### Migration & Integration
-- **`migration_example.py`** - Migration patterns from other Redis clients
-
-## 🚀 Running Examples
-
-Each example is self-contained and can be run independently:
+All examples connect to Redis on `localhost:6379` by default. Run any of them with:
 
 ```bash
-# Basic usage example
-python examples/example_usage.py
-
-# Redis Functions example
-python examples/example_redis_functions.py
-
-# Production patterns
-python examples/example_production_redis.py
+uv run python examples/<name>.py
 ```
 
-## 📖 Example Categories
+## Core
 
-### 🔰 Beginner
-- `example_usage.py` - Start here for basic operations
-- `example_protocol_support.py` - Understand protocol features
+| File | What it shows |
+|------|--------------|
+| `example_usage.py` | Basic get/set, lists, hashes, async vs sync |
+| `example_protocol_support.py` | RESP2/RESP3, pipelining, connection pooling |
+| `example_production_redis.py` | Connection retries, health checks, production patterns |
+| `production_redis.py` | Alternate production config example |
+| `migration_example.py` | Migrating from redis-py |
 
-### 🔧 Intermediate
-- `example_lua_scripts.py` - Custom scripting
-- `example_shared_dict.py` - Distributed data structures
+## Scripting
 
-### 🏭 Advanced
-- `example_redis_functions.py` - Atomic operations at scale
-- `example_atomic_script_deployment.py` - Production deployment
-- `example_production_redis.py` - Enterprise patterns
+| File | What it shows |
+|------|--------------|
+| `example_lua_scripts.py` | EVAL, EVALSHA, pre-built lua_scripts/ |
+| `example_redis_functions.py` | FUNCTION LOAD, FCALL, Redis Functions libraries |
+| `example_atomic_script_deployment.py` | ScriptManager, hot-reload, all-or-nothing deployment |
 
-## 🏗️ Architecture Patterns
+## Data structures and distributed
 
-### Basic Client Usage
-```python
-from cy_redis import RedisClient
+| File | What it shows |
+|------|--------------|
+| `example_shared_dict.py` | SharedDict, ConcurrentSharedDict across processes |
+| `streaming_example.py` | Redis Streams, XADD/XREAD, async stream iteration |
 
-# Synchronous
-client = RedisClient()
-result = client.get("key")
+## Web
 
-# Asynchronous
-async with client:
-    result = await client.get_async("key")
-```
+| File | What it shows |
+|------|--------------|
+| `example_fastapi_channels.py` | CyChannelManager — WebSocket pub/sub, stream rewind, filters, presence |
+| `web_app_example.py` | JWT tokens, sessions, 2FA, password reset |
+| `web_cache_example.py` | WebCache decorator, tags, invalidation |
+| `web_cache_simple_example.py` | Minimal web cache usage |
 
-### Redis Functions
-```python
-from cy_redis.functions import RedisFunctionsManager
+## Integrations
 
-functions = RedisFunctionsManager(client)
-functions.load_library("cy:atomic")
-result = functions.atomic.cas("key", "old", "new")
-```
+| File | What it shows |
+|------|--------------|
+| `example_clickhouse_redis.py` | ClickHouse bridge — live cache, stream dump, watch loop, channel broadcast |
 
-### Game Engine
-```python
-from cyredis_game import GameEngine
+## FastAPI channels quick start
 
-engine = GameEngine()
-world = engine.get_world("my_game")
-zone = world.get_zone("zone_0")
-```
-
-## 🎯 Learning Path
-
-1. **Start**: `example_usage.py` - Basic operations
-2. **Protocol**: `example_protocol_support.py` - Advanced features
-3. **Production**: `example_production_redis.py` - Real-world usage
-4. **Functions**: `example_redis_functions.py` - Atomic operations
-5. **Game Engine**: `cyredis_game/example_game_engine.py` - Distributed simulation
-
-## 🔍 Troubleshooting
-
-### Common Issues
-- **Connection errors**: Check Redis server is running
-- **Import errors**: Ensure CyRedis is properly installed
-- **Async issues**: Use `asyncio.run()` for async examples
-
-### Dependencies
 ```bash
-pip install cy-redis msgpack hiredis
-# For game engine examples:
-pip install cyredis-game
+uv pip install fastapi uvicorn
+uv run uvicorn examples.example_fastapi_channels:app --reload --port 8765
 ```
 
-## 🤝 Contributing
+Then in another terminal:
 
-When adding new examples:
-1. Follow naming convention: `example_<feature>.py`
-2. Include comprehensive docstrings
-3. Add error handling and logging
-4. Update this README with the new example
+```python
+import asyncio, websockets, json
+async def run():
+    async with websockets.connect("ws://localhost:8765/ws/demo") as ws:
+        await ws.send("hello")
+        print(json.loads(await asyncio.wait_for(ws.recv(), 3)))
+asyncio.run(run())
+```
 
-## 📞 Support
+## ClickHouse bridge quick start
 
-- Check individual example docstrings for usage details
-- See main README for installation and setup
-- File issues for bugs or feature requests
+```bash
+# Requires ClickHouse at localhost:8123 and Redis at localhost:6379
+uv run python examples/example_clickhouse_redis.py
+
+# With live WebSocket server (mode 4)
+WITH_WS=1 uv run python examples/example_clickhouse_redis.py
+```
