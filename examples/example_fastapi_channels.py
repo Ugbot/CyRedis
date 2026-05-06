@@ -140,6 +140,39 @@ async def get_history(
     return {"channel": channel, "messages": messages}
 
 
+@app.post("/channels/{channel}/subscribe/{conn_id}")
+async def update_subscription(
+    channel: str,
+    conn_id: str,
+    body: dict,
+    ch: CyChannelManager = Depends(get_channels),
+):
+    """
+    Subscribe *conn_id* to *channel* (or update their filter) without going
+    through the WebSocket.  Call this from any Python process — the change is
+    written directly to Redis and is effective immediately.
+
+    This is how you implement a "big stream → per-subscriber slice" pattern:
+
+    1. All stock-ticker data arrives on channel ``tickers``.
+    2. A trading bot connects and calls this endpoint with
+       ``{"symbol": "AAPL"}`` to receive only AAPL messages.
+    3. Later it calls again with ``{"symbol": "TSLA"}`` to switch symbols
+       without reconnecting.
+
+    The routing decision runs inside Redis via the ``cy_channel_route``
+    Lua Function — no extra Python round-trip per message.
+    """
+    filter_expr = body.get("filter") or None
+    await ch.set_filter(conn_id, channel, filter_expr)
+    return {
+        "ok": True,
+        "conn_id": conn_id,
+        "channel": channel,
+        "filter": filter_expr,
+    }
+
+
 @app.post("/channels/{channel}/filter/{conn_id}")
 async def update_filter(
     channel: str,
