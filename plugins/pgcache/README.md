@@ -8,12 +8,8 @@ A Redis module that provides read-through caching directly from PostgreSQL with 
 - **Server-Side Logic**: All caching logic runs inside Redis
 - **High Performance**: No client-side database queries
 - **Multi-Key Operations**: Efficient batch operations
-- **Real-Time Events**: Publishes cache events to Redis pubsub
-- **PostgreSQL LISTEN/NOTIFY Integration**: Automatic cache invalidation on database changes
-- **PostgreSQL WAL Reading**: Direct change detection from database transaction logs
-- **Redis WATCH Forwarding**: Forward cache watches to Redis channels/streams
+- **Real-Time Events**: Publishes cache events to `pg_cache_events` pubsub channel
 - **Configurable**: Customizable TTL, prefixes, and database connections
-- **Background Processing**: Asynchronous notification and WAL processing threads
 
 ## Architecture
 
@@ -22,18 +18,13 @@ A Redis module that provides read-through caching directly from PostgreSQL with 
 │   Client    │───▶│    Redis    │───▶│ PostgreSQL  │
 │             │    │   Module    │    │  Database   │
 └─────────────┘    └─────────────┘    └─────────────┘
-                          │                │
-                          ▼                ▼
-                   ┌─────────────┐    ┌─────────────┐
-                   │  PubSub     │    │ LISTEN/NOTIFY│
-                   │   Events    │    │   Triggers   │
-                   └─────────────┘    └─────────────┘
-                          ▲                │
-                          │                ▼
-                   ┌─────────────┐    ┌─────────────┐
-                   │   WATCH     │    │     WAL     │
-                   │ Forwarding  │    │   Reader    │
-                   └─────────────┘    └─────────────┘
+                          │
+                          ▼
+                   ┌─────────────┐
+                   │  PubSub     │
+                   │  Events     │
+                   │pg_cache_evt │
+                   └─────────────┘
 ```
 
 ## Building
@@ -103,11 +94,6 @@ redis-server --loadmodule ./pgcache.so \
 - `pg_password <pass>`: PostgreSQL password (default: empty)
 - `default_ttl <seconds>`: Default cache TTL (default: 3600)
 - `cache_prefix <prefix>`: Cache key prefix (default: pg_cache:)
-- `enable_notifications <bool>`: Enable PostgreSQL LISTEN/NOTIFY (default: false)
-- `enable_wal <bool>`: Enable PostgreSQL WAL reading (default: false)
-- `wal_slot_name <name>`: WAL replication slot name (default: pgcache_slot)
-- `wal_publication_name <name>`: WAL publication name (default: pgcache_pub)
-- `enable_watch_forwarding <bool>`: Enable Redis WATCH forwarding (default: false)
 
 ## Redis Commands
 
@@ -356,10 +342,71 @@ MODULE LIST
 INFO modules
 ```
 
+## Automatic Cache Invalidation via WAL / CDC
+
+The current module is synchronous and request-driven: cache entries are invalidated
+explicitly with `PGCACHE.INVALIDATE` or expire via TTL.  For applications that need
+the cache to stay coherent with live PostgreSQL writes without any application-side
+invalidation calls, the natural extension is Change Data Capture (CDC) from the
+PostgreSQL Write-Ahead Log or MySQL binary log.
+
+### Two implementation approaches
+
+**Option A — Standalone CDC daemon (recommended)**
+
+A separate process tails the WAL using PostgreSQL logical replication
+(`wal2json` output plugin) and calls `PGCACHE.INVALIDATE` whenever a row changes.
+This is the simpler and more operationally predictable path:
+
+```
+PostgreSQL WAL → CDC daemon → PGCACHE.INVALIDATE → Redis cache invalidated
+                           └→ XADD cy:cdc:{table} → Redis Stream (event log)
+```
+
+Set up a logical replication slot and publication in PostgreSQL:
+
+```sql
+SELECT pg_create_logical_replication_slot('pgcache_slot', 'wal2json');
+CREATE PUBLICATION pgcache_pub FOR TABLE users, products;
+```
+
+The daemon consumes the slot and for each row-change event calls:
+
+```
+PGCACHE.INVALIDATE <table> <primary_key_json>
+```
+
+This keeps the CDC consumer decoupled from the Redis module lifecycle and means
+a crashing consumer never affects Redis or PostgreSQL.
+
+**Option B — Background thread inside the module**
+
+A background thread (spawned in `RedisModule_OnLoad`) opens a second libpq
+connection in logical-replication mode and applies invalidations directly inside
+the Redis process.  This removes the external process dependency but couples the
+WAL consumer's lifetime to Redis:
+
+- Replication connection is held open inside the Redis process
+- A PostgreSQL reconnect stall blocks the background thread (not the event loop)
+- The replication slot must be dropped and recreated on module unload/reload
+
+This approach makes sense when you want the CDC consumer to share the module's
+Redis memory and key-space access without any network hops.
+
+### MySQL binary log
+
+The same two options apply for MySQL, using the MySQL C API's `mysql_binlog_*`
+functions (or the higher-level `mysql-binlog-connector-c` library) in place of
+libpq's replication interface.  The standalone-daemon approach is even more
+strongly preferred for MySQL since the binlog protocol is more complex and
+reconnection handling is more fragile inside a Redis module thread.
+
+### Using existing CDC infrastructure
+
+If you already have a CDC pipeline (Debezium, Maxwell, AWS DMS, etc.) publishing
+change events, you can wire it to pgcache with a single consumer that translates
+each event into a `PGCACHE.INVALIDATE` call — no module changes required.
+
 ## License
 
 MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions welcome! Please see CONTRIBUTING.md for guidelines.
