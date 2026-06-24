@@ -86,6 +86,9 @@ cdef class SessionManager:
 
         # Store session data
         self.redis_client.hset(f"session:{session_id}", mapping=session)
+        # Bound the session in Redis itself so expired sessions are reclaimed
+        # even if no code reads them again.
+        self.redis_client.expire(f"session:{session_id}", self.session_timeout)
 
         # Add to active sessions set
         self.redis_client.sadd(self.sessions_key, session_id)

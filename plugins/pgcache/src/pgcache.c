@@ -46,13 +46,19 @@ static PGconn *get_pg_connection(PGCtx *ctx) {
             ctx->pg_conn = NULL;
         }
 
-        char conninfo[512];
-        snprintf(conninfo, sizeof(conninfo),
-                 "host=%s port=%d dbname=%s user=%s password=%s connect_timeout=5",
-                 ctx->pg_host, ctx->pg_port, ctx->pg_database,
-                 ctx->pg_user, ctx->pg_password);
-
-        ctx->pg_conn = PQconnectdb(conninfo);
+        /* Pass connection parameters out-of-band (PQconnectdbParams) rather
+         * than concatenating them into one conninfo string — this keeps the
+         * password out of a buffer that could end up in a log/error message. */
+        char port_str[16];
+        snprintf(port_str, sizeof(port_str), "%d", ctx->pg_port);
+        const char *keywords[] = {
+            "host", "port", "dbname", "user", "password", "connect_timeout", NULL
+        };
+        const char *values[] = {
+            ctx->pg_host, port_str, ctx->pg_database,
+            ctx->pg_user, ctx->pg_password, "5", NULL
+        };
+        ctx->pg_conn = PQconnectdbParams(keywords, values, 0);
 
         if (PQstatus(ctx->pg_conn) != CONNECTION_OK) {
             PQfinish(ctx->pg_conn);

@@ -708,9 +708,13 @@ class RedisFunctions:
         """Load all available function libraries"""
         return self._func_mgr.load_all_libraries()
 
-    def call_function(self, library: str, function: str, keys=None, args=None):
-        """Call a Redis Function directly"""
-        return self._func_mgr.call_function(library, function, keys, args)
+    def call_function(self, function: str, keys=None, args=None):
+        """Call a registered Redis Function by name (FCALL).
+
+        Functions are invoked by their registered name, not library.function,
+        so this forwards a single function name to the manager.
+        """
+        return self._func_mgr.call_function(function, keys=keys, args=args)
 
     def get_library_info(self, library_name: str):
         """Get information about a loaded library"""

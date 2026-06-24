@@ -65,6 +65,9 @@ cdef class PasswordResetManager:
         )
 
         self.redis_client.hset(f"{self.tokens_key}:{token_hash}", mapping=token_data)
+        # Expire the token in Redis at its logical lifetime so stale tokens
+        # cannot accumulate and a leaked token cannot be replayed past expiry.
+        self.redis_client.expire(f"{self.tokens_key}:{token_hash}", self.token_expiry)
 
         return token
 
@@ -89,13 +92,16 @@ cdef class PasswordResetManager:
             self.redis_client.delete(f"{self.tokens_key}:{token_hash}")
             return None
 
-        # Check if already used
-        used = str(token_data.get('used', 'false')).lower() == 'true'
-        if used:
+        # Atomically claim the token: only the first caller flips 'used' from
+        # anything-but-'true' to 'true'. This closes the check-then-set race
+        # that would otherwise let two concurrent requests both consume one
+        # single-use token (reset-token replay).
+        claimed = self.redis_client.eval(
+            "if redis.call('HGET', KEYS[1], 'used') == 'true' then return 0 end "
+            "redis.call('HSET', KEYS[1], 'used', 'true') return 1",
+            1, f"{self.tokens_key}:{token_hash}")
+        if not claimed:
             return None
-
-        # Mark as used
-        self.redis_client.hset(f"{self.tokens_key}:{token_hash}", 'used', 'true')
 
         return {
             'user_id': token_data.get('user_id', ''),
