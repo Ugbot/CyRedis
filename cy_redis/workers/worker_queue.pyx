@@ -32,6 +32,19 @@ cdef class WorkerQueue:
     Supports multiple queue types and worker pools.
     """
 
+    cdef readonly str queue_name
+    cdef readonly str queue_type
+    cdef object redis_client
+    cdef int max_workers
+    cdef str queue_key
+    cdef str processing_key
+    cdef str completed_key
+    cdef str failed_key
+    cdef bint is_running
+    cdef object lock
+    cdef object executor
+    cdef list workers
+
     def __cinit__(self, str queue_name, CyRedisClient redis_client,
                   int max_workers=4, str queue_type="default"):
         # Preconditions: caller-supplied configuration must be sane. These are

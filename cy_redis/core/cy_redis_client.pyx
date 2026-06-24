@@ -2044,8 +2044,13 @@ cdef class CyRedisClient:
             self.pool.return_connection(conn)
 
     def xtrim(self, stream: str, maxlen: int = None, minid: str = None,
-              approximate: bool = True, limit: int = None) -> int:
-        """Trim stream to specified size"""
+              approximate: bool = False, limit: int = None) -> int:
+        """Trim stream to specified size.
+
+        approximate defaults to False so an explicit MAXLEN trims to exactly
+        that many entries; pass approximate=True for the faster '~' trimming
+        that may leave a few extra entries.
+        """
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:

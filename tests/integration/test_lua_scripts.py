@@ -347,9 +347,11 @@ class TestLuaScripts:
         with pytest.raises(Exception):
             redis_client.eval("return redis.call('INVALID_COMMAND')", 0)
 
-        # Wrong number of keys
+        # Runtime error returned from within the script. (Accessing KEYS[1]
+        # beyond numkeys is NOT an error in Redis — it is simply nil — so we
+        # provoke a real error reply instead.)
         with pytest.raises(Exception):
-            redis_client.eval("return KEYS[1]", 0)  # Expects 0 keys but accessing KEYS[1]
+            redis_client.eval("return redis.error_reply('boom')", 0)
 
     def test_lua_complex_data_structure(self, redis_client):
         """Test complex data structure manipulation with Lua."""
