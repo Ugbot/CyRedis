@@ -79,7 +79,7 @@ cdef class CyRedisConnection:
     cdef object _execute_raw(self, list args)
     cdef object _ensure_connected_and_run(self, list args)
     cpdef object _execute_command(self, list args)
-    cdef object _parse_reply(self, redisReply *reply)
+    cdef object _parse_reply(self, redisReply *reply, int depth=*)
 
 # Connection pool class - manages multiple CyRedisConnection instances
 cdef class CyRedisConnectionPool:

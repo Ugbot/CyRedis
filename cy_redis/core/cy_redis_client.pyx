@@ -102,6 +102,12 @@ DEF REDIS_REPLY_NIL = 4
 DEF REDIS_REPLY_STATUS = 5
 DEF REDIS_REPLY_ERROR = 6
 
+# Hard upper bound on RESP reply nesting depth. Real Redis replies nest only a
+# few levels; this cap turns a pathological/hostile deeply-nested reply into a
+# bounded, loud failure instead of unbounded recursion (TigerStyle: bound
+# everything; no unbounded recursion).
+DEF MAX_REPLY_DEPTH = 128
+
 # Exception classes
 class RedisError(Exception):
     pass
@@ -150,7 +156,11 @@ cdef class CyRedisConnection:
         self._disconnect()
 
     cdef int _connect(self):
-        """Connect to Redis server"""
+        """Connect to Redis server. Returns 0 on success, -1 on failure."""
+        # Invariant: host/port were validated at construction; a valid TCP port
+        # is 1..65535. Guard the impossible rather than emit a bad connect.
+        assert 0 < self._port <= 65535, "port out of range"
+        assert self._host is not None, "host must be set"
         if self._connected:
             return 0
 
@@ -178,12 +188,21 @@ cdef class CyRedisConnection:
             self.ctx = <redisContext *>0
         self._connected = False
 
-    cdef object _parse_reply(self, redisReply *reply):
-        """Parse redisReply supporting both RESP2 and RESP3 types."""
+    cdef object _parse_reply(self, redisReply *reply, int depth=0):
+        """Parse a redisReply (RESP2 and RESP3 types) into a Python object.
+
+        Recurses for aggregate types; `depth` bounds the nesting so a hostile
+        or corrupt reply cannot drive unbounded recursion.
+        """
+        # Precondition: hiredis never hands us a NULL reply here — callers
+        # branch on NULL before parsing — and nesting stays within bounds.
+        assert reply != <redisReply *>0, "parse called with NULL reply"
+        assert 0 <= depth <= MAX_REPLY_DEPTH, "RESP reply nesting too deep"
+
         cdef list result
         cdef dict map_result
         cdef set set_result
-        cdef int i
+        cdef size_t i
         cdef str error_msg
 
         if reply.type == REDIS_REPLY_STRING:
@@ -193,7 +212,7 @@ cdef class CyRedisConnection:
         elif reply.type == REDIS_REPLY_ARRAY:
             result = []
             for i in range(reply.elements):
-                result.append(self._parse_reply(reply.element[i]))
+                result.append(self._parse_reply(reply.element[i], depth + 1))
             return result
         elif reply.type == REDIS_REPLY_INTEGER:
             return reply.integer
@@ -214,21 +233,27 @@ cdef class CyRedisConnection:
         elif reply.type == 8:  # REDIS_REPLY_BOOL
             return bool(reply.integer)
         elif reply.type == 9:  # REDIS_REPLY_MAP — flat key/value pairs
+            # A map always carries an even number of elements. Iterate pairs
+            # with an explicit bound (never `elements - 1`, which underflows to
+            # SIZE_MAX for an empty map).
+            assert reply.elements % 2 == 0, "RESP3 map has odd element count"
             map_result = {}
-            for i in range(0, reply.elements - 1, 2):
-                k = self._parse_reply(reply.element[i])
-                v = self._parse_reply(reply.element[i + 1])
+            i = 0
+            while i + 1 < reply.elements:
+                k = self._parse_reply(reply.element[i], depth + 1)
+                v = self._parse_reply(reply.element[i + 1], depth + 1)
                 map_result[k] = v
+                i += 2
             return map_result
         elif reply.type == 10:  # REDIS_REPLY_SET
             set_result = set()
             for i in range(reply.elements):
-                set_result.add(self._parse_reply(reply.element[i]))
+                set_result.add(self._parse_reply(reply.element[i], depth + 1))
             return set_result
         elif reply.type == 11:  # REDIS_REPLY_PUSH — server-initiated, return as list
             result = []
             for i in range(reply.elements):
-                result.append(self._parse_reply(reply.element[i]))
+                result.append(self._parse_reply(reply.element[i], depth + 1))
             return result
         elif reply.type == 13:  # REDIS_REPLY_BIGNUM
             if reply.str and reply.len > 0:
@@ -236,7 +261,7 @@ cdef class CyRedisConnection:
             return 0
         elif reply.type == 14:  # REDIS_REPLY_ATTRIBUTE — skip metadata, return value
             if reply.elements >= 2:
-                return self._parse_reply(reply.element[1])
+                return self._parse_reply(reply.element[1], depth + 1)
             return None
         else:
             if reply.str:
@@ -246,6 +271,11 @@ cdef class CyRedisConnection:
     cdef object _execute_raw(self, list args):
         """Send args to Redis and return parsed reply. Caller must ensure connected."""
         cdef int argc = len(args)
+        # Preconditions: a command always has at least its name, and the caller
+        # (_ensure_connected_and_run) guarantees a live context before we get
+        # here. Both are programmer errors if violated, not runtime conditions.
+        assert argc > 0, "execute_raw requires at least the command name"
+        assert self.ctx != <redisContext *>0, "execute_raw on a NULL context"
         cdef char **argv = <char **>malloc(sizeof(char *) * argc)
         cdef size_t *argvlen = <size_t *>malloc(sizeof(size_t) * argc)
         cdef redisReply *reply
