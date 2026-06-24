@@ -82,14 +82,15 @@ cdef class PasswordResetManager:
         if not token_data:
             return None
 
-        # Check expiration
-        expires_at = float(token_data.get(b'expires_at', b'0'))
+        # Check expiration. The native client decodes hash fields to str, so
+        # read string keys (not bytes).
+        expires_at = float(token_data.get('expires_at', '0'))
         if time.time() > expires_at:
             self.redis_client.delete(f"{self.tokens_key}:{token_hash}")
             return None
 
         # Check if already used
-        used = token_data.get(b'used', b'false').lower() == b'true'
+        used = str(token_data.get('used', 'false')).lower() == 'true'
         if used:
             return None
 
@@ -97,8 +98,8 @@ cdef class PasswordResetManager:
         self.redis_client.hset(f"{self.tokens_key}:{token_hash}", 'used', 'true')
 
         return {
-            'user_id': token_data.get(b'user_id', b'').decode(),
-            'email': token_data.get(b'email', b'').decode()
+            'user_id': token_data.get('user_id', ''),
+            'email': token_data.get('email', '')
         }
 
     def cleanup_expired_tokens(self):

@@ -34,6 +34,9 @@ cdef class HTTPCacheHeaders:
     HTTP cache headers management with ETag and Cache-Control support.
     """
 
+    cdef public object etag_header_name
+    cdef public object cache_control_header
+
     def __cinit__(self, str etag_header_name="ETag", str cache_control_header="Cache-Control"):
         self.etag_header_name = etag_header_name
         self.cache_control_header = cache_control_header
@@ -257,7 +260,21 @@ cdef class RequestKeyBuilder(KeyBuilder):
 # ===== CACHE BACKENDS =====
 
 cdef class CacheBackend:
-    """Base class for cache backends"""
+    """Base class for cache backends.
+
+    Cython ``cdef`` classes have no instance ``__dict__`` by default, so every
+    attribute a backend assigns must be declared as a cdef slot. The slots are
+    declared here on the base so all concrete backends inherit them.
+    """
+
+    cdef public object prefix
+    cdef public object redis_client
+    cdef public object cache
+    cdef public object expiries
+    cdef public object host
+    cdef public object port
+    cdef public object table_name
+    cdef public object region_name
 
     def __cinit__(self):
         self.prefix = "cyredis:cache"
@@ -320,15 +337,32 @@ cdef class RedisCacheBackend(CacheBackend):
     def clear(self, pattern: str = None):
         """Clear Redis cache"""
         if pattern:
-            # Use SCAN for pattern matching
-            keys = self.redis_client.scan(0, match=f"{self.prefix}:{pattern}*")[1]
-            if keys:
-                self.redis_client.delete(*keys)
+            match = f"{self.prefix}:{pattern}*"
         else:
-            # Clear all keys with prefix
-            keys = self.redis_client.scan(0, match=f"{self.prefix}:*")[1]
-            if keys:
-                self.redis_client.delete(*keys)
+            match = f"{self.prefix}:*"
+        keys = self._scan_keys(match)
+        if keys:
+            self.redis_client.delete(*keys)
+
+    def _scan_keys(self, match: str) -> list:
+        """Collect every key matching ``match`` via a full SCAN cursor walk.
+
+        The native client exposes raw RESP via ``execute_command``; SCAN
+        replies are ``[cursor, [keys...]]`` with the cursor as a string.
+        """
+        cursor = "0"
+        collected = []
+        while True:
+            reply = self.redis_client.execute_command(
+                ["SCAN", cursor, "MATCH", match, "COUNT", "100"]
+            )
+            cursor = reply[0] if isinstance(reply[0], str) else reply[0].decode()
+            batch = reply[1] or []
+            for k in batch:
+                collected.append(k if isinstance(k, str) else k.decode())
+            if cursor == "0":
+                break
+        return collected
 
     def exists(self, key: str) -> bool:
         """Check if key exists in Redis cache"""
@@ -682,6 +716,13 @@ cdef class CacheManager:
     """
     Main cache manager with FastAPI-cache inspired functionality.
     """
+
+    cdef public object backend
+    cdef public object coder
+    cdef public object key_builder
+    cdef public object prefix
+    cdef public object default_ttl
+    cdef public object http_headers
 
     def __cinit__(self, CacheBackend backend, Coder coder=None,
                   KeyBuilder key_builder=None, str prefix="cyredis:cache",

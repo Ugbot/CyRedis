@@ -1113,7 +1113,7 @@ cdef class CyRedisClient:
         return parsed
 
     # Async operations
-    async def set_async(self, key: str, value: str) -> str:
+    async def set_async(self, key: str, value: str) -> bool:
         """Async set operation"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, self.set, key, value)

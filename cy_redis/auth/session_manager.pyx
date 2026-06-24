@@ -104,9 +104,10 @@ cdef class SessionManager:
         if not session_data:
             return None
 
-        # Check if session is expired or inactive
-        expires_at = float(session_data.get(b'expires_at', b'0'))
-        is_active = session_data.get(b'is_active', b'true').lower() == b'true'
+        # Check if session is expired or inactive. The native client decodes
+        # hash fields to str, so read string keys (not bytes).
+        expires_at = float(session_data.get('expires_at', '0'))
+        is_active = str(session_data.get('is_active', 'true')).lower() == 'true'
 
         session_is_expired = time.time() > expires_at
         if not is_active or session_is_expired:
@@ -116,7 +117,7 @@ cdef class SessionManager:
         # Update last accessed time
         self.redis_client.hset(f"session:{session_id}", 'last_accessed', time.time())
 
-        return {k.decode(): v.decode() for k, v in session_data.items()}
+        return dict(session_data)
 
     def update_session(self, session_id: str, session_data: Dict[str, Any]) -> bool:
         """Update session data"""
@@ -140,7 +141,7 @@ cdef class SessionManager:
         session_data = self.redis_client.hgetall(f"session:{session_id}")
 
         if session_data:
-            user_id = session_data.get(b'user_id', b'').decode()
+            user_id = session_data.get('user_id', '')
 
             # Remove from active sessions
             self.redis_client.srem(self.sessions_key, session_id)
@@ -162,8 +163,7 @@ cdef class SessionManager:
         MAX_SESSIONS_PER_USER = 1_000_000
         assert len(user_sessions) <= MAX_SESSIONS_PER_USER, "user session set too large"
 
-        for session_id_bytes in user_sessions:
-            session_id = session_id_bytes.decode()
+        for session_id in user_sessions:
             self.destroy_session(session_id)
 
     def get_user_sessions(self, user_id: str) -> List[Dict[str, Any]]:
@@ -175,8 +175,7 @@ cdef class SessionManager:
         assert len(session_ids) <= MAX_SESSIONS_PER_USER, "user session set too large"
 
         sessions = []
-        for session_id_bytes in session_ids:
-            session_id = session_id_bytes.decode()
+        for session_id in session_ids:
             session = self.get_session(session_id)
             if session:
                 sessions.append(session)
@@ -224,9 +223,7 @@ cdef class SessionManager:
         assert len(session_ids) <= MAX_ACTIVE_SESSIONS, "active session set too large"
 
         expired_count = 0
-        for session_id_bytes in session_ids:
-            session_id = session_id_bytes.decode()
-
+        for session_id in session_ids:
             # Check if expired
             expires_at_data = self.redis_client.hget(f"session:{session_id}", 'expires_at')
             if expires_at_data:
