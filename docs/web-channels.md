@@ -133,7 +133,7 @@ Returns a list of message envelopes from the Redis Stream.
 ## CyChannelManager API
 
 ```python
-CyChannelManager(redis_client, stream_maxlen=1000, key_prefix="cy:chan")
+CyChannelManager(redis_client, key_prefix="cy:chan", stream_maxlen=1000)
 
 # Lifecycle
 await ch.start()   # load Lua function, start PSUBSCRIBE listener
@@ -141,7 +141,7 @@ await ch.stop()
 
 # Connections
 conn = await ch.connect(websocket, channel, conn_id=None,
-                        rewind=None, since=None, filter_expr=None)
+                        rewind=None, since=None, token=None, filter_expr=None)
 await ch.disconnect(conn)
 
 # Channels

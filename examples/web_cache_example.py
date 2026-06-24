@@ -12,8 +12,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # Import our new web cache functionality
-from cy_redis.cy_redis_client import CyRedisClient
-from cy_redis.web_cache import (
+from cy_redis import CyRedisClient
+from cy_redis.web.web_cache import (
     WebCache, init_cache, get_cache,
     cache, cached_endpoint, cached_json_response,
     JsonCoder, PickleCoder, RequestKeyBuilder

@@ -14,11 +14,19 @@ uv pip install -e .
 uv run python setup.py build_ext --inplace
 ```
 
-Optional extras:
+A wheel/sdist can be built with `uv build` (the package builds the vendored
+hiredis automatically).
+
+Optional feature layers — the core client has no runtime dependencies, so each
+layer pulls only what it needs:
 
 ```bash
-uv pip install -e ".[async]"   # adds uvloop for faster event loops
-uv pip install -e ".[ai]"      # adds numpy (required for AI/vector features)
+uv pip install -e ".[async]"   # uvloop for faster event loops
+uv pip install -e ".[ai]"      # numpy (required for AI/vector features)
+uv pip install -e ".[auth]"    # PyJWT + pyotp (tokens, sessions, 2FA)
+uv pip install -e ".[web]"     # fastapi + PyJWT + pyotp (web layer)
+uv pip install -e ".[game]"    # msgpack (game engine)
+uv pip install -e ".[all]"     # everything above
 uv pip install -e ".[dev]"     # linting, mypy, full test dependencies
 ```
 
@@ -67,28 +75,28 @@ from cy_redis import CyRedisClient
 async def main():
     client = CyRedisClient(host="localhost", port=6379)
 
-    # Basic key-value
+    # Basic key-value (set_async returns True on success)
     await client.set_async("hits", "0")
-    await client.incr_async("hits")
-    print(await client.get_async("hits"))   # "1"
+    client.incr("hits")                      # INCR has no async variant; it is fast and non-blocking
+    print(await client.get_async("hits"))    # "1"
 
     # Hash
     await client.hset_async("user:1", mapping={"name": "Alice", "role": "admin"})
-    print(await client.hgetall_async("user:1"))
+    print(await client.hgetall_async("user:1"))   # {"name": "Alice", "role": "admin"}
 
     # List
     await client.rpush_async("queue", "job1", "job2")
-    print(await client.lrange_async("queue", 0, -1))
+    print(await client.lrange_async("queue", 0, -1))   # ["job1", "job2"]
 
 asyncio.run(main())
 ```
 
 ## Server type detection
 
-CyRedis supports both Redis and Valkey (wire-compatible at RESP2/RESP3, diverging at the command level). Detect which server you are connected to at runtime:
+CyRedis supports both Redis and Valkey (wire-compatible at RESP2/RESP3, diverging at the command level). `detect_server_type()` is a synchronous call that inspects `INFO` and returns a string — do not `await` it:
 
 ```python
-server_type = await client.detect_server_type()
+server_type = client.detect_server_type()
 print(server_type)   # "redis" or "valkey"
 ```
 

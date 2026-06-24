@@ -67,25 +67,18 @@ uv run pytest tests/unit/test_channels.py
 
 ## Unit test fixtures
 
-Unit tests use in-memory mocks — no Redis process required.
+Some unit tests use in-memory mocks — no Redis process required. The channel
+tests define `MockRedisClient` and `MockWebSocket` inside
+`tests/unit/test_channels.py` (not in `conftest.py`):
 
 ```python
 # MockRedisClient: simulates the async interface with asyncio.Queue
-# Available in tests/unit/conftest.py
-
 class MockRedisClient:
     async def publish_async(self, channel, message): ...
     async def xadd_async(self, stream, data, message_id="*"): ...
     async def xread_async(self, streams, count, block): ...
-    async def hset_async(self, key, ...): ...
-    async def hgetall_async(self, key): ...
-    async def set_async(self, key, value): ...
-    async def get_async(self, key): ...
-    async def delete_async(self, key): ...
-    async def execute_command_async(self, *args): ...
-```
+    # ... and the other *_async methods used by the channel manager
 
-```python
 # MockWebSocket: asyncio.Queue-backed WebSocket
 class MockWebSocket:
     async def accept(self): ...
@@ -110,14 +103,19 @@ The `conftest.py` in `tests/integration/` creates a `CyRedisClient` fixture and 
 
 ## CI
 
-GitHub Actions runs two workflows:
+`.github/workflows/tests.yml` defines three jobs:
 
-- **Linux** (`ubuntu-latest`): Redis 7-alpine on port 6379, Valkey 8-alpine on port 6380
-- **macOS** (`macos-latest`): same setup via service containers
+- **test** (`ubuntu-latest`): Redis 7-alpine on 6379, Valkey 8-alpine on 6380,
+  and PostgreSQL 15 as service containers; runs the full suite with coverage.
+- **test-macos** (`macos-latest`, Python 3.11): builds the extensions and runs
+  the fast tests (`-m "not slow and not cluster"`). GitHub does not support
+  service containers on macOS runners, so tests needing live services may be
+  skipped or tolerated.
+- **lint**: formatting/lint checks.
 
 ```bash
-# Reproduce CI locally
-uv run pytest tests/ -m "not skip_ci" --timeout=60
+# Run the fast subset locally
+uv run pytest tests/ -m "not slow and not cluster"
 ```
 
 ## Adding tests

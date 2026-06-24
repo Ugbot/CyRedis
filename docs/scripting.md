@@ -30,78 +30,77 @@ Four production-ready scripts live in [`lua_scripts/`](../lua_scripts/):
 | Job queue | `job_queue.lua` | Atomic enqueue with deduplication |
 
 ```python
+import time
+
 # Load at startup
 with open("lua_scripts/rate_limiter.lua") as f:
     rate_sha = client.script_load(f.read())
 
-# Use per-request
-allowed = client.evalsha(rate_sha, 1, "rl:user:u1", "10", "60")
+# Use per-request: KEYS[1]=bucket key; ARGV = limit, window_seconds, now
+allowed = client.evalsha(
+    rate_sha, 1, "rl:user:u1", "10", "60", str(int(time.time()))
+)
 ```
 
 See [`lua_scripts/README.md`](../lua_scripts/README.md) for full argument documentation.
 
 ## Script manager
 
-`ScriptManager` (in `cy_redis.features.script_manager`) handles loading, caching, and atomic deployment of multiple scripts. It also supports hot-reload without dropping connections.
+`CyLuaScriptManager` (in `cy_redis.features`) handles loading, caching, version
+metadata, and atomic deployment of named scripts.
 
 ```python
-from cy_redis.features import ScriptManager
+from cy_redis.features import CyLuaScriptManager
 
-mgr = ScriptManager(client)
-mgr.load_directory("lua_scripts/")   # loads all .lua files
+mgr = CyLuaScriptManager(client, namespace="scripts")
 
-# Call by name
-result = mgr.call("rate_limiter", keys=["rl:user:u1"], args=["10", "60"])
+# Register a script under a name (loads it, caches the SHA)
+mgr.register_script("echo", "return ARGV[1]")
 
-# Atomic reload (all-or-nothing)
-mgr.reload_all()
+# Or load from a file
+mgr.load_script_from_file("rate_limiter", "lua_scripts/rate_limiter.lua")
+
+# Execute by name (args match the script; rate_limiter wants limit/window/now)
+import time
+result = mgr.execute_script(
+    "rate_limiter", keys=["rl:user:u1"], args=["10", "60", str(int(time.time()))]
+)
+
+# Inspect and manage
+mgr.list_scripts()              # {name: {sha, version, cached, ...}}
+mgr.validate_script("return 1") # syntax-check without permanent load
+mgr.reload_all_scripts()        # re-load every registered script
+
+# All-or-nothing deployment of a set of scripts
+mgr.atomic_deploy_scripts({"rate_limiter": {"source": "...", "version": "1.1.0"}})
 ```
-
-See [`examples/example_atomic_script_deployment.py`](../examples/example_atomic_script_deployment.py).
 
 ## Redis Functions (FUNCTION LOAD / FCALL)
 
-Redis 7.0+ supports named function libraries that persist across server restarts. CyRedis uses Functions internally for the channel routing logic and exposes them for application use.
+Redis 7.0+ supports named function libraries that persist across server
+restarts. The client does **not** expose `function_load`/`fcall` directly.
+Instead, `CyRedisFunctionsManager` (in `cy_redis.features`) ships a set of
+curated built-in libraries — `cy:locks`, `cy:sema`, `cy:rate`, `cy:queue` —
+and loads/dispatches them for you. (CyRedis also uses Functions internally for
+the channel routing logic.)
 
 ```python
-# Load a function library
-client.function_load(library_code)
+from cy_redis.features import CyRedisFunctionsManager
 
-# Call a function
-result = client.fcall("my_function", num_keys, *keys_and_args)
-result = client.fcall_ro("my_function", num_keys, *keys_and_args)  # read-only
+fm = CyRedisFunctionsManager(client)
 
-# List loaded libraries
-libraries = client.function_list()
+# Load the built-in libraries (FUNCTION LOAD REPLACE under the hood)
+fm.load_all_libraries()                 # or fm.load_library("cy:rate")
+fm.list_loaded_libraries()              # ['cy:locks', 'cy:sema', 'cy:rate', 'cy:queue']
+fm.get_library_info("cy:rate")
 
-# Delete a library
-client.function_delete("my_lib_name")
-
-# Dump and restore (for migration)
-dump = client.function_dump()
-client.function_restore(dump)
+# Call a registered function by its full name: call_function(name, keys, args)
+result = fm.call_function("cy_rate_token_bucket", ["rl:u1"], ["10", "1", "1"])
+# token-bucket reply: [allowed, remaining, reset_ms, retry_after]
 ```
 
-### Example library
-
-```lua
-#!lua name=mylib
-
-redis.register_function('rate_check', function(keys, args)
-    local current = redis.call('INCR', keys[1])
-    if current == 1 then
-        redis.call('EXPIRE', keys[1], tonumber(args[1]))
-    end
-    return current <= tonumber(args[2]) and 1 or 0
-end)
-```
-
-```python
-client.function_load(open("mylib.lua").read())
-allowed = client.fcall("rate_check", 1, "rl:u1", "60", "10")
-```
-
-See [`examples/example_redis_functions.py`](../examples/example_redis_functions.py).
+A higher-level facade `RedisFunctions(client)` is also exported from the top-level
+package; it wraps the manager and adds `.locks`, `.rate`, and `.queue` helpers.
 
 ### Channel routing function
 

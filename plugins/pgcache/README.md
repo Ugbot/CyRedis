@@ -32,31 +32,30 @@ A Redis module that provides read-through caching directly from PostgreSQL with 
 ### Prerequisites
 
 - Redis server (6.0+ recommended)
-- PostgreSQL development headers (`postgresql-server-dev-all` on Ubuntu)
-- hiredis library (`libhiredis-dev`)
+- PostgreSQL client library `libpq` and `pg_config` on PATH
+  (`postgresql-server-dev-all` on Ubuntu, `brew install postgresql` on macOS)
 - Jansson JSON library (`libjansson-dev`)
-- GCC compiler
+- A C compiler (gcc/clang)
+
+The module links against libpq directly (`#include <libpq-fe.h>`) for PostgreSQL
+access and jansson for JSON.
 
 ### Vendored Dependencies
 
-This module includes vendored copies of the following dependencies:
-- **psqlodbc**: PostgreSQL ODBC driver (submodule at `plugins/pgcache/psqlodbc`)
+- **psqlodbc**: vendored as a git submodule at `plugins/pgcache/psqlodbc`; the
+  build script checks it out. (The module itself talks to PostgreSQL via libpq.)
 
 ### Build Steps
 
 ```bash
-# Clone or navigate to the module directory
-cd redis_pg_cache_module
+# Navigate to the module directory
+cd plugins/pgcache
 
 # Initialize submodules (if not already done)
 git submodule update --init --recursive
 
-# Build the module
+# Build the module (checks for pg_config and jansson, then compiles pgcache.so)
 ./build_module.sh
-
-# Or manually:
-make clean
-make
 ```
 
 ### Building with Vendored Dependencies
@@ -183,17 +182,18 @@ PGCACHE.MULTIREAD users [{"id": 1}, {"id": 2}, {"id": 3}]
 ### Basic Read-Through Caching
 
 ```python
-import redis
+from cy_redis import CyRedisClient
 
-# Connect to Redis with module loaded
-r = redis.Redis()
+# Connect to the Redis instance that has the module loaded.
+# execute_command takes a single list of arguments.
+r = CyRedisClient(host="localhost", port=6379)
 
 # First request - cache miss, module queries PostgreSQL
-user = r.execute_command('PGCACHE.READ', 'users', '{"id": 123}')
+user = r.execute_command(['PGCACHE.READ', 'users', '{"id": 123}'])
 print(user)  # {"name": "John", "email": "john@example.com"}
 
 # Second request - cache hit
-user = r.execute_command('PGCACHE.READ', 'users', '{"id": 123}')
+user = r.execute_command(['PGCACHE.READ', 'users', '{"id": 123}'])
 print(user)  # Same result, from cache
 ```
 
@@ -201,8 +201,8 @@ print(user)  # Same result, from cache
 
 ```python
 # Get multiple users at once
-users = r.execute_command('PGCACHE.MULTIREAD', 'users',
-                         '[{"id": 1}, {"id": 2}, {"id": 3}]')
+users = r.execute_command(['PGCACHE.MULTIREAD', 'users',
+                          '[{"id": 1}, {"id": 2}, {"id": 3}]'])
 print(users)  # [{"name": "Alice", ...}, {"name": "Bob", ...}, ...]
 ```
 
@@ -210,11 +210,11 @@ print(users)  # [{"name": "Alice", ...}, {"name": "Bob", ...}, ...]
 
 ```python
 # Write to cache manually
-r.execute_command('PGCACHE.WRITE', 'users', '{"id": 999}',
-                 '{"name": "New User", "email": "new@example.com"}')
+r.execute_command(['PGCACHE.WRITE', 'users', '{"id": 999}',
+                  '{"name": "New User", "email": "new@example.com"}'])
 
 # Invalidate cache entry
-r.execute_command('PGCACHE.INVALIDATE', 'users', '{"id": 999}')
+r.execute_command(['PGCACHE.INVALIDATE', 'users', '{"id": 999}'])
 ```
 
 ## Events and Monitoring
@@ -225,16 +225,18 @@ The module publishes events to Redis pubsub channels:
 - Events include: `cache_hit`, `cache_miss`, `cache_write`, `cache_invalidate`
 
 ```python
-import redis
+import asyncio, json
+from cy_redis import CyRedisClient
+from cy_redis.utils import RedisPubSubIterator
 
-# Subscribe to cache events
-p = r.pubsub()
-p.subscribe('pg_cache_events')
+async def watch_cache_events():
+    client = CyRedisClient(host="localhost", port=6379)
+    async for message in RedisPubSubIterator(client, ["pg_cache_events"]):
+        if message and message.get("type") == "message":
+            event = json.loads(message["data"])
+            print(f"Cache event: {event['type']} on {event['table']}")
 
-for message in p.listen():
-    if message['type'] == 'message':
-        event = json.loads(message['data'])
-        print(f"Cache event: {event['type']} on {event['table']}")
+asyncio.run(watch_cache_events())
 ```
 
 ## PostgreSQL Setup

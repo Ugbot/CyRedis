@@ -26,12 +26,12 @@
 - `WebAppSupport` — JWT tokens, sessions, 2FA, password reset, WebSocket token issuance
 - `SharedDict`, `ConcurrentSharedDict`, `SharedStateManager`
 - Worker layer: `WorkerQueue`, `WorkerCoordinator`, `LifecycleManager`, `MultiSessionTracker`
-- `DistributedLock` (Redlock algorithm)
-- Advanced features: probabilistic structures, JSON ops, full-text search, graph ops, AI/vector search
-- Redis Functions: `function_load`, `fcall`, `fcall_ro`, `function_list`, `function_delete`, `function_dump`, `function_restore`
-- `ScriptManager` — atomic script deployment and hot-reload
-- Cluster client (`CyClusterClient`) with automatic node discovery and hash-slot routing
-- Messaging and RPC (`cy_redis.communication`)
+- `CyDistributedLock` — TTL'd lock with token-checked safe release
+- Advanced features: probabilistic structures (`CyBloomFilter`, `CyCountMinSketch`, `CyTopK`, `CyCuckooFilter`), JSON (`CyRedisJSON`), full-text search (`CyRedisSearch`), graph (`CyRedisGraph`), AI/tensors (`CyRedisAI`)
+- Redis Functions via `CyRedisFunctionsManager` — curated built-in libraries (`cy:locks`, `cy:sema`, `cy:rate`, `cy:queue`)
+- `CyLuaScriptManager` — atomic script deployment and hot-reload
+- Cluster command helpers on `CyRedisClient` (`cluster_*`); no separate cluster-client class
+- Reliable queue (`CyReliableQueue` in `cy_redis.communication`)
 - Game engine (`cyredis_game`) — authoritative ECS simulation on Redis Streams
 - PostgreSQL cache plugin (`plugins/pgcache`) — Redis module for read-through Postgres caching
 - Pre-built Lua scripts: rate limiter, distributed lock, smart cache, job queue

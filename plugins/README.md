@@ -36,22 +36,31 @@ plugins/
 **Installation:**
 ```bash
 cd plugins/pgcache
-make
-# Copy pgcache.so to Redis modules directory
-redis-server --loadmodule ./pgcache.so
+git submodule update --init --recursive   # vendored psqlodbc
+./build_module.sh                          # produces pgcache.so
+redis-server --loadmodule ./pgcache.so pg_host localhost pg_database myapp \
+    pg_user postgres pg_password secret
 ```
 
-**Usage:**
+**Usage:** the module adds server-side commands (`PGCACHE.READ`, `PGCACHE.WRITE`,
+`PGCACHE.INVALIDATE`, `PGCACHE.MULTIREAD`). Call them through the CyRedis client's
+raw command interface (`execute_command` takes a single list of arguments):
+
 ```python
-from cy_redis import load_pgcache_module, PGCacheManager
+from cy_redis import CyRedisClient
 
-# Load the Redis module
-load_pgcache_module(redis_client, pg_config)
+client = CyRedisClient(host="localhost", port=6379)
 
-# Use the cache manager
-cache = PGCacheManager(redis_client, pg_config)
-result = cache.get("SELECT * FROM users WHERE id = ?", [user_id])
+# Read-through: cache miss queries PostgreSQL, hit serves from Redis
+user = client.execute_command(["PGCACHE.READ", "users", '{"id": 123}'])
+
+# Manual write / invalidate
+client.execute_command(["PGCACHE.WRITE", "users", '{"id": 123}', '{"name": "John"}'])
+client.execute_command(["PGCACHE.INVALIDATE", "users", '{"id": 123}'])
 ```
+
+There is no Python `PGCacheManager` class — the module is pure C and is driven
+entirely through these Redis commands.
 
 ## 🚀 Developing New Plugins
 
@@ -84,23 +93,22 @@ touch README.md
 
 ### Installation
 ```bash
-# Install specific plugin
-pip install cy-redis[pgcache]
+# Declare the pgcache intent extra (no extra Python deps; the module is C)
+uv pip install -e ".[pgcache]"
 
-# Or install all plugins
-pip install cy-redis[all]
+# Or pull in every optional layer
+uv pip install -e ".[all]"
 ```
 
-### Loading Plugins
+### Loading and checking a module
 ```python
-from cy_redis import RedisClient
+from cy_redis import CyRedisClient
 
-redis = RedisClient()
+client = CyRedisClient()
 
-# Load plugin functionality
-if redis.has_module('pgcache'):
-    from plugins.pgcache import PGCacheManager
-    cache = PGCacheManager(redis, config)
+# The pgcache module is loaded into the Redis server (via --loadmodule or
+# MODULE LOAD), not into the Python process. Check what is loaded:
+modules = client.execute_command(["MODULE", "LIST"])
 ```
 
 ## 🤝 Contributing Plugins

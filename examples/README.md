@@ -8,38 +8,21 @@ All examples connect to Redis on `localhost:6379` by default. Run any of them wi
 uv run python examples/<name>.py
 ```
 
-## Core
+## Core and data structures
 
 | File | What it shows |
 |------|--------------|
-| `example_usage.py` | Basic get/set, lists, hashes, async vs sync |
-| `example_protocol_support.py` | RESP2/RESP3, pipelining, connection pooling |
-| `example_production_redis.py` | Connection retries, health checks, production patterns |
-| `production_redis.py` | Alternate production config example |
-| `migration_example.py` | Migrating from redis-py |
-
-## Scripting
-
-| File | What it shows |
-|------|--------------|
-| `example_lua_scripts.py` | EVAL, EVALSHA, pre-built lua_scripts/ |
-| `example_redis_functions.py` | FUNCTION LOAD, FCALL, Redis Functions libraries |
-| `example_atomic_script_deployment.py` | ScriptManager, hot-reload, all-or-nothing deployment |
-
-## Data structures and distributed
-
-| File | What it shows |
-|------|--------------|
-| `example_shared_dict.py` | SharedDict, ConcurrentSharedDict across processes |
-| `streaming_example.py` | Redis Streams, XADD/XREAD, async stream iteration |
+| `streaming_example.py` | Redis Streams and the data-structure async iterators (XADD/XREAD, list/pub-sub iteration) |
+| `enhanced_cyredis_demo.py` | Broad feature tour (see note below) |
+| `cluster_aware_demo.py` | Cluster command helpers and routing (see note below) |
 
 ## Web
 
 | File | What it shows |
 |------|--------------|
-| `example_fastapi_channels.py` | CyChannelManager — WebSocket pub/sub, stream rewind, filters, presence |
+| `example_fastapi_channels.py` | `CyChannelManager` — WebSocket pub/sub, stream rewind, filters, presence (needs `fastapi`/`uvicorn`) |
 | `web_app_example.py` | JWT tokens, sessions, 2FA, password reset |
-| `web_cache_example.py` | WebCache decorator, tags, invalidation |
+| `web_cache_example.py` | `WebCache` set/get, the `cached_endpoint` decorator, namespace/pattern invalidation |
 | `web_cache_simple_example.py` | Minimal web cache usage |
 
 ## Integrations
@@ -47,6 +30,10 @@ uv run python examples/<name>.py
 | File | What it shows |
 |------|--------------|
 | `example_clickhouse_redis.py` | ClickHouse bridge — live cache, stream dump, watch loop, channel broadcast |
+
+> Note: `enhanced_cyredis_demo.py` and `cluster_aware_demo.py` currently import
+> `CyRedisClientAsync`, which is not part of the public package, so they do not
+> run as-is. The other scripts run against a local Redis on `localhost:6379`.
 
 ## FastAPI channels quick start
 

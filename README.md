@@ -10,7 +10,7 @@ High-performance Redis client for Python, built with Cython and the vendored [hi
 - **Web layer** — HTTP response cache, JWT tokens, session management, 2FA, password reset ([docs/web.md](docs/web.md))
 - **Redis Streams** — async iterators for `SUBSCRIBE`, `PSUBSCRIBE`, and `XREAD`; ClickHouse bridge for materializing query results into streams ([docs/streams.md](docs/streams.md))
 - **Lua scripting and Redis Functions** — pre-built scripts plus a script manager for atomic multi-key operations ([docs/scripting.md](docs/scripting.md))
-- **Advanced features** — cluster client, distributed locks, shared dicts (cross-process), probabilistic structures, JSON, vector search, graph ([docs/advanced.md](docs/advanced.md))
+- **Advanced features** — cluster command helpers, distributed locks, shared dicts (cross-process), probabilistic structures, JSON, full-text search, graph, RedisAI tensors/models ([docs/advanced.md](docs/advanced.md))
 - **Workers** — worker queues, lifecycle manager, worker coordinator, multi-session tracker
 - **Game engine** — authoritative ECS simulation backed by Redis Streams ([cyredis_game/README.md](cyredis_game/README.md))
 - **PostgreSQL cache plugin** — Redis module that serves as a read-through cache for Postgres ([plugins/pgcache/README.md](plugins/pgcache/README.md))
@@ -18,11 +18,25 @@ High-performance Redis client for Python, built with Cython and the vendored [hi
 ## Quick start
 
 ```bash
-# Build (requires Cython >= 3.0)
+# Build and install (requires Cython >= 3.0; vendored hiredis builds automatically)
 uv pip install -e .
 
 # Or build extensions in-place for development
 uv run python setup.py build_ext --inplace
+
+# Build a wheel/sdist
+uv build
+```
+
+Optional feature layers (the core client has no runtime dependencies):
+
+```bash
+uv pip install -e ".[async]"   # uvloop
+uv pip install -e ".[ai]"      # numpy (vector/AI features)
+uv pip install -e ".[auth]"    # PyJWT + pyotp (tokens, 2FA)
+uv pip install -e ".[web]"     # fastapi + PyJWT + pyotp
+uv pip install -e ".[game]"    # msgpack (game engine)
+uv pip install -e ".[all]"     # everything above
 ```
 
 ```python
@@ -53,7 +67,7 @@ See [docs/getting-started.md](docs/getting-started.md) for connection options, p
 | [Web layer](docs/web.md) | Web cache, JWT, sessions, 2FA, FastAPI integration |
 | [Streams & integrations](docs/streams.md) | Redis Streams, async iterators, ClickHouse bridge |
 | [Scripting](docs/scripting.md) | Lua scripts, Redis Functions, script manager |
-| [Advanced features](docs/advanced.md) | Cluster, distributed locks, shared dicts, probabilistic, JSON, search, graph |
+| [Advanced features](docs/advanced.md) | Cluster command helpers, distributed locks, shared dicts, probabilistic, JSON, search, graph |
 | [Testing](docs/testing.md) | Running the test suite, CI, adding tests |
 | [Examples](examples/README.md) | Runnable example scripts |
 | [Plugins](plugins/README.md) | Plugin architecture, pgcache |
@@ -72,7 +86,7 @@ cy_redis/
   data/           — shared_dict, concurrent_shared_dict, shared_state_manager
   workers/        — worker_queue, lifecycle_manager, worker_coordinator,
                     multi_session_tracker
-  communication/  — messaging, rpc
+  communication/  — messaging, reliable queue (CyReliableQueue)
   web/            — web_cache, web_app_support, channels, fastapi_integration
   utils/          — redis_iterators (stream/pubsub async generators)
   integrations/   — clickhouse bridge

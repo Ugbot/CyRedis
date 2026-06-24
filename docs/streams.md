@@ -50,7 +50,8 @@ length = await client.xlen_async("events")
 ```python
 from cy_redis.utils import RedisPubSubIterator
 
-async for msg in RedisPubSubIterator(client, "notifications"):
+# channels is a list (a bare string is also accepted and wrapped)
+async for msg in RedisPubSubIterator(client, ["notifications"]):
     print(msg["data"])
     # msg: {"type": "message", "channel": str, "data": str}
 ```
