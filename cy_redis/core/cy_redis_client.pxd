@@ -110,8 +110,10 @@ cdef class CyRedisPipeline:
     cdef list _buffer
     cdef list _transforms
     cdef bint _in_multi
+    cdef bint _buffering
 
     cdef int _queue(self, list args, int transform) except -1
+    cdef object _run_or_queue(self, list args, int transform)
     cdef int _append_one(self, list args) except -1
     cdef list _read_replies(self, int n, list transforms)
 

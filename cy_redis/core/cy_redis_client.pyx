@@ -592,6 +592,7 @@ cdef class CyRedisPipeline:
         self._buffer = []      # list of (args_list, transform_code)
         self._transforms = []
         self._in_multi = False
+        self._buffering = True  # commands queue until WATCH switches to immediate
 
     def __dealloc__(self):
         if self._conn is not None:
@@ -616,7 +617,16 @@ cdef class CyRedisPipeline:
             self._queue(list(args), 0)
         return self
 
-    # ── buffered command methods (mirror the client API) ──
+    cdef object _run_or_queue(self, list args, int transform):
+        """In buffering mode queue the command and return self (for chaining);
+        in immediate mode (after WATCH, before MULTI) run it now and return the
+        result — this mirrors redis-py's optimistic-locking pipeline."""
+        if self._buffering:
+            self._queue(args, transform)
+            return self
+        return self._apply(self._conn.execute_command(args), transform)
+
+    # ── command methods (mirror the client API) ──
     def set(self, key, value, ex=-1, px=-1, nx=False, xx=False):
         args = ['SET', key, value]
         if ex > 0:
@@ -627,21 +637,18 @@ cdef class CyRedisPipeline:
             args.append('NX')
         elif xx:
             args.append('XX')
-        self._queue(args, 1)  # OK -> True
-        return self
+        return self._run_or_queue(args, 1)  # OK -> True
 
     def get(self, key):
-        self._queue(['GET', key], 0)
-        return self
+        return self._run_or_queue(['GET', key], 0)
 
     def xadd(self, stream, fields, id='*'):
-        """Buffer an XADD, expanding the field mapping into field/value pairs."""
+        """XADD; expands the field mapping into field/value pairs."""
         args = ['XADD', stream, id]
         for k, v in fields.items():
             args.append(str(k))
             args.append(v if isinstance(v, (str, bytes)) else str(v))
-        self._queue(args, 0)
-        return self
+        return self._run_or_queue(args, 0)
 
     # Method names whose Redis command differs from the uppercased name.
     _CMD_ALIASES = {
@@ -656,28 +663,32 @@ cdef class CyRedisPipeline:
         if name.startswith('_'):
             raise AttributeError(name)
         cmd = self._CMD_ALIASES.get(name, name.upper())
-        def _buffered(*args):
+        def _command(*args):
             full = [cmd]
             full.extend(args)
-            self._queue(full, 0)
-            return self
-        return _buffered
+            return self._run_or_queue(full, 0)
+        return _command
 
     def watch(self, *keys):
-        """WATCH keys for optimistic locking (sent immediately)."""
+        """WATCH keys for optimistic locking. Sent immediately and switches the
+        pipeline to immediate mode so reads return values until multi()."""
         assert len(keys) > 0, "watch requires at least one key"
         args = ['WATCH']
         args.extend(keys)
         self._conn.execute_command(args)
+        self._buffering = False
         return self
 
     def unwatch(self):
         self._conn.execute_command(['UNWATCH'])
+        self._buffering = True
         return self
 
     def multi(self):
-        """Begin a MULTI/EXEC transaction block for the queued commands."""
+        """Begin a MULTI/EXEC transaction block; subsequent commands buffer
+        until execute()."""
         self._in_multi = True
+        self._buffering = True
         return self
 
     cdef int _append_one(self, list args) except -1:
@@ -753,6 +764,7 @@ cdef class CyRedisPipeline:
             self._buffer = []
             self._transforms = []
             self._in_multi = False
+            self._buffering = True
             self._queued = 0
         return results
 
@@ -2436,6 +2448,15 @@ cdef class CyRedisClient:
 
         try:
             return conn.execute_command(['RPOPLPUSH', source, destination])
+        finally:
+            self.pool.return_connection(conn)
+
+    def brpoplpush(self, source: str, destination: str, timeout: int = 0) -> Optional[str]:
+        """Blocking pop from tail of source, push to head of destination."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            return conn.execute_command(
+                ['BRPOPLPUSH', source, destination, str(timeout)])
         finally:
             self.pool.return_connection(conn)
 
