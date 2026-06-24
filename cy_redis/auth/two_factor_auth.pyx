@@ -42,9 +42,14 @@ cdef class TwoFactorAuth:
         """Enable 2FA for user"""
         assert user_id, "user_id must be a non-empty string"
 
-        # Generate TOTP secret
-        totp_secret = secrets.token_urlsafe(32)
+        # Generate the TOTP secret as RFC 4648 base32. Authenticator apps and
+        # the verifier (_verify_totp_token -> base64.b32decode) both require
+        # base32; a token_urlsafe() secret is not valid base32, which made
+        # verification always fail. 20 random bytes = 160 bits (TOTP standard).
+        totp_secret = base64.b32encode(secrets.token_bytes(20)).decode('ascii')
         assert totp_secret, "generated TOTP secret must be non-empty"
+        # Postcondition: a valid base32 secret round-trips through b32decode.
+        assert base64.b32decode(totp_secret), "TOTP secret must be valid base32"
 
         # Generate backup codes. The count is a fixed, statically bounded loop.
         BACKUP_CODE_COUNT = 10
@@ -86,7 +91,8 @@ cdef class TwoFactorAuth:
         if not secret_data:
             return False
 
-        totp_secret = secret_data.decode()
+        # The client decodes string replies to str already; tolerate bytes too.
+        totp_secret = secret_data.decode() if isinstance(secret_data, bytes) else secret_data
         assert totp_secret, "stored TOTP secret must be non-empty"
         return self._verify_totp_token(totp_secret, token)
 

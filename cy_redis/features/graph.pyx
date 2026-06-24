@@ -290,13 +290,17 @@ cdef class CyRedisGraph:
         return self.query(graph_name, query)
 
     cdef str _format_value(self, value):
-        """Format value for Cypher query"""
-        # NOTE(latent bug): string values are interpolated without escaping, so
-        # a value containing a single quote breaks the query (Cypher injection).
-        # Preserved as-is per the no-behavior-change constraint.
+        """Format a value as a Cypher literal.
+
+        String values are escaped (backslash and single-quote) before being
+        wrapped in quotes, so a value containing a quote cannot break out of the
+        literal and inject Cypher.
+        """
         cdef str formatted
+        cdef str escaped
         if isinstance(value, str):
-            formatted = f"'{value}'"
+            escaped = (<str>value).replace('\\', '\\\\').replace("'", "\\'")
+            formatted = f"'{escaped}'"
         elif isinstance(value, bool):
             formatted = 'true' if value else 'false'
         elif value is None:

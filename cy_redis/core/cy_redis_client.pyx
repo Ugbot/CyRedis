@@ -679,21 +679,25 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
-    def incr(self, key: str) -> int:
-        """Increment key"""
+    def incr(self, key: str, amount: int = 1) -> int:
+        """Increment key by amount (INCR for 1, otherwise INCRBY)."""
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['INCR', key])
+            if amount == 1:
+                return conn.execute_command(['INCR', key])
+            return conn.execute_command(['INCRBY', key, str(amount)])
         finally:
             self.pool.return_connection(conn)
 
-    def decr(self, key: str) -> int:
-        """Decrement key"""
+    def decr(self, key: str, amount: int = 1) -> int:
+        """Decrement key by amount (DECR for 1, otherwise DECRBY)."""
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['DECR', key])
+            if amount == 1:
+                return conn.execute_command(['DECR', key])
+            return conn.execute_command(['DECRBY', key, str(amount)])
         finally:
             self.pool.return_connection(conn)
 

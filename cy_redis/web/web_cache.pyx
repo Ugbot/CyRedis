@@ -131,27 +131,77 @@ cdef class JsonCoder(Coder):
 
 
 cdef class PickleCoder(Coder):
-    """Pickle coder for cache data"""
+    """Pickle coder for cache data.
 
-    @classmethod
-    def encode(cls, value: Any) -> bytes:
-        """Encode to pickle bytes"""
+    ``pickle.loads`` on cached values is a remote-code-execution vector: anyone
+    who can write to the cache backend (a shared/multi-tenant Redis, a
+    cache-poisoning bug) could store a malicious pickle that executes on read.
+    To close that, payloads are HMAC-SHA256 signed with a per-instance secret
+    and the signature is verified before unpickling, so only data this process
+    wrote can be deserialized.
+
+    Construct with ``PickleCoder(secret_key=...)``. ``allow_unsigned=True`` is
+    an explicit, audited escape hatch for a fully trusted backend only.
+    """
+
+    cdef bytes _secret
+    cdef bint _allow_unsigned
+
+    # 32-byte HMAC-SHA256 signature prefix on every signed payload.
+    SIG_LEN = 32
+
+    def __init__(self, secret_key=None, bint allow_unsigned=False):
+        if secret_key is None and not allow_unsigned:
+            raise ValueError(
+                "PickleCoder requires secret_key=... so cached pickles are "
+                "HMAC-signed (pickle.loads is an RCE risk on untrusted data). "
+                "Pass allow_unsigned=True only for a fully trusted cache backend."
+            )
+        if secret_key is not None:
+            self._secret = (secret_key.encode('utf-8')
+                            if isinstance(secret_key, str) else bytes(secret_key))
+            assert len(self._secret) > 0, "secret_key must be non-empty"
+        else:
+            self._secret = b''
+        self._allow_unsigned = allow_unsigned
+
+    def encode(self, value: Any) -> bytes:
+        """Encode to (optionally HMAC-signed) pickle bytes."""
         import pickle
-        encoded = pickle.dumps(value)
-        # Postcondition: the cache backend stores raw bytes.
+        import hmac
+        import hashlib
+        payload = pickle.dumps(value)
+        if self._secret:
+            signature = hmac.new(self._secret, payload, hashlib.sha256).digest()
+            assert len(signature) == 32, "HMAC-SHA256 signature must be 32 bytes"
+            encoded = signature + payload
+        else:
+            encoded = payload
         assert isinstance(encoded, bytes), "encode must yield bytes"
         return encoded
 
-    @classmethod
-    def decode(cls, value: bytes) -> Any:
-        """Decode from pickle bytes"""
-        # Precondition: only bytes round-trip through a cache backend.
+    def decode(self, value: bytes) -> Any:
+        """Verify the signature (if signing is enabled), then unpickle."""
         if not isinstance(value, (bytes, bytearray)):
             raise TypeError("PickleCoder.decode expects bytes")
         import pickle
-        # SECURITY NOTE (not fixed here per task scope): pickle.loads on cached
-        # values is an RCE vector if an attacker can write to the cache backend.
-        # A trusted-source or signed-payload guard belongs here.
+        import hmac
+        import hashlib
+        value = bytes(value)
+        if self._secret:
+            if len(value) < 32:
+                raise ValueError("signed pickle payload is too short to carry an HMAC")
+            signature, payload = value[:32], value[32:]
+            expected = hmac.new(self._secret, payload, hashlib.sha256).digest()
+            # Constant-time compare; refuse to unpickle anything we didn't sign.
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError(
+                    "pickle payload failed HMAC verification — refusing to "
+                    "deserialize (possible cache tampering)"
+                )
+            return pickle.loads(payload)
+        # Unsigned path — only reachable via the explicit allow_unsigned opt-in.
+        assert self._allow_unsigned, "unsigned decode requires allow_unsigned"
         return pickle.loads(value)
 
 
