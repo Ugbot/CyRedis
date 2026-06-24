@@ -85,8 +85,18 @@ cdef class LifecycleManager:
         self.redis_client.hset(self.worker_status_key, self.worker_id, json.dumps(worker_info))
 
     def _update_heartbeat(self):
-        """Update worker heartbeat"""
-        self.redis_client.hset(self.heartbeat_key, 'last_heartbeat', time.time())
+        """Update worker heartbeat in both the status entry and the dedicated
+        heartbeat key, so health checks (which read the status entry) see a
+        fresh timestamp."""
+        now = time.time()
+        raw = self.redis_client.hget(self.worker_status_key, self.worker_id)
+        try:
+            info = json.loads(raw) if raw else {'worker_id': self.worker_id}
+        except (ValueError, TypeError):
+            info = {'worker_id': self.worker_id}
+        info['last_heartbeat'] = now
+        self.redis_client.hset(self.worker_status_key, self.worker_id, json.dumps(info))
+        self.redis_client.hset(self.heartbeat_key, 'last_heartbeat', now)
 
     def _mark_worker_dead(self):
         """Mark worker as dead"""
