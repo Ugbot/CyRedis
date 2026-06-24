@@ -87,15 +87,29 @@ static void publish_event(RedisModuleCtx *ctx, const char *event_type,
     json_decref(ev);
 }
 
-static json_t *execute_pg_query(RedisModuleCtx *ctx, PGCtx *pgctx,
-                                 const char *query, int *row_count) {
+
+/* ── Parameterized query support (SQL-injection-safe) ───────────────────────
+ * Identifiers (table, columns) are escaped with PQescapeIdentifier; values are
+ * sent out-of-band as bind parameters to PQexecParams. PQexecParams also
+ * rejects multi-statement input, so a "; DROP TABLE ..." payload in a table
+ * name or value cannot ride along. */
+
+#define PGC_MAX_PARAMS 1024  /* hard cap on bind parameters per query */
+
+/* Run a parameterized SELECT and materialize the result rows as a JSON array.
+ * Returns NULL on connection/query error; caller json_decref()s the result. */
+static json_t *execute_pg_query_params(RedisModuleCtx *ctx, PGCtx *pgctx,
+                                        const char *query, int nparams,
+                                        const char *const *paramValues,
+                                        int *row_count) {
     PGconn *conn = get_pg_connection(pgctx);
     if (!conn) {
         RedisModule_Log(ctx, "warning", "pgcache: no PostgreSQL connection");
         return NULL;
     }
 
-    PGresult *res = PQexec(conn, query);
+    PGresult *res = PQexecParams(conn, query, nparams, NULL,
+                                 paramValues, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         RedisModule_Log(ctx, "warning", "pgcache: query failed: %s",
                         PQerrorMessage(conn));
@@ -123,42 +137,54 @@ static json_t *execute_pg_query(RedisModuleCtx *ctx, PGCtx *pgctx,
     return arr;
 }
 
-/* Build a WHERE clause string from a JSON object {"col": "val", ...}.
- * Returns a malloc'd string; caller must free(). Returns NULL on error. */
-static char *where_clause_from_json(json_t *pk_obj) {
-    if (!json_is_object(pk_obj)) return NULL;
+/* Append one PK object as "(\"col\" = $N AND ...)" to `buf`, pushing each bind
+ * value onto paramValues[*pidx] (malloc'd; caller frees) and advancing *pidx.
+ * Column names are identifier-escaped; values are never interpolated. Returns
+ * 0 on success, -1 on error (non-object, empty object, escape/alloc failure,
+ * or the param cap is exceeded). */
+static int append_pk_condition(PGconn *conn, json_t *pk_obj,
+                               char *buf, size_t bufsize,
+                               char **paramValues, int *pidx) {
+    if (!json_is_object(pk_obj)) return -1;
+    strncat(buf, "(", bufsize - strlen(buf) - 1);
 
-    char buf[4096] = "";
     int first = 1;
     const char *key;
     json_t *val;
-
     json_object_foreach(pk_obj, key, val) {
-        if (!first)
-            strncat(buf, " AND ", sizeof(buf) - strlen(buf) - 1);
+        char *esc_col = PQescapeIdentifier(conn, key, strlen(key));
+        if (!esc_col) return -1;
 
-        char part[512];
-        if (json_is_string(val)) {
-            /* Minimal quoting: double any embedded single-quotes */
-            const char *sv = json_string_value(val);
-            char safe[256] = "";
-            size_t si = 0;
-            for (size_t k = 0; k < strlen(sv) && si < sizeof(safe) - 2; k++) {
-                if (sv[k] == '\'') safe[si++] = '\'';
-                safe[si++] = sv[k];
-            }
-            safe[si] = '\0';
-            snprintf(part, sizeof(part), "%s = '%s'", key, safe);
+        if (!first)
+            strncat(buf, " AND ", bufsize - strlen(buf) - 1);
+
+        char part[1100];
+        if (json_is_null(val)) {
+            snprintf(part, sizeof(part), "%s IS NULL", esc_col);
         } else {
-            char *raw = json_dumps(val, JSON_COMPACT | JSON_ENCODE_ANY);
-            snprintf(part, sizeof(part), "%s = %s", key, raw ? raw : "NULL");
-            free(raw);
+            if (*pidx >= PGC_MAX_PARAMS) { PQfreemem(esc_col); return -1; }
+            /* String values bind verbatim; other JSON scalars bind as their
+             * compact text form (Postgres coerces the text param to the
+             * column type). */
+            char *vtext = json_is_string(val)
+                ? strdup(json_string_value(val))
+                : json_dumps(val, JSON_COMPACT | JSON_ENCODE_ANY);
+            if (!vtext) { PQfreemem(esc_col); return -1; }
+            paramValues[*pidx] = vtext;
+            snprintf(part, sizeof(part), "%s = $%d", esc_col, (*pidx) + 1);
+            (*pidx)++;
         }
-        strncat(buf, part, sizeof(buf) - strlen(buf) - 1);
+        PQfreemem(esc_col);
+        strncat(buf, part, bufsize - strlen(buf) - 1);
         first = 0;
     }
 
-    return strdup(buf);
+    strncat(buf, ")", bufsize - strlen(buf) - 1);
+    return first ? -1 : 0;  /* an empty PK object is invalid */
+}
+
+static void free_params(char **paramValues, int nparams) {
+    for (int i = 0; i < nparams; i++) free(paramValues[i]);
 }
 
 /* ── PGCACHE.READ table pk_json [ttl] ───────────────────────────────────── */
@@ -201,19 +227,45 @@ static int PGCRead_Command(RedisModuleCtx *ctx, RedisModuleString **argv, int ar
         return RedisModule_ReplyWithError(ctx, "ERR invalid primary key JSON");
     }
 
-    char *where = where_clause_from_json(pk_obj);
+    PGconn *conn = get_pg_connection(pgctx);
+    if (!conn) {
+        json_decref(pk_obj);
+        RedisModule_Free(cache_key);
+        return RedisModule_ReplyWithError(ctx, "ERR no PostgreSQL connection");
+    }
+
+    /* Escape the table identifier and build a parameterized WHERE clause; the
+     * table name and PK values are never concatenated into the SQL text. */
+    char *esc_table = PQescapeIdentifier(conn, table, tlen);
+    if (!esc_table) {
+        json_decref(pk_obj);
+        RedisModule_Free(cache_key);
+        return RedisModule_ReplyWithError(ctx, "ERR invalid table name");
+    }
+
+    char where[4096] = "";
+    char *paramValues[PGC_MAX_PARAMS];
+    int nparams = 0;
+    int built = append_pk_condition(conn, pk_obj, where, sizeof(where),
+                                    paramValues, &nparams);
     json_decref(pk_obj);
-    if (!where) {
+    if (built != 0) {
+        free_params(paramValues, nparams);
+        PQfreemem(esc_table);
         RedisModule_Free(cache_key);
         return RedisModule_ReplyWithError(ctx, "ERR failed to build WHERE clause");
     }
 
-    char query[4096];
-    snprintf(query, sizeof(query), "SELECT * FROM %s WHERE %s LIMIT 1", table, where);
-    free(where);
+    char query[5120];
+    snprintf(query, sizeof(query),
+             "SELECT * FROM %s WHERE %s LIMIT 1", esc_table, where);
+    PQfreemem(esc_table);
 
     int row_count = 0;
-    json_t *rows = execute_pg_query(ctx, pgctx, query, &row_count);
+    json_t *rows = execute_pg_query_params(ctx, pgctx, query, nparams,
+                                           (const char *const *)paramValues,
+                                           &row_count);
+    free_params(paramValues, nparams);
 
     if (!rows || json_array_size(rows) == 0) {
         publish_event(ctx, "cache_miss", table, NULL);
@@ -337,34 +389,47 @@ static int PGCMultiRead_Command(RedisModuleCtx *ctx, RedisModuleString **argv, i
         if (rep) RedisModule_FreeCallReply(rep);
     }
 
-    /* Pass 2: batch-fetch misses from PostgreSQL */
+    /* Pass 2: batch-fetch misses from PostgreSQL with a parameterized
+     * "(...) OR (...)" WHERE clause; identifiers escaped, values bound. */
     char or_conditions[16384] = "";
+    char *paramValues[PGC_MAX_PARAMS];
+    int  nparams    = 0;
     int  miss_count = 0;
+    PGconn *conn    = get_pg_connection(pgctx);
 
-    for (int i = 0; i < pk_count; i++) {
+    for (int i = 0; conn && i < pk_count; i++) {
         if (cache_hits[i]) continue;
 
         json_t *pk_obj = json_array_get(pk_array, i);
-        char *where    = where_clause_from_json(pk_obj);
-        if (!where) continue;
+        char cond[2048] = "";
+        int saved = nparams;
+        if (append_pk_condition(conn, pk_obj, cond, sizeof(cond),
+                                paramValues, &nparams) != 0) {
+            /* Roll back any params this failed entry pushed, then skip it. */
+            for (int p = saved; p < nparams; p++) free(paramValues[p]);
+            nparams = saved;
+            continue;
+        }
 
         if (miss_count > 0)
             strncat(or_conditions, " OR ", sizeof(or_conditions) - strlen(or_conditions) - 1);
-
-        char cond[2048];
-        snprintf(cond, sizeof(cond), "(%s)", where);
         strncat(or_conditions, cond, sizeof(or_conditions) - strlen(or_conditions) - 1);
-        free(where);
         miss_count++;
     }
 
     json_t *pg_rows = NULL;
     if (miss_count > 0) {
-        char full_query[20480];
-        snprintf(full_query, sizeof(full_query),
-                 "SELECT * FROM %s WHERE %s", table, or_conditions);
-        int row_count = 0;
-        pg_rows = execute_pg_query(ctx, pgctx, full_query, &row_count);
+        char *esc_table = PQescapeIdentifier(conn, table, strlen(table));
+        if (esc_table) {
+            char full_query[20480];
+            snprintf(full_query, sizeof(full_query),
+                     "SELECT * FROM %s WHERE %s", esc_table, or_conditions);
+            PQfreemem(esc_table);
+            int row_count = 0;
+            pg_rows = execute_pg_query_params(ctx, pgctx, full_query, nparams,
+                                              (const char *const *)paramValues,
+                                              &row_count);
+        }
 
         /* Cache each row under the key built from the row's own PK fields.
          * We re-serialize each row as JSON and use it as the cached value. */
@@ -415,6 +480,7 @@ static int PGCMultiRead_Command(RedisModuleCtx *ctx, RedisModuleString **argv, i
     }
 
     /* Cleanup */
+    free_params(paramValues, nparams);
     for (int i = 0; i < pk_count; i++) {
         RedisModule_Free(cache_keys[i]);
         if (cached_values[i]) RedisModule_Free(cached_values[i]);
