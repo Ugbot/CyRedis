@@ -19,16 +19,20 @@ __all__ = [
     'get_channels',
     # Caching
     'WebCache',
+    'CacheManager',
     # Auth / session
     'WebAppSupport',
 ]
 
-from cy_redis.web.fastapi_integration import (
-    create_redis_lifespan,
-    CyRedisMiddleware,
-    get_redis,
-    get_channels,
-)
+try:
+    from cy_redis.web.fastapi_integration import (
+        create_redis_lifespan,
+        CyRedisMiddleware,
+        get_redis,
+        get_channels,
+    )
+except ImportError:  # optional 'web' extra (fastapi) not installed
+    create_redis_lifespan = CyRedisMiddleware = get_redis = get_channels = None
 
 try:
     from cy_redis.web.channels import CyChannelManager, CyChannelConnection
@@ -37,9 +41,10 @@ except ImportError:
     CyChannelConnection = None
 
 try:
-    from cy_redis.web.web_cache import WebCache
+    from cy_redis.web.web_cache import WebCache, CacheManager
 except ImportError:
     WebCache = None
+    CacheManager = None
 
 try:
     from cy_redis.web.web_app_support import WebAppSupport

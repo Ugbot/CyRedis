@@ -1,14 +1,12 @@
-"""
-Communication Components for CyRedis.
+"""Communication components for CyRedis.
 
-This module contains messaging and remote procedure call functionality:
-- Redis-based messaging systems
-- Publish/subscribe patterns
-- Remote procedure calls
+Redis-backed reliable queues and messaging. (The ``rpc`` and ``messaging_core``
+sources are not currently compiled into the package.)
 """
+
+from cy_redis.communication.messaging import CyReliableQueue, ReliableQueue
 
 __all__ = [
-    'RedisMessaging',
-    'MessagingCore',
-    'RedisRPC'
+    "CyReliableQueue",
+    "ReliableQueue",
 ]
