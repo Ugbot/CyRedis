@@ -481,9 +481,11 @@ class TestIntegrationScenarios:
 
         worker_id = web_app_support.lifecycle_manager.worker_id
 
-        # Simulate worker death by setting old heartbeat
-        old_heartbeat = time.time() - 150  # 2.5 minutes ago
-        hp_redis_client.hset(f"workers:heartbeat:{worker_id}", 'last_heartbeat', old_heartbeat)
+        # Simulate worker death by aging the last_heartbeat in the status entry
+        # that detect_dead_workers() reads.
+        worker_info = json.loads(hp_redis_client.hget("workers:status", worker_id))
+        worker_info['last_heartbeat'] = time.time() - 150  # 2.5 minutes ago
+        hp_redis_client.hset("workers:status", worker_id, json.dumps(worker_info))
 
         # Run worker monitoring (simulate what happens in background thread)
         dead_workers = web_app_support.worker_coordinator.detect_dead_workers()
