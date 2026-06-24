@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cy-redis"
 dynamic = ["version"]
 description = "High-performance Redis client built with Cython and hiredis"
-readme = "README_CYREDIS.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
@@ -47,11 +47,36 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+# Modular layers — the core client has no runtime dependencies; each optional
+# layer pulls only what it needs. `pip install cy-redis[web]`, etc.
 async = [
     "uvloop>=0.17.0",
 ]
 ai = [
     "numpy>=1.21.0",
+]
+auth = [
+    "PyJWT>=2.0",
+    "pyotp>=2.6",
+]
+web = [
+    "fastapi>=0.100",
+    "PyJWT>=2.0",
+    "pyotp>=2.6",
+]
+game = [
+    "msgpack>=1.0",
+]
+# pgcache is a server-side Redis module (loaded with MODULE LOAD); it needs no
+# Python runtime dependency. The extra exists so intent can be declared.
+pgcache = []
+all = [
+    "uvloop>=0.17.0",
+    "numpy>=1.21.0",
+    "PyJWT>=2.0",
+    "pyotp>=2.6",
+    "fastapi>=0.100",
+    "msgpack>=1.0",
 ]
 dev = [
     "pytest>=7.0",

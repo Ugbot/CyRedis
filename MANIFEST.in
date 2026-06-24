@@ -1,28 +1,39 @@
-include README_CYREDIS.md
 include LICENSE
+include README.md
 include CHANGELOG.md
-include requirements.txt
 include pyproject.toml
-include cy_redis.pyx
-include redis_wrapper.py
-include hiredis/libhiredis.dylib
-include build_cyredis.sh
-recursive-include plugins *.py *.md
-recursive-include plugins/pgcache *.c *.h *.so Makefile build_module.sh README.md
-recursive-include examples *.py *.md
-recursive-include tests *.py *.md
+
+# Cython sources + C/C++ headers for the package (so the sdist can be recompiled)
+recursive-include cy_redis *.pyx *.pxd *.pyi *.hpp *.h py.typed
 recursive-include cyredis_game *.py *.pyx *.pxd *.md *.sh
+
+# Vendored hiredis — sources, headers, Makefile, and the prebuilt static
+# archive. setup.py rebuilds libhiredis.a from these if it is absent, so a
+# clean machine can compile the extensions from the sdist alone.
+recursive-include hiredis *.c *.h Makefile
+include hiredis/libhiredis.a
+
+# Lua scripts shipped at runtime
 recursive-include lua_scripts *.lua *.md
+
+# pgcache Redis module sources (server-side C module, scoped to src/)
+recursive-include plugins *.py *.md
+recursive-include plugins/pgcache/src *.c *.h
+include plugins/pgcache/Makefile plugins/pgcache/build_module.sh
+
+# Examples and docs
+recursive-include examples *.py *.md
 recursive-include docs *.md *.rst
+
 global-exclude *.pyc
 global-exclude *.pyo
+global-exclude *.so
+global-exclude *.o
 global-exclude __pycache__
-global-exclude .git
-global-exclude .github
-global-exclude .tox
-global-exclude .coverage
-global-exclude htmlcov
-global-exclude .pytest_cache
-global-exclude *.egg-info
-global-exclude build
-global-exclude dist
+global-exclude .DS_Store
+global-exclude .git*
+prune .github
+prune build
+prune dist
+prune htmlcov
+prune **/psqlodbc

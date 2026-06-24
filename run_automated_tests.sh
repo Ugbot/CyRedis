@@ -83,10 +83,10 @@ else
 fi
 
 echo -n "  Checking CyRedis modules... "
-if ls cy_redis/*.so > /dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} ($(ls cy_redis/*.so | wc -l | tr -d ' ') modules)"
+if ls cy_redis/core/*.so > /dev/null 2>&1; then
+    echo -e "${GREEN}✓${NC} ($(find cy_redis -name '*.so' | wc -l | tr -d ' ') extensions)"
 else
-    echo -e "${RED}✗ Please build: bash build_optimized.sh${NC}"
+    echo -e "${RED}✗ Please build: uv run python setup.py build_ext --inplace${NC}"
     exit 1
 fi
 
