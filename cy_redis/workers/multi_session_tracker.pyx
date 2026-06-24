@@ -24,6 +24,10 @@ cdef class MultiSessionTracker:
     Track and manage multiple user sessions across different devices/browsers.
     """
 
+    cdef object redis_client
+    cdef object session_manager
+    cdef str sessions_key
+
     def __cinit__(self, CyRedisClient redis_client, session_manager):
         # Preconditions: both collaborators are required for any operation.
         if redis_client is None:
