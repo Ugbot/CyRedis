@@ -33,11 +33,18 @@ except ImportError:
     CYREDIS_AVAILABLE = False
 
 
-# Redis connection configuration from environment
+# Redis connection configuration from environment. Integration tests run
+# against a dedicated logical DB (15 by default) and FLUSHDB it on teardown,
+# so they never touch application data on db 0.
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+REDIS_DB = int(os.getenv("REDIS_DB", "15"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
+
+
+def _make_cyredis_client():
+    """Build a CyRedisClient on the configured test DB."""
+    return CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
 # Cluster configuration
 REDIS_CLUSTER_NODES = os.getenv("REDIS_CLUSTER_NODES", "localhost:7000,localhost:7001,localhost:7002")
@@ -49,73 +56,42 @@ REDIS_SENTINEL_MASTER = os.getenv("REDIS_SENTINEL_MASTER", "mymaster")
 
 @pytest.fixture(scope="session")
 def redis_available() -> bool:
-    """Check if Redis is available."""
-    if not REDIS_PY_AVAILABLE:
+    """Check if Redis is available, using the CyRedis client itself."""
+    if not CYREDIS_AVAILABLE:
         return False
-
     try:
-        client = Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB,
-                      password=REDIS_PASSWORD, socket_timeout=2)
-        client.ping()
-        client.close()
-        return True
+        client = _make_cyredis_client()
+        ok = client.execute_command(["PING"]) in ("PONG", b"PONG")
+        return ok
     except Exception:
         return False
 
 
 @pytest.fixture
 def redis_client(redis_available):
-    """Provide a standard Redis client for testing."""
-    if not REDIS_PY_AVAILABLE:
-        pytest.skip("redis-py not available")
-    if not redis_available:
-        pytest.skip("Redis not available")
-
-    client = redis_py.Redis(
-        host=REDIS_HOST,
-        port=REDIS_PORT,
-        db=REDIS_DB,
-        password=REDIS_PASSWORD,
-        decode_responses=True
-    )
-
-    yield client
-
-    # Cleanup - flush test keys
-    try:
-        test_keys = client.keys("test:*")
-        if test_keys:
-            client.delete(*test_keys)
-    except Exception:
-        pass
-    finally:
-        client.close()
-
-
-@pytest.fixture
-def cyredis_client(redis_available):
-    """Provide a CyRedis client for testing."""
-    if not redis_available:
-        pytest.skip("Redis not available")
+    """Provide a CyRedis client for testing (the library under test — never
+    redis-py, per the project's replacement-library contract)."""
     if not CYREDIS_AVAILABLE:
         pytest.skip("CyRedis not built")
+    if not redis_available:
+        pytest.skip("Redis not available")
 
-    client = CyRedisClient(
-        host=REDIS_HOST.encode(),
-        port=REDIS_PORT,
-        db=REDIS_DB
-    )
-
+    client = _make_cyredis_client()
     yield client
 
-    # Cleanup
+    # Cleanup: the test DB is dedicated, so flush it wholesale.
     try:
-        # CyRedis uses bytes
-        client.delete(b"test:*")
+        client.execute_command(["FLUSHDB"])
     except Exception:
         pass
-    finally:
-        del client
+
+
+# cyredis_client is an explicit alias of redis_client now that the standard
+# fixture already yields a CyRedis client; kept for tests that request it.
+@pytest.fixture
+def cyredis_client(redis_client):
+    """Provide a CyRedis client for testing (alias of redis_client)."""
+    return redis_client
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ Python-level wrappers for reliable and worker queues using CyReliableQueue.
 These adapt return types to the dict-based contract used in integration tests.
 """
 
-from cy_redis.messaging import CyReliableQueue
+from cy_redis.communication.messaging import CyReliableQueue
 
 
 class ReliableQueue:

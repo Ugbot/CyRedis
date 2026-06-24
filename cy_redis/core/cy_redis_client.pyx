@@ -116,6 +116,70 @@ class RedisError(Exception):
 class ConnectionError(RedisError):
     pass
 
+
+def _resolve_eval_args(numkeys, rest, keys, args):
+    """Normalize the several EVAL/EVALSHA call conventions to (keys, args).
+
+    Supports redis-py `(numkeys, *keys_and_args)`, legacy keyword
+    `keys=/args=`, and legacy positional `(keys_list, args_list)`.
+    """
+    if keys is not None or args is not None:
+        return list(keys or []), list(args or [])
+    if isinstance(numkeys, (list, tuple)):
+        return list(numkeys), (list(rest[0]) if rest else [])
+    n = int(numkeys or 0)
+    allargs = list(rest)
+    return allargs[:n], allargs[n:]
+
+
+def _parse_info(raw):
+    """Parse a Redis INFO bulk string into a dict of field -> value."""
+    info = {}
+    if not raw:
+        return info
+    text = raw.decode('utf-8', 'replace') if isinstance(raw, (bytes, bytearray)) else raw
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or ':' not in line:
+            continue
+        field, _, value = line.partition(':')
+        info[field] = value
+    return info
+
+
+def _parse_stream_entries(reply):
+    """Convert a raw XRANGE/XREVRANGE reply [[id, [f, v, ...]], ...] into a
+    list of (id, {field: value}) tuples, matching the redis-py contract."""
+    if not reply:
+        return []
+    entries = []
+    for entry in reply:
+        if not entry or len(entry) < 2:
+            continue
+        entry_id, flat = entry[0], entry[1]
+        fields = {}
+        if flat:
+            i = 0
+            while i + 1 < len(flat):
+                fields[flat[i]] = flat[i + 1]
+                i += 2
+        entries.append((entry_id, fields))
+    return entries
+
+
+def _pairs_with_scores(reply):
+    """Convert a flat [member, score, ...] WITHSCORES reply into a list of
+    (member, float(score)) tuples, matching the redis-py contract."""
+    if not reply:
+        return []
+    result = []
+    i = 0
+    n = len(reply)
+    while i + 1 < n:
+        result.append((reply[i], float(reply[i + 1])))
+        i += 2
+    return result
+
 # Cython connection class
 cdef class CyRedisConnection:
 
@@ -506,14 +570,82 @@ cdef class CyRedisPipeline:
         self._pool = pool
         self._conn = pool.get_connection()
         self._queued = 0
+        self._buffer = []      # list of (args_list, transform_code)
+        self._transforms = []
+        self._in_multi = False
 
     def __dealloc__(self):
         if self._conn is not None:
             self._pool.return_connection(self._conn)
             self._conn = None
 
-    def execute_command(self, list args):
-        """Queue a command — does not send until execute() is called."""
+    # transform codes: 0 = identity, 1 = "OK"->True (SET-style)
+    cdef int _queue(self, list args, int transform) except -1:
+        self._buffer.append(args)
+        self._transforms.append(transform)
+        return 0
+
+    def execute_command(self, *args):
+        """Queue a raw command (does not send until execute()).
+
+        Accepts either execute_command('SET', 'k', 'v') or a single list/tuple
+        execute_command(['SET', 'k', 'v']).
+        """
+        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+            self._queue(list(args[0]), 0)
+        else:
+            self._queue(list(args), 0)
+        return self
+
+    # ── buffered command methods (mirror the client API) ──
+    def set(self, key, value, ex=-1, px=-1, nx=False, xx=False):
+        args = ['SET', key, value]
+        if ex > 0:
+            args.extend(['EX', str(ex)])
+        elif px > 0:
+            args.extend(['PX', str(px)])
+        if nx:
+            args.append('NX')
+        elif xx:
+            args.append('XX')
+        self._queue(args, 1)  # OK -> True
+        return self
+
+    def get(self, key):
+        self._queue(['GET', key], 0)
+        return self
+
+    def __getattr__(self, name):
+        """Any other command name buffers as an uppercased Redis command."""
+        if name.startswith('_'):
+            raise AttributeError(name)
+        cmd = name.upper()
+        def _buffered(*args):
+            full = [cmd]
+            full.extend(args)
+            self._queue(full, 0)
+            return self
+        return _buffered
+
+    def watch(self, *keys):
+        """WATCH keys for optimistic locking (sent immediately)."""
+        assert len(keys) > 0, "watch requires at least one key"
+        args = ['WATCH']
+        args.extend(keys)
+        self._conn.execute_command(args)
+        return self
+
+    def unwatch(self):
+        self._conn.execute_command(['UNWATCH'])
+        return self
+
+    def multi(self):
+        """Begin a MULTI/EXEC transaction block for the queued commands."""
+        self._in_multi = True
+        return self
+
+    cdef int _append_one(self, list args) except -1:
+        """Append one command to the hiredis output buffer (for pipelining)."""
         cdef int argc = len(args)
         cdef char **argv = <char **>malloc(sizeof(char *) * argc)
         cdef size_t *argvlen = <size_t *>malloc(sizeof(size_t) * argc)
@@ -525,12 +657,6 @@ cdef class CyRedisPipeline:
             if argv != <char **>0: free(argv)
             if argvlen != <size_t *>0: free(argvlen)
             raise MemoryError("Failed to allocate pipeline command args")
-
-        if not self._conn._connected:
-            if self._conn._connect() != 0:
-                free(argv); free(argvlen)
-                raise ConnectionError("Pipeline connection failed")
-
         try:
             for i in range(argc):
                 if isinstance(args[i], str):
@@ -542,32 +668,76 @@ cdef class CyRedisPipeline:
                 arg_bytes_list.append(arg_bytes)
                 argv[i] = <char *>arg_bytes_list[i]
                 argvlen[i] = len(arg_bytes_list[i])
-
             redisAppendCommandArgv(self._conn.ctx, argc,
                                    <const char **>argv, <const size_t *>argvlen)
-            self._queued += 1
         finally:
             free(argv)
             free(argvlen)
+        return 0
+
+    @staticmethod
+    def _apply(result, int transform):
+        if transform == 1:
+            if result is None:
+                return None
+            return True
+        return result
 
     def execute(self):
-        """Flush the pipeline and return a list of results (one per queued command)."""
+        """Flush the buffered commands and return one result per command."""
+        cdef list buffered = self._buffer
+        cdef list transforms = self._transforms
+        cdef int n = len(buffered)
+        cdef list results = []
+        cdef list raw
+
+        if not self._conn._connected:
+            if self._conn._connect() != 0:
+                raise ConnectionError("Pipeline connection failed")
+
+        try:
+            if self._in_multi:
+                # Transactional flush: MULTI, queued commands, EXEC. The EXEC
+                # reply array carries the actual per-command results.
+                self._conn.execute_command(['MULTI'])
+                for args in buffered:
+                    self._conn.execute_command(args)
+                raw = self._conn.execute_command(['EXEC'])
+                if raw is None:
+                    # WATCH guard tripped — transaction aborted.
+                    return None
+                for i in range(len(raw)):
+                    results.append(self._apply(raw[i], transforms[i]))
+            else:
+                # Plain pipeline: append all, then read one reply each.
+                for args in buffered:
+                    self._append_one(args)
+                results = self._read_replies(n, transforms)
+        finally:
+            self._buffer = []
+            self._transforms = []
+            self._in_multi = False
+            self._queued = 0
+        return results
+
+    cdef list _read_replies(self, int n, list transforms):
         cdef list results = []
         cdef void *raw_reply
         cdef redisReply *reply
-        cdef int n = self._queued
-
-        for _ in range(n):
-            if redisGetReply(self._conn.ctx, &raw_reply) != 0:
+        cdef int rc
+        cdef int i
+        for i in range(n):
+            with nogil:
+                rc = redisGetReply(self._conn.ctx, &raw_reply)
+            if rc != 0:
                 self._conn._connected = False
                 raise ConnectionError("Pipeline read failed")
             reply = <redisReply *>raw_reply
             try:
-                results.append(self._conn._parse_reply(reply))
+                results.append(self._apply(self._conn._parse_reply(reply),
+                                           transforms[i]))
             finally:
                 freeReplyObject(reply)
-
-        self._queued = 0
         return results
 
     def __enter__(self):
@@ -600,8 +770,33 @@ cdef class CyRedisClient:
         return self._pool
 
     @property
+    def connection_pool(self):
+        """Alias for `pool` (redis-py compatibility)."""
+        return self._pool
+
+    @property
     def executor(self):
         return self._executor
+
+    def ping(self) -> bool:
+        """PING the server; returns True on PONG."""
+        cdef CyRedisConnection conn = self._pool.get_connection()
+        try:
+            return conn.execute_command(['PING']) in ('PONG', b'PONG', 'OK')
+        finally:
+            self._pool.return_connection(conn)
+
+    def info(self, section: str = None) -> dict:
+        """Return server INFO parsed into a dict (redis-py style)."""
+        cdef CyRedisConnection conn = self._pool.get_connection()
+        try:
+            args = ['INFO']
+            if section:
+                args.append(section)
+            raw = conn.execute_command(args)
+            return _parse_info(raw)
+        finally:
+            self._pool.return_connection(conn)
 
     def get_pool(self):
         return self._pool
@@ -633,8 +828,12 @@ cdef class CyRedisClient:
 
     # Core Redis operations - matching redis_wrapper.py API
     def set(self, key: str, value: str, ex: int = -1, px: int = -1,
-            nx: bool = False, xx: bool = False) -> str:
-        """Set key-value pair"""
+            nx: bool = False, xx: bool = False):
+        """Set key-value pair.
+
+        Returns True on success, or None when a NX/XX condition is not met
+        (matching the redis-py contract this library replaces).
+        """
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
@@ -647,7 +846,11 @@ cdef class CyRedisClient:
                 args.append('NX')
             elif xx:
                 args.append('XX')
-            return conn.execute_command(args)
+            reply = conn.execute_command(args)
+            # SET returns the "OK" status string, or nil when NX/XX is unmet.
+            if reply is None:
+                return None
+            return True
         finally:
             self.pool.return_connection(conn)
 
@@ -660,21 +863,82 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
-    def delete(self, key: str) -> int:
-        """Delete key"""
+    def delete(self, *keys) -> int:
+        """Delete one or more keys; returns the number removed."""
+        assert len(keys) > 0, "delete requires at least one key"
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['DEL', key])
+            args = ['DEL']
+            args.extend(keys)
+            return conn.execute_command(args)
         finally:
             self.pool.return_connection(conn)
 
-    def exists(self, key: str) -> int:
-        """Check if key exists"""
+    def exists(self, *keys) -> int:
+        """Count how many of the given keys exist."""
+        assert len(keys) > 0, "exists requires at least one key"
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['EXISTS', key])
+            args = ['EXISTS']
+            args.extend(keys)
+            return conn.execute_command(args)
+        finally:
+            self.pool.return_connection(conn)
+
+    def type(self, key: str) -> str:
+        """Return the type of value stored at key (string/list/set/...)."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            return conn.execute_command(['TYPE', key])
+        finally:
+            self.pool.return_connection(conn)
+
+    def rename(self, key: str, newkey: str):
+        """Rename key to newkey (RENAME). Returns True on success."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            conn.execute_command(['RENAME', key, newkey])
+            return True
+        finally:
+            self.pool.return_connection(conn)
+
+    def renamenx(self, key: str, newkey: str) -> bool:
+        """Rename key to newkey only if newkey does not exist."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            return conn.execute_command(['RENAMENX', key, newkey]) == 1
+        finally:
+            self.pool.return_connection(conn)
+
+    def mset(self, mapping: dict) -> bool:
+        """Set multiple key/value pairs atomically (MSET)."""
+        assert isinstance(mapping, dict) and len(mapping) > 0, \
+            "mset requires a non-empty mapping"
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            args = ['MSET']
+            for k, v in mapping.items():
+                args.append(k)
+                args.append(v if isinstance(v, (str, bytes)) else str(v))
+            conn.execute_command(args)
+            return True
+        finally:
+            self.pool.return_connection(conn)
+
+    def mget(self, *keys) -> List[Optional[str]]:
+        """Get the values of multiple keys; missing keys yield None."""
+        assert len(keys) > 0, "mget requires at least one key"
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            args = ['MGET']
+            # Accept either mget('a','b') or mget(['a','b']).
+            if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
+                args.extend(keys[0])
+            else:
+                args.extend(keys)
+            return conn.execute_command(args)
         finally:
             self.pool.return_connection(conn)
 
@@ -715,6 +979,31 @@ cdef class CyRedisClient:
             if amount == 1:
                 return conn.execute_command(['DECR', key])
             return conn.execute_command(['DECRBY', key, str(amount)])
+        finally:
+            self.pool.return_connection(conn)
+
+    def incrby(self, key: str, amount: int) -> int:
+        """Increment key by the given integer amount (INCRBY)."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            return conn.execute_command(['INCRBY', key, str(amount)])
+        finally:
+            self.pool.return_connection(conn)
+
+    def decrby(self, key: str, amount: int) -> int:
+        """Decrement key by the given integer amount (DECRBY)."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            return conn.execute_command(['DECRBY', key, str(amount)])
+        finally:
+            self.pool.return_connection(conn)
+
+    def incrbyfloat(self, key: str, amount: float) -> float:
+        """Increment key by a float amount (INCRBYFLOAT)."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            result = conn.execute_command(['INCRBYFLOAT', key, str(amount)])
+            return float(result)
         finally:
             self.pool.return_connection(conn)
 
@@ -810,32 +1099,31 @@ cdef class CyRedisClient:
         return await loop.run_in_executor(self.executor, func, *args)
 
     # Lua script support
-    def eval(self, script: str, keys: Optional[List[str]] = None,
-             args: Optional[List[str]] = None) -> Any:
-        """Execute Lua script"""
-        cdef CyRedisConnection conn = self.pool.get_connection()
+    def eval(self, script, numkeys=None, *rest, keys=None, args=None) -> Any:
+        """Execute a Lua script.
 
+        Accepts the redis-py form ``eval(script, numkeys, *keys_and_args)`` as
+        well as the legacy keyword form ``eval(script, keys=[...], args=[...])``
+        and the legacy positional ``eval(script, keys_list, args_list)``.
+        """
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        klist, alist = _resolve_eval_args(numkeys, rest, keys, args)
         try:
-            cmd_args = ['EVAL', script, str(len(keys or []))]
-            if keys:
-                cmd_args.extend(keys)
-            if args:
-                cmd_args.extend(args)
+            cmd_args = ['EVAL', script, str(len(klist))]
+            cmd_args.extend(klist)
+            cmd_args.extend(alist)
             return conn.execute_command(cmd_args)
         finally:
             self.pool.return_connection(conn)
 
-    def evalsha(self, sha: str, keys: Optional[List[str]] = None,
-                args: Optional[List[str]] = None) -> Any:
-        """Execute Lua script by SHA"""
+    def evalsha(self, sha, numkeys=None, *rest, keys=None, args=None) -> Any:
+        """Execute a Lua script by SHA. Same calling conventions as eval()."""
         cdef CyRedisConnection conn = self.pool.get_connection()
-
+        klist, alist = _resolve_eval_args(numkeys, rest, keys, args)
         try:
-            cmd_args = ['EVALSHA', sha, str(len(keys or []))]
-            if keys:
-                cmd_args.extend(keys)
-            if args:
-                cmd_args.extend(args)
+            cmd_args = ['EVALSHA', sha, str(len(klist))]
+            cmd_args.extend(klist)
+            cmd_args.extend(alist)
             return conn.execute_command(cmd_args)
         finally:
             self.pool.return_connection(conn)
@@ -1179,7 +1467,10 @@ cdef class CyRedisClient:
             if withscores:
                 args.append('WITHSCORES')
 
-            return conn.execute_command(args)
+            reply = conn.execute_command(args)
+            if withscores:
+                return _pairs_with_scores(reply)
+            return reply
         finally:
             self.pool.return_connection(conn)
 
@@ -1199,7 +1490,10 @@ cdef class CyRedisClient:
             if offset is not None and count is not None:
                 args.extend(['LIMIT', str(offset), str(count)])
 
-            return conn.execute_command(args)
+            reply = conn.execute_command(args)
+            if withscores:
+                return _pairs_with_scores(reply)
+            return reply
         finally:
             self.pool.return_connection(conn)
 
@@ -1775,6 +2069,30 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
+    def xrange(self, stream: str, start: str = "-", end: str = "+",
+               count: int = None) -> List[Any]:
+        """Return stream entries in [start, end] as (id, {field: value}) tuples."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            args = ['XRANGE', stream, start, end]
+            if count is not None:
+                args.extend(['COUNT', str(count)])
+            return _parse_stream_entries(conn.execute_command(args))
+        finally:
+            self.pool.return_connection(conn)
+
+    def xrevrange(self, stream: str, end: str = "+", start: str = "-",
+                  count: int = None) -> List[Any]:
+        """Like xrange but in reverse order (newest first)."""
+        cdef CyRedisConnection conn = self.pool.get_connection()
+        try:
+            args = ['XREVRANGE', stream, end, start]
+            if count is not None:
+                args.extend(['COUNT', str(count)])
+            return _parse_stream_entries(conn.execute_command(args))
+        finally:
+            self.pool.return_connection(conn)
+
     # Async Enhanced Stream operations
     async def xreadgroup_async(self, group: str, consumer: str, streams: Dict[str, str],
                               count: int = None, block: int = None, noack: bool = False) -> List[Any]:
@@ -1841,7 +2159,11 @@ cdef class CyRedisClient:
 
         try:
             args = ['HMGET', key]
-            args.extend([str(f) for f in fields])
+            # Accept hmget(key, 'f1', 'f2') or hmget(key, ['f1', 'f2']).
+            if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
+                args.extend([str(f) for f in fields[0]])
+            else:
+                args.extend([str(f) for f in fields])
             return conn.execute_command(args)
         finally:
             self.pool.return_connection(conn)

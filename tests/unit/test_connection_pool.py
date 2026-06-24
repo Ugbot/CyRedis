@@ -164,7 +164,7 @@ class TestEnhancedRedisClient:
     def test_get_set_operations(self, redis_client):
         """Test GET and SET with retry logic"""
         result = redis_client.set('test_key', 'test_value')
-        assert result == 'OK'
+        assert result is True  # redis-py-compatible: SET returns True
 
         value = redis_client.get('test_key')
         assert value == 'test_value'
@@ -274,7 +274,7 @@ class TestProductionRedis:
         """Test using as context manager"""
         with ProductionRedis(host="localhost", port=6379) as client:
             result = client.set('test_key', 'test_value')
-            assert result == 'OK'
+            assert result is True  # redis-py-compatible: SET returns True
 
             value = client.get('test_key')
             assert value == 'test_value'

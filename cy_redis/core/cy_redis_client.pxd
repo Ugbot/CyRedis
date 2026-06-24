@@ -107,6 +107,13 @@ cdef class CyRedisPipeline:
     cdef CyRedisConnection _conn
     cdef CyRedisConnectionPool _pool
     cdef int _queued
+    cdef list _buffer
+    cdef list _transforms
+    cdef bint _in_multi
+
+    cdef int _queue(self, list args, int transform) except -1
+    cdef int _append_one(self, list args) except -1
+    cdef list _read_replies(self, int n, list transforms)
 
 # Main client class - provides high-level Redis operations
 cdef class CyRedisClient:

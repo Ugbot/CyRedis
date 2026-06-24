@@ -41,12 +41,23 @@ def module_redis():
         r = redis_py.Redis(host="127.0.0.1", port=MODULE_REDIS_PORT,
                            decode_responses=True, socket_timeout=2)
         r.ping()
-        return r
     except Exception:
         pytest.skip(
             f"Module Redis not available on port {MODULE_REDIS_PORT}. "
             "Start it with: redis-server cyredis_game/module/test-redis.conf --daemonize yes"
         )
+    # A plain Redis may answer on this port without the cy_game module loaded;
+    # confirm the module's commands exist, otherwise skip rather than error.
+    try:
+        info = r.execute_command("COMMAND", "INFO", "FLECS.INIT")
+        if not info or not info[0]:
+            raise RuntimeError("FLECS.INIT not registered")
+    except Exception:
+        pytest.skip(
+            f"cy_game module not loaded on port {MODULE_REDIS_PORT}. "
+            "Build/load it (see cyredis_game/README.md)."
+        )
+    return r
 
 
 @pytest.fixture(scope="session")

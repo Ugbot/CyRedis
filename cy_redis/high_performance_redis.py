@@ -7,25 +7,29 @@ from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 class HighPerformanceRedis:
-    def __init__(self, host: str = "localhost", port: int = 6379, max_connections: int = 10, max_workers: int = 4):
-        self.client = CyRedisClient(host=host, port=port, max_connections=max_connections, max_workers=max_workers)
+    def __init__(self, host: str = "localhost", port: int = 6379,
+                 max_connections: int = 10, max_workers: int = 4,
+                 password: str = None, db: int = 0):
+        self.client = CyRedisClient(
+            host=host, port=port, max_connections=max_connections,
+            max_workers=max_workers, password=password, db=db,
+        )
 
-    def set(self, key: str, value: str):
-        return self.client.set(key, value)
+    def keys(self, pattern: str = "*"):
+        """Return keys matching pattern (KEYS)."""
+        return self.client.execute_command(["KEYS", pattern])
 
-    def get(self, key: str):
-        return self.client.get(key)
+    def close(self):
+        """No-op: the underlying CyRedisClient frees its pool on GC."""
+        return None
 
-    def delete(self, key: str):
-        return self.client.delete(key)
-
-    def publish(self, channel: str, message: str):
-        return self.client.publish(channel, message)
+    def __getattr__(self, name):
+        # Delegate any other command to the underlying CyRedisClient.
+        return getattr(self.client, name)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # CyRedisClient frees resources in __dealloc__, nothing to do
         return False
 
