@@ -144,14 +144,19 @@ class TestLifecycleManager:
         assert 'hostname' in stats
         assert 'pid' in stats
 
-    def test_worker_health_check(self, lifecycle_manager):
+    def test_worker_health_check(self, lifecycle_manager, hp_redis_client):
         """Test worker health checking."""
         # Worker should be healthy initially
         assert lifecycle_manager.is_healthy() is True
 
-        # Simulate old heartbeat
-        old_time = time.time() - 120  # 2 minutes ago
-        hp_redis_client.hset(f"workers:heartbeat:{lifecycle_manager.worker_id}", 'last_heartbeat', old_time)
+        # Simulate an old heartbeat in the status entry that is_healthy() reads.
+        info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        info['last_heartbeat'] = time.time() - 120  # 2 minutes ago
+        hp_redis_client.hset(
+            "workers:status", lifecycle_manager.worker_id, json.dumps(info)
+        )
 
         # Worker should be unhealthy now
         assert lifecycle_manager.is_healthy() is False

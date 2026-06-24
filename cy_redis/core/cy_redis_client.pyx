@@ -1515,9 +1515,15 @@ cdef class CyRedisClient:
         return self.zrange(key, start, stop, withscores=withscores, rev=True)
 
     def zrangebyscore(self, key: str, min_score: Union[str, float], max_score: Union[str, float],
-                      withscores: bool = False, offset: int = None, count: int = None) -> List[Any]:
-        """Get members by score range"""
+                      withscores: bool = False, offset: int = None, count: int = None,
+                      start: int = None, num: int = None) -> List[Any]:
+        """Get members by score range. `start`/`num` are redis-py aliases for
+        the LIMIT offset/count."""
         cdef CyRedisConnection conn = self.pool.get_connection()
+        if start is not None:
+            offset = start
+        if num is not None:
+            count = num
 
         try:
             args = ['ZRANGEBYSCORE', key, str(min_score), str(max_score)]
@@ -2390,9 +2396,11 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
-    def blpop(self, keys: List[str], timeout: int = 0) -> Optional[Tuple[str, str]]:
-        """Blocking pop from head of list"""
+    def blpop(self, keys, timeout: int = 0) -> Optional[Tuple[str, str]]:
+        """Blocking pop from head of list. `keys` may be a single key or list."""
         cdef CyRedisConnection conn = self.pool.get_connection()
+        if isinstance(keys, (str, bytes)):
+            keys = [keys]
 
         try:
             args = ['BLPOP']
@@ -2405,9 +2413,11 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
-    def brpop(self, keys: List[str], timeout: int = 0) -> Optional[Tuple[str, str]]:
-        """Blocking pop from tail of list"""
+    def brpop(self, keys, timeout: int = 0) -> Optional[Tuple[str, str]]:
+        """Blocking pop from tail of list. `keys` may be a single key or list."""
         cdef CyRedisConnection conn = self.pool.get_connection()
+        if isinstance(keys, (str, bytes)):
+            keys = [keys]
 
         try:
             args = ['BRPOP']
