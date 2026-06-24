@@ -53,22 +53,23 @@ cdef extern from "hiredis.h":
         size_t elements
         redisReply **element
 
-    # Core connection functions
+    # Core connection functions. The blocking ones are marked nogil so callers
+    # can release the GIL across the socket round-trip.
     redisContext *redisConnect(const char *ip, int port)
-    redisContext *redisConnectWithTimeout(const char *ip, int port, timeval tv)
+    redisContext *redisConnectWithTimeout(const char *ip, int port, timeval tv) nogil
     redisContext *redisConnectUnix(const char *path)
     void redisFree(redisContext *c)
     int redisReconnect(redisContext *c)
 
     # Command functions
     redisReply *redisCommand(redisContext *c, const char *format, ...)
-    redisReply *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen)
+    redisReply *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen) nogil
     void freeReplyObject(redisReply *reply)
 
     # Pipeline functions
     int redisAppendCommand(redisContext *c, const char *format, ...)
     int redisAppendCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen)
-    int redisGetReply(redisContext *c, void **reply)
+    int redisGetReply(redisContext *c, void **reply) nogil
 
 from cy_redis.core.protocol import ProtocolNegotiator
 
@@ -173,7 +174,13 @@ cdef class CyRedisConnection:
 
         cdef bytes host_bytes = self._host.encode('utf-8')
         cdef const char* host_cstr = host_bytes
-        self.ctx = redisConnectWithTimeout(host_cstr, self._port, tv)
+        cdef int port = self._port
+        cdef redisContext *ctx
+        # The TCP connect blocks; release the GIL so other threads run. Only C
+        # data (host_cstr backed by host_bytes, port, tv) is touched here.
+        with nogil:
+            ctx = redisConnectWithTimeout(host_cstr, port, tv)
+        self.ctx = ctx
         if self.ctx == <redisContext *>0 or self.ctx.err:
             if self.ctx != <redisContext *>0:
                 redisFree(self.ctx)
@@ -329,8 +336,13 @@ cdef class CyRedisConnection:
                 argv[i] = <char *>arg_bytes_list[i]
                 argvlen[i] = len(arg_bytes_list[i])
 
-            reply = redisCommandArgv(self.ctx, argc,
-                                     <const char **>argv, <const size_t *>argvlen)
+            # The command round-trip (write + blocking read) is where time is
+            # spent; release the GIL across it so sibling executor threads make
+            # real progress. argv/argvlen are C buffers and the backing bytes in
+            # arg_bytes_list stay referenced, so no Python state is touched here.
+            with nogil:
+                reply = redisCommandArgv(self.ctx, argc,
+                                         <const char **>argv, <const size_t *>argvlen)
             if reply == <redisReply *>0:
                 self._connected = False
                 raise ConnectionError("Redis command failed — connection reset")
@@ -372,9 +384,14 @@ cdef class CyRedisConnection:
         """Block until the server sends a reply (for pub/sub subscribed connections)."""
         cdef void *raw_reply
         cdef redisReply *reply
+        cdef int rc
         if not self._connected:
             raise ConnectionError("Not connected")
-        if redisGetReply(self.ctx, &raw_reply) != 0:
+        # This blocks until the server pushes a reply (pub/sub); release the GIL
+        # so the rest of the process keeps running while we wait.
+        with nogil:
+            rc = redisGetReply(self.ctx, &raw_reply)
+        if rc != 0:
             self._connected = False
             raise ConnectionError("read_reply failed")
         reply = <redisReply *>raw_reply

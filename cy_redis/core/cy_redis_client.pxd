@@ -46,13 +46,13 @@ cdef extern from "hiredis.h":
 
     # Command functions
     redisReply *redisCommand(redisContext *c, const char *format, ...)
-    redisReply *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen)
+    redisReply *redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen) nogil
     void freeReplyObject(redisReply *reply)
 
     # Pipeline functions
     int redisAppendCommand(redisContext *c, const char *format, ...)
     int redisAppendCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen)
-    int redisGetReply(redisContext *c, void **reply)
+    int redisGetReply(redisContext *c, void **reply) nogil
 
 # Constants
 DEF REDIS_REPLY_STRING = 1
