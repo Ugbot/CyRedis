@@ -48,6 +48,9 @@ cdef class CyZone:
                            double x, double y, double vx=*, double vy=*, int hp=*)
     cpdef dict flecs_tick(self, long dt_ms=*, int budget=*)
 
+    # Internal helpers
+    cdef dict _decode_event_fields(self, object raw_fields)
+
     # Key helpers
     cpdef str get_nav_grid_key(self)
     cpdef str get_ws_key(self, str agent_id)

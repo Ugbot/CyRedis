@@ -27,6 +27,16 @@ cdef class RedisStreamIterator:
     def __cinit__(self, CyRedisClient redis_client, str stream_key,
                   str consumer_group=None, str consumer_name=None,
                   int batch_size=10, int block_ms=1000):
+        # Preconditions: invalid caller arguments raise, not assert.
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+        if not stream_key:
+            raise ValueError("stream_key must be a non-empty string")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be a positive count")
+        if block_ms < 0:
+            raise ValueError("block_ms must be non-negative milliseconds")
+
         self.redis_client = redis_client
         self.stream_key = stream_key
         self.consumer_group = consumer_group
@@ -56,9 +66,15 @@ cdef class RedisStreamIterator:
             if not messages:
                 raise StopAsyncIteration
 
+            # Invariant: a non-empty batch is bounded by batch_size.
+            assert len(messages) <= self.batch_size, "batch exceeds batch_size bound"
+
             # Update last_id for next iteration
             if messages:
                 self.last_id = messages[-1]['id']
+
+            # Invariant: cursor must remain a non-empty stream id for XREAD.
+            assert self.last_id, "stream cursor must be a non-empty id"
 
             return messages
 
@@ -100,7 +116,10 @@ cdef class RedisStreamIterator:
                                 'data': msg_data
                             })
 
-            return messages[:self.batch_size]
+            # Invariant: the yielded batch never exceeds the requested bound.
+            bounded = messages[:self.batch_size]
+            assert len(bounded) <= self.batch_size, "batch exceeds batch_size bound"
+            return bounded
 
         except Exception as e:
             print(f"Error reading from stream: {e}")
@@ -140,7 +159,10 @@ cdef class RedisStreamIterator:
                                 'data': msg_data
                             })
 
-            return messages[:self.batch_size]
+            # Invariant: the yielded batch never exceeds the requested bound.
+            bounded = messages[:self.batch_size]
+            assert len(bounded) <= self.batch_size, "batch exceeds batch_size bound"
+            return bounded
 
         except Exception as e:
             print(f"Error reading from consumer group: {e}")
@@ -206,6 +228,15 @@ cdef class RedisListIterator:
 
     def __cinit__(self, CyRedisClient redis_client, str list_key,
                   int batch_size=10, int block_ms=1000):
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+        if not list_key:
+            raise ValueError("list_key must be a non-empty string")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be a positive count")
+        if block_ms < 0:
+            raise ValueError("block_ms must be non-negative milliseconds")
+
         self.redis_client = redis_client
         self.list_key = list_key
         self.batch_size = batch_size
@@ -248,12 +279,16 @@ cdef class RedisListIterator:
             if list_length == 0:
                 return []
 
-            # Calculate range to read
+            # Calculate range to read; the window is bounded by batch_size.
             start = self.last_index
             end = min(start + self.batch_size - 1, list_length - 1)
 
             if start >= list_length:
                 return []
+
+            # Invariant: the LRANGE window never exceeds the batch bound.
+            assert end >= start, "range end must not precede start"
+            assert (end - start + 1) <= self.batch_size, "range exceeds batch_size"
 
             # Read items from list
             items = self.redis_client.lrange(self.list_key, start, end)
@@ -290,6 +325,13 @@ cdef class RedisPSubIterator:
 
     def __cinit__(self, CyRedisClient redis_client, str pattern,
                   int timeout_ms=1000):
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+        if not pattern:
+            raise ValueError("pattern must be a non-empty string")
+        if timeout_ms <= 0:
+            raise ValueError("timeout_ms must be a positive number of milliseconds")
+
         self.redis_client = redis_client
         self.pattern = pattern
         self.timeout_ms = timeout_ms
@@ -344,11 +386,15 @@ cdef class RedisPSubIterator:
         self._msg_queue = asyncio.Queue()
 
         def _reader():
+            # Exit invariant: the loop blocks on read_reply() (one turn per
+            # inbound frame, so it is bounded by network traffic, not a spin)
+            # and terminates when close() sets is_closed or read_reply raises.
             while not self.is_closed:
                 try:
                     reply = conn.read_reply()
                     # pmessage frame: ['pmessage', pattern, channel, data]
                     if isinstance(reply, list) and len(reply) == 4:
+                        assert len(reply) == 4, "pmessage frame has four parts"
                         kind = reply[0]
                         if isinstance(kind, bytes):
                             kind = kind.decode()
@@ -369,6 +415,8 @@ cdef class RedisPSubIterator:
     async def _get_next_message(self):
         if not hasattr(self, '_msg_queue'):
             return None
+        # Invariant: the wait is bounded by a strictly positive timeout.
+        assert self.timeout_ms > 0, "timeout_ms must be positive"
         try:
             return await asyncio.wait_for(
                 self._msg_queue.get(), timeout=self.timeout_ms / 1000
@@ -401,11 +449,21 @@ cdef class RedisPubSubIterator:
 
     def __cinit__(self, CyRedisClient redis_client, list channels,
                   int timeout_ms=1000):
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+        if not channels:
+            raise ValueError("channels must be a non-empty list")
+        if timeout_ms <= 0:
+            raise ValueError("timeout_ms must be a positive number of milliseconds")
+
         self.redis_client = redis_client
         self.channels = channels if isinstance(channels, list) else [channels]
         self.timeout_ms = timeout_ms
         self.is_closed = False
         self.pubsub = None
+        # Postcondition: the subscription set is a non-empty list.
+        assert isinstance(self.channels, list), "channels normalized to a list"
+        assert len(self.channels) > 0, "must subscribe to at least one channel"
 
     async def __aiter__(self):
         """Async iterator protocol."""
@@ -457,6 +515,9 @@ cdef class RedisPubSubIterator:
 
         # Background thread: block on read_reply() and put messages into the queue
         def _reader():
+            # Exit invariant: each turn blocks on read_reply() (bounded by
+            # inbound traffic, not a spin) and terminates when close() sets
+            # is_closed or read_reply raises.
             while not self.is_closed:
                 try:
                     reply = conn.read_reply()
@@ -480,6 +541,8 @@ cdef class RedisPubSubIterator:
         """Wait for the next message from the reader thread."""
         if not hasattr(self, '_msg_queue'):
             return None
+        # Invariant: the wait is bounded by a strictly positive timeout.
+        assert self.timeout_ms > 0, "timeout_ms must be positive"
         try:
             msg = await asyncio.wait_for(self._msg_queue.get(), timeout=self.timeout_ms / 1000)
             return msg

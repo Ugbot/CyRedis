@@ -35,8 +35,22 @@ cdef class CySharedDict:
     cdef long cache_ttl
     cdef long last_sync
 
+    # Fail-safe ceiling on a single decompressed payload (256 MiB). A
+    # COMPRESSED: blob inflating past this is treated as corrupt/hostile
+    # rather than being allowed to exhaust memory (zip-bomb guard).
+    cdef long _MAX_DECOMPRESSED_BYTES
+
     def __cinit__(self, object redis_client, str dict_key,
                   bint use_compression=True, long cache_ttl=30):
+        # Preconditions: bad caller arguments raise, they are not asserts.
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+        if not dict_key:
+            raise ValueError("dict_key must be a non-empty string")
+        if cache_ttl < 0:
+            raise ValueError("cache_ttl must be non-negative")
+
+        self._MAX_DECOMPRESSED_BYTES = 256 * 1024 * 1024
         self.redis = redis_client
         self.dict_key = dict_key
         self.lock_key = f"{dict_key}:lock"
@@ -57,30 +71,50 @@ cdef class CySharedDict:
         cdef str hex_data
         cdef bytes compressed
         cdef bytes decompressed
+        cdef object result
+        import zlib
 
         if data:
             try:
                 if self.use_compression and data.startswith("COMPRESSED:"):
-                    # Decompress if needed
-                    import zlib
+                    # Decompress, bounding the inflated size so a corrupt or
+                    # hostile blob cannot exhaust memory (zip-bomb guard).
                     hex_data = data[11:]
                     compressed = bytes.fromhex(hex_data)
-                    decompressed = zlib.decompress(compressed)
+                    assert len(compressed) >= 0, "compressed length is non-negative"
+                    decompressed = zlib.decompress(
+                        compressed, 15, self._MAX_DECOMPRESSED_BYTES
+                    )
+                    # Postcondition: bounded decompress never exceeds the cap.
+                    assert len(decompressed) <= self._MAX_DECOMPRESSED_BYTES, \
+                        "decompressed payload exceeds fail-safe cap"
                     data = decompressed.decode('utf-8')
 
-                return json.loads(data)
+                result = json.loads(data)
+                # Invariant: the persisted document is always a JSON object.
+                assert isinstance(result, dict), "stored payload must be a dict"
+                return result
             except (json.JSONDecodeError, zlib.error):
                 return {}
         return {}
 
     cdef void _save_to_redis(self, dict data):
         """Save dictionary to Redis."""
+        assert data is not None, "cannot persist a NULL dict"
+
         cdef str json_data = json.dumps(data, sort_keys=True)
         cdef bytes compressed
+        cdef long serialized_length = len(json_data)
+        import zlib
 
-        if self.use_compression and len(json_data) > 1024:
-            # Compress large data
-            import zlib
+        # Invariant: json.dumps of a dict is a non-empty str ("{}" at minimum).
+        assert serialized_length >= 2, "serialized JSON object is at least '{}'"
+
+        if self.use_compression and serialized_length > 1024:
+            # Compress large data; the inflated form must stay within the cap
+            # so it can be read back by _load_from_redis.
+            assert serialized_length <= self._MAX_DECOMPRESSED_BYTES, \
+                "payload too large to round-trip through compression"
             compressed = zlib.compress(json_data.encode('utf-8'))
             json_data = f"COMPRESSED:{compressed.hex()}"
 
@@ -100,6 +134,9 @@ cdef class CySharedDict:
         if not self._is_cache_valid():
             self.local_cache = self._load_from_redis()
             self.last_sync = <long>time.time()
+        # Postcondition: callers always receive a concrete dict to read from.
+        assert self.local_cache is not None, "local cache must be a dict"
+        assert isinstance(self.local_cache, dict), "local cache must be a dict"
         return self.local_cache
 
     # Dictionary interface implementation
@@ -280,11 +317,14 @@ cdef class CySharedDict:
         cdef dict data
         cdef long current
 
+        if key is None:
+            raise ValueError("key must not be None")
         if not self.lock.try_acquire(blocking=True, timeout=5.0):
             raise RuntimeError("Could not acquire lock for shared dictionary operation")
 
         try:
             data = self._load_from_redis()
+            assert isinstance(data, dict), "loaded state must be a dict"
             current = data.get(key, 0)
             if not isinstance(current, int):
                 current = 0
@@ -293,6 +333,8 @@ cdef class CySharedDict:
             self._save_to_redis(data)
             self.local_cache = data
             self.last_sync = <long>time.time()
+            # Postcondition: stored value reflects the returned counter.
+            assert data[key] == current, "stored value must match returned value"
             return current
         finally:
             self.lock.release()
@@ -302,11 +344,14 @@ cdef class CySharedDict:
         cdef dict data
         cdef double current
 
+        if key is None:
+            raise ValueError("key must not be None")
         if not self.lock.try_acquire(blocking=True, timeout=5.0):
             raise RuntimeError("Could not acquire lock for shared dictionary operation")
 
         try:
             data = self._load_from_redis()
+            assert isinstance(data, dict), "loaded state must be a dict"
             current = data.get(key, 0.0)
             if not isinstance(current, (int, float)):
                 current = 0.0
@@ -315,6 +360,8 @@ cdef class CySharedDict:
             self._save_to_redis(data)
             self.local_cache = data
             self.last_sync = <long>time.time()
+            # Postcondition: stored value reflects the returned counter.
+            assert data[key] == current, "stored value must match returned value"
             return current
         finally:
             self.lock.release()
@@ -334,6 +381,9 @@ cdef class CySharedDict:
         cdef dict data = self._ensure_synced()
         cdef long total_size = len(json.dumps(data))
         cdef bint compressed = self.use_compression and total_size > 1024
+
+        # Invariant: serialized size is at least '{}' and non-negative.
+        assert total_size >= 2, "serialized size is at least '{}'"
 
         return {
             'key_count': len(data),
@@ -368,9 +418,12 @@ cdef class CySharedDictManager:
     cdef object executor
 
     def __cinit__(self, redis_client):
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
         self.redis = redis_client
         self.dicts = {}
         self.executor = ThreadPoolExecutor(max_workers=4)
+        assert isinstance(self.dicts, dict), "dict registry must be a dict"
 
     def __dealloc__(self):
         if self.executor:
@@ -378,14 +431,25 @@ cdef class CySharedDictManager:
 
     cpdef CySharedDict get_dict(self, str name, bint use_compression=True, long cache_ttl=30):
         """Get or create a shared dictionary."""
+        if not name:
+            raise ValueError("name must be a non-empty string")
+        if cache_ttl < 0:
+            raise ValueError("cache_ttl must be non-negative")
+
         if name not in self.dicts:
             self.dicts[name] = CySharedDict(self.redis, f"shared_dict:{name}",
                                            use_compression, cache_ttl)
+        # Postcondition: a registered dict is always returned for this name.
+        assert name in self.dicts, "dict must be registered after get_dict"
+        assert isinstance(self.dicts[name], CySharedDict), "registry holds CySharedDict"
         return self.dicts[name]
 
     cpdef void delete_dict(self, str name):
         """Delete a shared dictionary."""
         cdef CySharedDict d
+
+        if not name:
+            raise ValueError("name must be a non-empty string")
 
         if name in self.dicts:
             # Clear Redis data

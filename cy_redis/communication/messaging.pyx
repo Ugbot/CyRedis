@@ -40,6 +40,16 @@ cdef class CyReliableQueue:
     def __cinit__(self, redis_client, str queue_name,
                   int visibility_timeout=30, int max_retries=3,
                   str dead_letter_queue=None):
+        # Preconditions: caller must supply a client and a non-empty queue name.
+        if redis_client is None:
+            raise ValueError("redis_client is required")
+        if not queue_name:
+            raise ValueError("queue_name must be a non-empty string")
+        if visibility_timeout <= 0:
+            raise ValueError("visibility_timeout must be positive")
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+
         self.redis = redis_client
         self.queue_name = queue_name
         self.visibility_timeout = visibility_timeout
@@ -53,6 +63,11 @@ cdef class CyReliableQueue:
         self.dead_key = self.dead_letter_queue
 
         self.executor = ThreadPoolExecutor(max_workers=4)
+
+        # Postcondition: invariants the rest of the class relies on.
+        assert self.visibility_timeout > 0, "visibility_timeout invariant"
+        assert self.max_retries >= 0, "max_retries invariant"
+        assert self.executor is not None, "executor must be constructed"
 
     def __dealloc__(self):
         if self.executor is not None:
@@ -73,7 +88,12 @@ cdef class CyReliableQueue:
         Returns:
             Message ID
         """
+        # Preconditions: a delay cannot run backwards in time.
+        if delay < 0:
+            raise ValueError("delay must be non-negative")
+
         message_id = str(uuid.uuid4())
+        assert message_id, "uuid4() must yield a non-empty id"
 
         message_data = {
             'id': message_id,
@@ -87,6 +107,7 @@ cdef class CyReliableQueue:
         score = message_data['delay_until'] if delay > 0 else time.time()
         if priority != 0:
             score = score + (priority * 0.000001)  # Small adjustment for priority
+        assert score >= 0.0, "score must be a non-negative time-ordered value"
 
         try:
             # Store message data
@@ -113,12 +134,20 @@ cdef class CyReliableQueue:
         cdef list messages = []
         cdef double current_time = time.time()
 
+        # Precondition: a pop must request at least one message.
+        if count < 1:
+            raise ValueError("count must be >= 1")
+
         try:
-            # Get messages that are ready (score <= current time)
+            # Get messages that are ready (score <= current time).
+            # LIMIT 0 count bounds the reply to at most *count* ids.
             ready_messages = self.redis.execute_command(['ZRANGEBYSCORE', self.pending_key, '-inf', str(current_time), 'LIMIT', '0', str(count)])
 
             if not ready_messages:
                 return messages
+
+            # The Redis LIMIT clause already caps this loop at *count*.
+            assert len(ready_messages) <= count, "ZRANGEBYSCORE honoured LIMIT"
 
             for message_id in ready_messages:
                 # Get message data
@@ -142,6 +171,8 @@ cdef class CyReliableQueue:
 
                 messages.append((message_id, message_data['data']))
 
+            # Postcondition: we never return more than the caller asked for.
+            assert len(messages) <= count, "pop must not exceed requested count"
             return messages
         except Exception as e:
             print(f"Error popping messages: {e}")
@@ -154,6 +185,9 @@ cdef class CyReliableQueue:
         Args:
             message_id: ID of the message to acknowledge
         """
+        # Precondition: an ack must name a specific message.
+        if not message_id:
+            raise ValueError("message_id must be a non-empty string")
         try:
             # ZREM returns the count of removed elements; 0 means message was not found
             removed = self.redis.execute_command(['ZREM', self.processing_key, message_id])
@@ -173,6 +207,9 @@ cdef class CyReliableQueue:
             message_id: ID of the failed message
             retry: Whether to retry the message
         """
+        # Precondition: a nack must name a specific message.
+        if not message_id:
+            raise ValueError("message_id must be a non-empty string")
         try:
             # Get message from processing queue
             message_json = self.redis.get(f"{self.processing_key}:{message_id}")
@@ -181,9 +218,16 @@ cdef class CyReliableQueue:
 
             message_data = json.loads(message_json)
 
-            if retry and message_data.get('retries', 0) < self.max_retries:
+            # Retries are bounded by max_retries: once the count reaches the
+            # ceiling the message is routed to the dead-letter queue instead of
+            # being re-queued, so the retry cycle cannot loop forever.
+            current_retries = message_data.get('retries', 0)
+            assert current_retries >= 0, "retry count cannot be negative"
+            if retry and current_retries < self.max_retries:
                 # Increment retry count and move back to pending
-                message_data['retries'] = message_data.get('retries', 0) + 1
+                message_data['retries'] = current_retries + 1
+                assert message_data['retries'] <= self.max_retries, \
+                    "retry count must never exceed max_retries"
                 message_data['last_error'] = time.time()
 
                 self.redis.set(f"{self.pending_key}:{message_id}", json.dumps(message_data))

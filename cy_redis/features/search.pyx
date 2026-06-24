@@ -104,7 +104,10 @@ cdef class CyRedisSearch:
             if payload_field:
                 args.extend(['PAYLOAD_FIELD', payload_field])
 
-            # Add schema
+            # Add schema. Bounded by len(schema); a search index always defines
+            # at least one field, so an empty schema is a caller error.
+            if not schema:
+                raise ValueError("ft_create requires at least one schema field")
             args.append('SCHEMA')
             for field_name, field_type, options in schema:
                 args.append(field_name)
@@ -335,18 +338,22 @@ cdef class CyRedisSearch:
 
         cdef int total = result[0]
         cdef list docs = []
+        cdef int reply_length = len(result)
+        # Precondition: FT.SEARCH returns the match count as a non-negative head.
+        assert reply_length >= 1, "reply must carry at least the count element"
 
-        # Parse documents
+        # Parse documents. Bounded by reply_length: `i` advances by at least one
+        # every iteration (the doc-id read), so the loop cannot spin in place.
         cdef int i = 1
-        while i < len(result):
+        while i < reply_length:
             doc_id = result[i]
             i += 1
 
-            if i < len(result) and isinstance(result[i], list):
+            if i < reply_length and isinstance(result[i], list):
                 fields = result[i]
                 doc = {'id': doc_id}
 
-                # Parse field-value pairs
+                # Parse field-value pairs; j is bounded by len(fields).
                 for j in range(0, len(fields), 2):
                     if j + 1 < len(fields):
                         doc[fields[j]] = fields[j + 1]
@@ -354,6 +361,10 @@ cdef class CyRedisSearch:
                 docs.append(doc)
                 i += 1
 
+        # Postcondition: consumed the whole reply and produced no more docs than
+        # the reply could physically describe (one doc per id at minimum).
+        assert i >= reply_length, "parser must consume the full reply"
+        assert len(docs) <= reply_length, "docs cannot exceed reply length"
         return {'total': total, 'docs': docs}
 
     # ===== AGGREGATION =====
@@ -428,8 +439,10 @@ cdef class CyRedisSearch:
 
         cdef list docs = []
         cdef int i = 1  # Skip count
+        cdef int reply_length = len(result)
 
-        while i < len(result):
+        # Bounded by reply_length: `i` advances by exactly one each iteration.
+        while i < reply_length:
             if isinstance(result[i], list):
                 fields = result[i]
                 doc = {}
@@ -441,6 +454,10 @@ cdef class CyRedisSearch:
                 docs.append(doc)
             i += 1
 
+        # Postcondition: scan consumed the reply; rows can't exceed reply length.
+        assert i == reply_length, "parser must consume the full reply"
+        assert len(docs) < reply_length or reply_length == 0, \
+            "rows cannot exceed reply length"
         return docs
 
     # ===== SUGGESTION (AUTO-COMPLETE) =====

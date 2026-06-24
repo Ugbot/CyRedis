@@ -23,7 +23,10 @@ cdef class CyPhysics:
     """
 
     def __cinit__(self, object redis_client):
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
         self.redis = redis_client
+        assert self.redis is not None, "redis client must be stored"
 
     cpdef bint aabb(self, double ax, double ay, double aw, double ah,
                    double bx, double by, double bw, double bh):
@@ -31,6 +34,10 @@ cdef class CyPhysics:
 
         Arguments are center-x, center-y, half-width, half-height for each box.
         """
+        # Half-extents are non-negative by definition (caller error otherwise).
+        assert self.redis is not None, "aabb on uninitialised physics"
+        if aw < 0.0 or ah < 0.0 or bw < 0.0 or bh < 0.0:
+            raise ValueError("half-extents (aw, ah, bw, bh) must be non-negative")
         result = self.redis.execute_command([
             "CYPHYS.AABB",
             str(ax), str(ay), str(aw), str(ah),
@@ -48,6 +55,12 @@ cdef class CyPhysics:
             hit           — 1 if a wall was struck, 0 otherwise
             nx, ny        — collision normal (strings "0.0", "1.0", "-1.0")
         """
+        # Preconditions: keys present, cell_size strictly positive (caller error).
+        assert self.redis is not None, "sweep on uninitialised physics"
+        if not ent_key or not obs_key:
+            raise ValueError("ent_key and obs_key must be non-empty")
+        if cell_size <= 0.0:
+            raise ValueError("cell_size must be positive")
         raw = self.redis.execute_command([
             "CYPHYS.SWEEP", ent_key, obs_key,
             str(vx), str(vy), str(dt_ms), str(cell_size),
@@ -68,6 +81,14 @@ cdef class CyPhysics:
 
         Returns a list of (entity_id, distance_str) tuples sorted by distance.
         """
+        # Preconditions: key present, radius non-negative, limit positive.
+        assert self.redis is not None, "circle_query on uninitialised physics"
+        if not spatial_key:
+            raise ValueError("spatial_key must be non-empty")
+        if radius < 0.0:
+            raise ValueError("radius must be non-negative")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         raw = self.redis.execute_command([
             "CYPHYS.CIRCLE", spatial_key,
             str(cx), str(cy), str(radius), str(limit),
@@ -75,9 +96,18 @@ cdef class CyPhysics:
         if not raw:
             return []
         results = []
-        cdef int i
-        for i in range(0, len(raw) - 1, 2):
+        # The module already caps results at ``limit`` pairs; bound the parse
+        # loop at that same limit as a fail-safe against a malformed reply.
+        cdef Py_ssize_t reply_len = len(raw)
+        cdef Py_ssize_t pair_cap = <Py_ssize_t>limit
+        cdef Py_ssize_t i = 0
+        cdef Py_ssize_t pairs_parsed = 0
+        while i < reply_len - 1 and pairs_parsed < pair_cap:
             results.append((raw[i], raw[i + 1]))
+            i += 2
+            pairs_parsed += 1
+        # Postcondition: never return more than the requested limit.
+        assert len(results) <= pair_cap, "circle_query exceeded requested limit"
         return results
 
     cpdef tuple resolve(self, str ent_a_key, str ent_b_key, double min_sep=0.1):
@@ -89,6 +119,12 @@ cdef class CyPhysics:
         Returns (dx, dy) — the displacement applied to entity A (entity B
         gets the equal-and-opposite push).
         """
+        # Preconditions: distinct-ish keys present, min_sep non-negative.
+        assert self.redis is not None, "resolve on uninitialised physics"
+        if not ent_a_key or not ent_b_key:
+            raise ValueError("ent_a_key and ent_b_key must be non-empty")
+        if min_sep < 0.0:
+            raise ValueError("min_sep must be non-negative")
         raw = self.redis.execute_command([
             "CYPHYS.RESOLVE", ent_a_key, ent_b_key, str(min_sep),
         ])

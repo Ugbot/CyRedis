@@ -42,11 +42,19 @@ cdef class HTTPCacheHeaders:
         """Generate ETag from content"""
         content_str = json.dumps(content, sort_keys=True, default=str)
         etag_data = hashlib.md5(content_str.encode()).hexdigest()
-        return f'"{etag_data}"'
+        # md5 hexdigest is always 32 hex chars; the quoted ETag is therefore 34.
+        assert len(etag_data) == 32, "md5 hexdigest must be 32 chars"
+        etag = f'"{etag_data}"'
+        assert etag.startswith('"') and etag.endswith('"'), "ETag must be quoted"
+        return etag
 
     def set_cache_headers(self, response: Dict[str, Any], max_age: int = 3600,
                          cache_control: str = None) -> Dict[str, Any]:
         """Set cache headers on response"""
+        # Precondition: a negative max-age is not a representable HTTP value.
+        if max_age < 0:
+            raise ValueError("max_age must be non-negative")
+
         headers = response.get('headers', {})
 
         # Set Cache-Control header
@@ -56,6 +64,9 @@ cdef class HTTPCacheHeaders:
             headers[self.cache_control_header] = f"max-age={max_age}"
 
         response['headers'] = headers
+        # Postcondition: the response now carries a Cache-Control header.
+        assert self.cache_control_header in response['headers'], \
+            "Cache-Control header must be set"
         return response
 
     def set_etag_header(self, response: Dict[str, Any], etag: str) -> Dict[str, Any]:
@@ -105,11 +116,17 @@ cdef class JsonCoder(Coder):
     @classmethod
     def encode(cls, value: Any) -> bytes:
         """Encode to JSON bytes"""
-        return json.dumps(value, default=str).encode('utf-8')
+        encoded = json.dumps(value, default=str).encode('utf-8')
+        # Postcondition: the cache backend stores raw bytes.
+        assert isinstance(encoded, bytes), "encode must yield bytes"
+        return encoded
 
     @classmethod
     def decode(cls, value: bytes) -> Any:
         """Decode from JSON bytes"""
+        # Precondition: only bytes round-trip through a cache backend.
+        if not isinstance(value, (bytes, bytearray)):
+            raise TypeError("JsonCoder.decode expects bytes")
         return json.loads(value.decode('utf-8'))
 
 
@@ -120,12 +137,21 @@ cdef class PickleCoder(Coder):
     def encode(cls, value: Any) -> bytes:
         """Encode to pickle bytes"""
         import pickle
-        return pickle.dumps(value)
+        encoded = pickle.dumps(value)
+        # Postcondition: the cache backend stores raw bytes.
+        assert isinstance(encoded, bytes), "encode must yield bytes"
+        return encoded
 
     @classmethod
     def decode(cls, value: bytes) -> Any:
         """Decode from pickle bytes"""
+        # Precondition: only bytes round-trip through a cache backend.
+        if not isinstance(value, (bytes, bytearray)):
+            raise TypeError("PickleCoder.decode expects bytes")
         import pickle
+        # SECURITY NOTE (not fixed here per task scope): pickle.loads on cached
+        # values is an RCE vector if an attacker can write to the cache backend.
+        # A trusted-source or signed-payload guard belongs here.
         return pickle.loads(value)
 
 
@@ -146,10 +172,15 @@ cdef class DefaultKeyBuilder(KeyBuilder):
     @classmethod
     def build_key(cls, func, namespace: str = "", **kwargs) -> str:
         """Build key from function module, name, and arguments"""
+        # Precondition: the decorated target must be a real callable.
+        if func is None:
+            raise ValueError("func is required to build a cache key")
         func_name = f"{func.__module__}.{func.__name__}"
         args_repr = repr(sorted(kwargs.items())) if kwargs else ""
         key_data = f"{namespace}:{func_name}:{args_repr}"
-        return hashlib.md5(key_data.encode()).hexdigest()
+        cache_key = hashlib.md5(key_data.encode()).hexdigest()
+        assert len(cache_key) == 32, "cache key must be a 32-char md5 digest"
+        return cache_key
 
 
 cdef class RequestKeyBuilder(KeyBuilder):
@@ -168,7 +199,9 @@ cdef class RequestKeyBuilder(KeyBuilder):
             str(sorted(request.query_params.items()))
         ]
         key_data = ":".join(key_parts)
-        return hashlib.md5(key_data.encode()).hexdigest()
+        cache_key = hashlib.md5(key_data.encode()).hexdigest()
+        assert len(cache_key) == 32, "cache key must be a 32-char md5 digest"
+        return cache_key
 
 
 # ===== CACHE BACKENDS =====
@@ -275,10 +308,14 @@ cdef class InMemoryCacheBackend(CacheBackend):
         current_time = time.time()
         expired_keys = []
 
-        for key, expiry in self.expiries.items():
+        # Both loops are bounded by the current number of tracked expiries.
+        # Snapshot the items so mutation below cannot disturb iteration.
+        for key, expiry in list(self.expiries.items()):
             if current_time > expiry:
                 expired_keys.append(key)
 
+        assert len(expired_keys) <= len(self.expiries), \
+            "cannot expire more keys than are tracked"
         for key in expired_keys:
             self.cache.pop(key, None)
             self.expiries.pop(key, None)
@@ -599,12 +636,22 @@ cdef class CacheManager:
     def __cinit__(self, CacheBackend backend, Coder coder=None,
                   KeyBuilder key_builder=None, str prefix="cyredis:cache",
                   int default_ttl=3600):
+        # Precondition: a cache manager is useless without a backend.
+        if backend is None:
+            raise ValueError("backend is required")
+        if default_ttl < 0:
+            raise ValueError("default_ttl must be non-negative")
+
         self.backend = backend
         self.coder = coder or JsonCoder()
         self.key_builder = key_builder or DefaultKeyBuilder()
         self.prefix = prefix
         self.default_ttl = default_ttl
         self.http_headers = HTTPCacheHeaders()
+
+        # Postcondition: the collaborators every method depends on exist.
+        assert self.coder is not None, "coder must be set"
+        assert self.key_builder is not None, "key_builder must be set"
 
     def get(self, key: str) -> Any:
         """Get value from cache"""
@@ -618,8 +665,13 @@ cdef class CacheManager:
 
     def set(self, key: str, value: Any, ttl: int = None) -> bool:
         """Set value in cache"""
+        # Precondition: a cache entry must be addressable by a non-empty key.
+        if not key:
+            raise ValueError("key must be a non-empty string")
         try:
             encoded = self.coder.encode(value)
+            assert isinstance(encoded, (bytes, bytearray)), \
+                "coder.encode must yield bytes for the backend"
             self.backend.set(key, encoded, ttl or self.default_ttl)
             return True
         except Exception:

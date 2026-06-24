@@ -25,22 +25,40 @@ cdef class PasswordResetManager:
     """
 
     def __cinit__(self, CyRedisClient redis_client, int token_expiry=900):
+        # Preconditions for invariants the rest of the class depends on.
+        assert redis_client is not None, "redis_client must not be None"
+        assert token_expiry > 0, "token_expiry must be positive"
+
         self.redis_client = redis_client
         self.token_expiry = token_expiry  # 15 minutes
         self.tokens_key = "password_reset:tokens"
 
+        assert self.tokens_key, "tokens_key prefix must be non-empty"
+
     def create_reset_token(self, user_id: str, email: str) -> str:
         """Create password reset token"""
-        token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        assert user_id, "user_id must be a non-empty string"
+        assert email, "email must be a non-empty string"
 
+        token = secrets.token_urlsafe(32)
+        assert token, "generated reset token must be non-empty"
+
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        assert len(token_hash) == 64, "sha256 hexdigest must be 64 chars"
+
+        now = time.time()
         token_data = {
             'user_id': user_id,
             'email': email,
-            'created_at': time.time(),
-            'expires_at': time.time() + self.token_expiry,
+            'created_at': now,
+            'expires_at': now + self.token_expiry,
             'used': False
         }
+
+        # Invariant: a freshly minted token must expire strictly in the future.
+        assert token_data['expires_at'] > token_data['created_at'], (
+            "reset token must expire after creation"
+        )
 
         self.redis_client.hset(f"{self.tokens_key}:{token_hash}", mapping=token_data)
 
@@ -48,7 +66,13 @@ cdef class PasswordResetManager:
 
     def verify_reset_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Verify password reset token"""
+        if not token:
+            return None
+        assert isinstance(token, str), "token must be a str"
+
         token_hash = hashlib.sha256(token.encode()).hexdigest()
+        assert len(token_hash) == 64, "sha256 hexdigest must be 64 chars"
+
         token_data = self.redis_client.hgetall(f"{self.tokens_key}:{token_hash}")
 
         if not token_data:

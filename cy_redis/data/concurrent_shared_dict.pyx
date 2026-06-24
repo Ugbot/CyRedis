@@ -26,6 +26,12 @@ cdef class ConcurrentSharedDict:
     """
 
     def __cinit__(self, str dict_name, redis_client):
+        # Preconditions: invalid caller arguments raise, not assert.
+        if not dict_name:
+            raise ValueError("dict_name must be a non-empty string")
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+
         self.dict_name = dict_name
         self.redis_client = redis_client
         self.dict_key = f"shared_dict:{dict_name}"
@@ -36,20 +42,30 @@ cdef class ConcurrentSharedDict:
 
         # Initialize distributed lock for concurrency control
         self.lock = CyDistributedLock(redis_client, self.lock_key, ttl_ms=5000)
+        # Invariant: keys are namespaced off the dict name.
+        assert self.dict_key.endswith(dict_name), "dict key must embed the name"
+        assert self.lock_key.startswith(self.dict_key), "lock key must be namespaced"
 
     cdef dict _load_from_redis(self):
         """Load dictionary from Redis with caching"""
         cdef str data = self.redis_client.get(self.dict_key)
+        cdef object result
         if data:
             try:
-                return json.loads(data)
+                result = json.loads(data)
+                # Invariant: the persisted document is always a JSON object.
+                assert isinstance(result, dict), "stored payload must be a dict"
+                return result
             except json.JSONDecodeError:
                 return {}
         return {}
 
     cdef void _save_to_redis(self, dict data):
         """Save dictionary to Redis"""
+        assert data is not None, "cannot persist a NULL dict"
         cdef str json_data = json.dumps(data, sort_keys=True)
+        # Invariant: json.dumps of a dict is at least '{}'.
+        assert len(json_data) >= 2, "serialized JSON object is at least '{}'"
         self.redis_client.set(self.dict_key, json_data)
 
     cdef bint _is_cache_valid(self):
@@ -66,6 +82,9 @@ cdef class ConcurrentSharedDict:
         if not self._is_cache_valid():
             self.local_cache = self._load_from_redis()
             self.last_sync = <long>time.time()
+        # Postcondition: callers always receive a concrete dict.
+        assert self.local_cache is not None, "local cache must be a dict"
+        assert isinstance(self.local_cache, dict), "local cache must be a dict"
         return self.local_cache
 
     # Dictionary interface - thread-safe and process-safe
@@ -209,11 +228,14 @@ cdef class ConcurrentSharedDict:
     # Atomic numeric operations
     def increment(self, key: str, amount: int = 1) -> int:
         """Atomically increment a numeric value"""
+        if key is None:
+            raise ValueError("key must not be None")
         if not self.lock.try_acquire(blocking=True, timeout=5.0):
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
             data = self._load_from_redis()
+            assert isinstance(data, dict), "loaded state must be a dict"
             current = data.get(key, 0)
             if not isinstance(current, int):
                 current = 0
@@ -221,17 +243,22 @@ cdef class ConcurrentSharedDict:
             data[key] = current
             self._save_to_redis(data)
             self._invalidate_cache()
+            # Postcondition: stored value reflects the returned counter.
+            assert data[key] == current, "stored value must match returned value"
             return current
         finally:
             self.lock.release()
 
     def increment_float(self, key: str, amount: float = 1.0) -> float:
         """Atomically increment a float value"""
+        if key is None:
+            raise ValueError("key must not be None")
         if not self.lock.try_acquire(blocking=True, timeout=5.0):
             raise RuntimeError(f"Could not acquire lock for shared dict '{self.dict_name}'")
 
         try:
             data = self._load_from_redis()
+            assert isinstance(data, dict), "loaded state must be a dict"
             current = data.get(key, 0.0)
             if not isinstance(current, (int, float)):
                 current = 0.0
@@ -239,6 +266,8 @@ cdef class ConcurrentSharedDict:
             data[key] = current
             self._save_to_redis(data)
             self._invalidate_cache()
+            # Postcondition: stored value reflects the returned counter.
+            assert data[key] == current, "stored value must match returned value"
             return current
         finally:
             self.lock.release()

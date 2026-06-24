@@ -34,6 +34,17 @@ cdef class WorkerQueue:
 
     def __cinit__(self, str queue_name, CyRedisClient redis_client,
                   int max_workers=4, str queue_type="default"):
+        # Preconditions: caller-supplied configuration must be sane. These are
+        # caller/environment errors, so raise rather than assert.
+        if not queue_name:
+            raise WorkerQueueError("queue_name must be a non-empty string")
+        if redis_client is None:
+            raise WorkerQueueError("redis_client must not be None")
+        if max_workers < 1:
+            raise WorkerQueueError("max_workers must be >= 1")
+        if not queue_type:
+            raise WorkerQueueError("queue_type must be a non-empty string")
+
         self.queue_name = queue_name
         self.redis_client = redis_client
         self.max_workers = max_workers
@@ -49,18 +60,28 @@ cdef class WorkerQueue:
         self.completed_key = f"wq:completed:{queue_type}:{queue_name}"
         self.failed_key = f"wq:failed:{queue_type}:{queue_name}"
 
+        # Postconditions: invariants the rest of the object relies on.
+        assert self.max_workers >= 1, "max_workers invariant violated"
+        assert self.is_running is False, "queue must start in stopped state"
+        assert len(self.workers) == 0, "worker list must start empty"
+
     def start(self):
         """Start the worker queue"""
         if self.is_running:
             return
 
         self.is_running = True
-        # Start worker threads
-        for i in range(self.max_workers):
-            worker = threading.Thread(target=self._worker_loop, args=(i,))
+        # Start worker threads. Bounded by max_workers (validated >= 1 in
+        # __cinit__), so this loop has a fixed, finite upper bound.
+        assert self.max_workers >= 1, "max_workers must be positive before start"
+        for worker_index in range(self.max_workers):
+            worker = threading.Thread(target=self._worker_loop, args=(worker_index,))
             worker.daemon = True
             worker.start()
             self.workers.append(worker)
+
+        # Postcondition: one thread spawned per configured worker slot.
+        assert len(self.workers) == self.max_workers, "worker count mismatch after start"
 
     def stop(self):
         """Stop the worker queue"""
@@ -76,6 +97,10 @@ cdef class WorkerQueue:
         Enqueue a task for processing.
         Returns task ID.
         """
+        # Precondition: enqueue contract. delay is a non-negative second count.
+        if delay < 0:
+            raise WorkerQueueError("delay must be non-negative")
+
         task_id = str(uuid.uuid4())
         task = {
             'id': task_id,
@@ -85,6 +110,9 @@ cdef class WorkerQueue:
             'attempts': 0,
             'max_attempts': 3
         }
+        # Postcondition on the generated identity before it leaves the function.
+        assert task_id, "generated task_id must be non-empty"
+        assert task['attempts'] == 0, "new task must start with zero attempts"
 
         if delay > 0:
             # Schedule for future execution
@@ -98,7 +126,17 @@ cdef class WorkerQueue:
         return task_id
 
     def _worker_loop(self, worker_id: int):
-        """Main worker loop"""
+        """Main worker loop.
+
+        Exit invariant: this loop runs until ``self.is_running`` is cleared by
+        ``stop()`` (or by graceful shutdown elsewhere). ``is_running`` is the
+        sole, documented termination condition; the loop is intentionally
+        long-lived rather than bounded by an iteration count. Each iteration
+        either blocks on a bounded ``brpoplpush`` (timeout=1) or sleeps on
+        error, so it cannot busy-spin without yielding.
+        """
+        # Precondition: worker_id identifies a slot allocated in start().
+        assert worker_id >= 0, "worker_id must be non-negative"
         while self.is_running:
             try:
                 # Try to get a task from scheduled queue first
@@ -131,8 +169,10 @@ cdef class WorkerQueue:
         )
 
         if tasks:
+            assert len(tasks) == 1, "zrangebyscore num=1 must return at most one task"
             task_data, _ = tasks[0]
             task = json.loads(task_data)
+            assert isinstance(task, dict), "scheduled task payload must decode to a dict"
 
             # Remove from scheduled queue
             self.redis_client.zrem(
@@ -148,8 +188,14 @@ cdef class WorkerQueue:
 
     def _process_task(self, task: Dict[str, Any], worker_id: int):
         """Process a single task"""
+        # Preconditions: a task must carry an identity and a retry budget.
+        assert isinstance(task, dict), "task must be a dict"
+        assert 'id' in task, "task must carry an 'id'"
+        assert 'max_attempts' in task, "task must carry a 'max_attempts' budget"
+        assert worker_id >= 0, "worker_id must be non-negative"
         try:
             task['attempts'] += 1
+            assert task['attempts'] >= 1, "attempts must increment to >= 1"
             task['started_at'] = time.time()
             task['worker_id'] = worker_id
 

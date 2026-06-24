@@ -37,12 +37,21 @@ cdef class CyDistributedLock:
     def __cinit__(self, redis_client, str lock_key,
                   str lock_value=None, int ttl_ms=30000,
                   double retry_delay=0.1, int max_retries=50):
+        # Preconditions: a client, a non-empty key, and sane bounds. These guard
+        # programmer error; do not alter the lock's timing/TTL semantics.
+        assert redis_client is not None, "redis_client must not be None"
+        assert lock_key is not None and len(lock_key) > 0, "lock_key must be non-empty"
+        assert ttl_ms > 0, "ttl_ms must be positive"
+        assert retry_delay >= 0.0, "retry_delay must be non-negative"
+        assert max_retries >= 0, "max_retries must be non-negative"
         self.redis = redis_client
         self.lock_key = lock_key
         self.lock_value = lock_value or f"lock:{time.time()}:{str(uuid.uuid4())[:8]}"
         self.ttl_ms = ttl_ms
         self.retry_delay = retry_delay
         self.max_retries = max_retries
+        # Postcondition: a lock value (token) always exists for ownership checks.
+        assert self.lock_value is not None and len(self.lock_value) > 0
 
     cpdef bint try_acquire(self, bint blocking=True, double timeout=-1.0):
         """
@@ -55,10 +64,15 @@ cdef class CyDistributedLock:
         Returns:
             True if lock acquired, False otherwise
         """
+        # Invariant: the lock token must exist before we try to claim with it.
+        assert self.lock_value is not None and len(self.lock_value) > 0
+        assert self.max_retries >= 0, "max_retries invariant violated"
+
         cdef double start_time = time.time()
         cdef int attempts = 0
         cdef double elapsed = 0.0
 
+        # Loop is explicitly bounded by max_retries.
         while attempts < self.max_retries:
             # Try SET NX with TTL
             result = self.redis.execute_command([
@@ -80,6 +94,7 @@ cdef class CyDistributedLock:
             attempts += 1
             time.sleep(self.retry_delay)
 
+        assert attempts <= self.max_retries, "acquire loop exceeded its retry bound"
         return False
 
     cpdef void release(self):
@@ -127,8 +142,12 @@ cdef class CyDistributedLock:
         Returns:
             True if extended successfully
         """
+        # Sentinel -1 means "reuse the configured TTL"; any other value is an
+        # explicit TTL and must be positive. Do not change timing semantics.
         if ttl_ms == -1:
             ttl_ms = self.ttl_ms
+        assert ttl_ms > 0, "resolved ttl_ms must be positive"
+        assert self.lock_value is not None and len(self.lock_value) > 0
 
         lua_script = """
         if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -189,21 +208,37 @@ cdef class CyReadWriteLock:
 
     def __cinit__(self, redis_client, str lock_key,
                   int ttl_ms=30000):
+        # Preconditions guard programmer error only; timing semantics unchanged.
+        assert redis_client is not None, "redis_client must not be None"
+        assert lock_key is not None and len(lock_key) > 0, "lock_key must be non-empty"
+        assert ttl_ms > 0, "ttl_ms must be positive"
         self.redis = redis_client
         self.base_key = lock_key
         self.read_key = f"{lock_key}:read"
         self.write_key = f"{lock_key}:write"
         self.ttl_ms = ttl_ms
         self.client_id = f"client:{time.time()}:{str(uuid.uuid4())[:8]}"
+        # Postcondition: a stable identity for this client's lock entries.
+        assert self.client_id is not None and len(self.client_id) > 0
 
     cpdef bint try_read_lock(self, bint blocking=True, double timeout=-1.0):
         """
         Try to acquire a read lock.
         Multiple readers can hold read locks simultaneously.
         """
-        cdef double start_time = time.time()
+        # Invariant: a stable client identity exists for the read counter entry.
+        assert self.client_id is not None and len(self.client_id) > 0
 
-        while True:
+        cdef double start_time = time.time()
+        # Fail-safe cap on the spin loop. Each non-returning pass sleeps ~0.01s,
+        # so this caps an otherwise-unbounded blocking wait at ~1 hour. It only
+        # ever trips on a stuck/pathological state; normal callers exit via the
+        # acquire/timeout/non-blocking branches below long before this.
+        cdef long max_spins = 360000
+        cdef long spins = 0
+
+        while spins < max_spins:
+            spins += 1
             # Check if write lock is held (any writer blocks all readers)
             write_owner = self.redis.get(self.write_key)
             if write_owner is not None:
@@ -232,6 +267,9 @@ cdef class CyReadWriteLock:
 
             time.sleep(0.01)
 
+        # Fail-safe cap reached: treat as a failed acquisition rather than spin
+        # forever. Reaching here without an explicit timeout indicates a stuck
+        # peer or broken Redis state.
         return False
 
     cpdef bint try_write_lock(self, bint blocking=True, double timeout=-1.0):
@@ -239,9 +277,17 @@ cdef class CyReadWriteLock:
         Try to acquire a write lock.
         Only one writer can hold the write lock, and no readers can hold read locks.
         """
-        cdef double start_time = time.time()
+        # Invariant: a stable client identity exists for the write-lock owner.
+        assert self.client_id is not None and len(self.client_id) > 0
 
-        while True:
+        cdef double start_time = time.time()
+        # Fail-safe cap on the spin loop; see try_read_lock for the rationale.
+        # Caps an unbounded blocking wait at ~1 hour of 0.01s spins.
+        cdef long max_spins = 360000
+        cdef long spins = 0
+
+        while spins < max_spins:
+            spins += 1
             # Check if any readers exist
             readers = self.redis.execute_command(['HLEN', self.read_key])
             if readers and readers > 0:
@@ -270,6 +316,7 @@ cdef class CyReadWriteLock:
 
             time.sleep(0.01)
 
+        # Fail-safe cap reached: fail the acquisition rather than spin forever.
         return False
 
     cpdef void release_read_lock(self):

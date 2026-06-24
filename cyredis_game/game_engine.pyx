@@ -232,6 +232,14 @@ cdef class CyZone:
     """
 
     def __cinit__(self, str world_id, str zone_id, object redis, object func_mgr):
+        if not world_id:
+            raise ValueError("world_id must be a non-empty string")
+        if not zone_id:
+            raise ValueError("zone_id must be a non-empty string")
+        if redis is None:
+            raise ValueError("redis client must not be None")
+        if func_mgr is None:
+            raise ValueError("func_mgr must not be None")
         self.world_id = world_id
         self.zone_id = zone_id
         self.redis = redis
@@ -249,6 +257,10 @@ cdef class CyZone:
         self._physics    = None
         self._module_mgr = None
 
+        # Invariants: all derived keys carry the cluster hash-tag for this zone.
+        assert self.redis is not None and self.func_mgr is not None
+        assert self.spatial_index and self.intents_stream, "zone keys not built"
+
     def get_entity_key(self, str entity_id):
         """Get the full entity key for this zone"""
         return f"cy:ent:{{{self.world_id}:{self.zone_id}}}:{entity_id}"
@@ -259,6 +271,11 @@ cdef class CyZone:
 
     cpdef bint is_tick_due(self, long now_ms, long tick_ms=_TICK_MS):
         """Check if zone tick is due (non-mutating peek)"""
+        # Preconditions: a non-negative clock and a positive tick interval.
+        if now_ms < 0:
+            raise ValueError("now_ms must be non-negative")
+        if tick_ms <= 0:
+            raise ValueError("tick_ms must be positive")
         try:
             result = self.func_mgr.call_function("tick_fetch_due",
                                                  [self.tick_key],
@@ -270,6 +287,14 @@ cdef class CyZone:
     cpdef dict step_tick(self, long now_ms, long dt_ms=_TICK_MS,
                         int budget=_MAX_INTENTS):
         """Execute one tick step: drain intents, run systems, advance clock"""
+        # Preconditions: sane clock, positive timestep, and a bounded intent
+        # budget (the budget caps the Lua drain loop server-side).
+        if now_ms < 0:
+            raise ValueError("now_ms must be non-negative")
+        if dt_ms <= 0:
+            raise ValueError("dt_ms must be positive")
+        if budget <= 0:
+            raise ValueError("budget must be positive")
         try:
             result = self.func_mgr.call_function("tick_step",
                                                  [self.tick_key, self.intents_stream,
@@ -343,6 +368,12 @@ cdef class CyZone:
 
     cpdef list read_events(self, str last_id="0", int count=100):
         """Read events from this zone with fast binary deserialization"""
+        # Preconditions: a cursor and a positive read count (the count bounds
+        # how many entries the server returns).
+        if not last_id:
+            raise ValueError("last_id must be non-empty (use '0' for start)")
+        if count <= 0:
+            raise ValueError("count must be positive")
         try:
             result = self.redis.execute_command(['XREAD', 'COUNT', str(count),
                                                 'STREAMS', self.events_stream, last_id])
@@ -351,38 +382,54 @@ cdef class CyZone:
 
             events = result[0][1]  # stream entries for first (and only) stream
             deserialized_events = []
+            # The server honours COUNT, so ``events`` is bounded by ``count``;
+            # assert that invariant rather than trusting it silently.
+            assert len(events) <= count, "XREAD returned more entries than COUNT"
             for entry in events:
                 event_id = entry[0]
                 raw_fields = entry[1]
-
-                # XREAD returns fields as a flat list [key, val, key, val, ...]
-                event_data = {}
-                if isinstance(raw_fields, list):
-                    for i in range(0, len(raw_fields) - 1, 2):
-                        k = raw_fields[i]
-                        v = raw_fields[i + 1]
-                        if k == 'payload' and v:
-                            try:
-                                event_data[k] = deserialize_game_data(bytes.fromhex(v))
-                            except Exception:
-                                event_data[k] = v
-                        else:
-                            event_data[k] = v
-                elif isinstance(raw_fields, dict):
-                    # Some Redis client versions return dicts
-                    for k, v in raw_fields.items():
-                        if k == 'payload' and v:
-                            try:
-                                event_data[k] = deserialize_game_data(bytes.fromhex(v))
-                            except Exception:
-                                event_data[k] = v
-                        else:
-                            event_data[k] = v
-
+                event_data = self._decode_event_fields(raw_fields)
                 deserialized_events.append((event_id, event_data))
+            assert len(deserialized_events) <= count, "decoded more events than COUNT"
             return deserialized_events
         except Exception:
             return []
+
+    cdef dict _decode_event_fields(self, object raw_fields):
+        """Decode one XREAD entry's field block into a dict.
+
+        Handles both the flat ``[key, val, ...]`` list form and the dict form
+        some clients return.  The ``payload`` field is hex-decoded and
+        deserialized; everything else is passed through verbatim.
+        """
+        event_data = {}
+        cdef Py_ssize_t i
+        cdef Py_ssize_t field_len
+        if isinstance(raw_fields, list):
+            field_len = len(raw_fields)
+            i = 0
+            while i < field_len - 1:
+                k = raw_fields[i]
+                v = raw_fields[i + 1]
+                if k == 'payload' and v:
+                    try:
+                        event_data[k] = deserialize_game_data(bytes.fromhex(v))
+                    except Exception:
+                        event_data[k] = v
+                else:
+                    event_data[k] = v
+                i += 2
+        elif isinstance(raw_fields, dict):
+            # Some Redis client versions return dicts
+            for k, v in raw_fields.items():
+                if k == 'payload' and v:
+                    try:
+                        event_data[k] = deserialize_game_data(bytes.fromhex(v))
+                    except Exception:
+                        event_data[k] = v
+                else:
+                    event_data[k] = v
+        return event_data
 
     cpdef dict schedule_job(self, str job_id, long run_at_ms, str payload=""):
         """Schedule a job for future execution"""
@@ -396,14 +443,26 @@ cdef class CyZone:
 
     cpdef list get_due_jobs(self, long now_ms, int limit=100):
         """Get and remove jobs that are due for execution"""
+        # Preconditions: non-negative clock and a positive limit (the limit
+        # bounds the server-side ZRANGEBYSCORE ... LIMIT).
+        if now_ms < 0:
+            raise ValueError("now_ms must be non-negative")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         try:
             result = self.func_mgr.call_function("sched_due",
                                                  [self.schedule_zset],
                                                  [str(now_ms), str(limit)])
             jobs = []
             if result:
-                for i in range(0, len(result) - 1, 2):
+                # Reply is [id, payload, ...] pairs, bounded server-side by
+                # ``limit``; cap the parse loop at ``limit`` as a fail-safe.
+                reply_len = len(result)
+                i = 0
+                while i < reply_len - 1 and len(jobs) < limit:
                     jobs.append({'job_id': result[i], 'payload': result[i + 1]})
+                    i += 2
+            assert len(jobs) <= limit, "get_due_jobs exceeded limit"
             return jobs
         except Exception:
             return []
@@ -431,6 +490,13 @@ cdef class CyZone:
         We scan the full score range and filter in Python — good enough for typical
         zone sizes.  For tighter areas, callers can pass a tighter limit.
         """
+        # Preconditions: well-ordered bounds and a positive result limit.
+        if x_min > x_max:
+            raise ValueError("x_min must not exceed x_max")
+        if y_min > y_max:
+            raise ValueError("y_min must not exceed y_max")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         cdef long score_min = <long>(x_min * 1000) * 1000000000 + <long>(y_min * 1000)
         cdef long score_max = <long>(x_max * 1000) * 1000000000 + <long>(y_max * 1000)
         try:
@@ -462,6 +528,8 @@ cdef class CyZone:
         Returns a list of (x, y) tuples or [] if no path exists.
         Requires the cy_game Redis module to be loaded.
         """
+        if max_steps <= 0:
+            raise ValueError("max_steps must be positive")
         try:
             result = self.redis.execute_command([
                 "CYPATH.FIND", self.get_nav_grid_key(),
@@ -472,12 +540,20 @@ cdef class CyZone:
         if not result:
             return []
         path = []
-        cdef int i
-        for i in range(0, len(result) - 1, 2):
+        # A valid path has at most max_steps+1 nodes; bound the parse loop at a
+        # generous multiple as a fail-safe against a malformed reply.
+        cdef Py_ssize_t reply_len = len(result)
+        cdef Py_ssize_t node_cap = (<Py_ssize_t>max_steps + 1) * 4 + 16
+        cdef Py_ssize_t i = 0
+        cdef Py_ssize_t pairs_parsed = 0
+        while i < reply_len - 1 and pairs_parsed < node_cap:
             try:
                 path.append((int(result[i]), int(result[i + 1])))
             except (ValueError, TypeError):
                 pass
+            i += 2
+            pairs_parsed += 1
+        assert len(path) <= node_cap, "find_path produced more nodes than cap"
         return path
 
     # ── Subsystem delegation — CYPHYS (circle query) ───────────────────────
@@ -488,6 +564,10 @@ cdef class CyZone:
         Returns a list of (entity_id, distance_str) tuples sorted by distance.
         Requires the cy_game Redis module to be loaded.
         """
+        if radius < 0.0:
+            raise ValueError("radius must be non-negative")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         try:
             raw = self.redis.execute_command([
                 "CYPHYS.CIRCLE", self.spatial_index,
@@ -498,9 +578,16 @@ cdef class CyZone:
         if not raw:
             return []
         results = []
-        cdef int j
-        for j in range(0, len(raw) - 1, 2):
+        # Module caps at ``limit`` pairs; bound the parse loop the same way.
+        cdef Py_ssize_t reply_len = len(raw)
+        cdef Py_ssize_t pair_cap = <Py_ssize_t>limit
+        cdef Py_ssize_t j = 0
+        cdef Py_ssize_t pairs_parsed = 0
+        while j < reply_len - 1 and pairs_parsed < pair_cap:
             results.append((raw[j], raw[j + 1]))
+            j += 2
+            pairs_parsed += 1
+        assert len(results) <= pair_cap, "circle_query exceeded requested limit"
         return results
 
     # ── Subsystem delegation — FLECS ECS ───────────────────────────────────
@@ -574,21 +661,37 @@ cdef class CyGameWorld:
     """
 
     def __cinit__(self, str world_id, object redis, object func_mgr):
+        if not world_id:
+            raise ValueError("world_id must be a non-empty string")
+        if redis is None:
+            raise ValueError("redis client must not be None")
+        if func_mgr is None:
+            raise ValueError("func_mgr must not be None")
         self.world_id = world_id
         self.redis = redis
         self.func_mgr = func_mgr
         self.zones = {}
         self.zones_list_key = f"cy:world:{world_id}:zones"
+        assert self.zones == {}, "zone cache must start empty"
+        assert self.zones_list_key, "zones_list_key must be built"
 
     cpdef CyZone get_zone(self, str zone_id):
         """Get or create a zone"""
+        if not zone_id:
+            raise ValueError("zone_id must be a non-empty string")
         if zone_id not in self.zones:
             self.zones[zone_id] = CyZone(self.world_id, zone_id, self.redis, self.func_mgr)
             try:
                 self.redis.execute_command(['SADD', self.zones_list_key, zone_id])
             except Exception:
                 pass
-        return self.zones[zone_id]
+        zone = self.zones[zone_id]
+        # Postcondition: the cached zone belongs to this world and zone id.
+        # zone_id is a private cdef attr — read it via a typed cast (C-level
+        # access) rather than Python attribute lookup.
+        assert zone is not None, "get_zone produced a null zone"
+        assert (<CyZone>zone).zone_id == zone_id, "cached zone id mismatch"
+        return zone
 
     cpdef list get_all_zones(self):
         """Get list of all zones in this world"""
@@ -601,23 +704,32 @@ cdef class CyGameWorld:
     cpdef dict process_cross_zone_transfers(self):
         """Process pending cross-zone transfers from the xmsg stream"""
         xfer_stream = f"cy:xmsg:{{{self.world_id}}}"
+        # Fail-safe cap matching the XREAD COUNT below: never process more than
+        # one batch worth of transfers in a single call.
+        cdef int batch_count = 100
         processed = 0
 
         try:
-            transfers = self.redis.execute_command(['XREAD', 'COUNT', '100',
+            transfers = self.redis.execute_command(['XREAD', 'COUNT', str(batch_count),
                                                    'STREAMS', xfer_stream, '0'])
             if not transfers or len(transfers) == 0:
                 return {'processed': 0}
 
-            for entry in transfers[0][1]:
+            entries = transfers[0][1]
+            # The server honours COUNT, so the entry batch is bounded.
+            assert len(entries) <= batch_count, "XREAD returned more than COUNT"
+            for entry in entries:
                 entry_id = entry[0]
                 raw_fields = entry[1]
 
                 # Normalise flat list → dict
                 if isinstance(raw_fields, list):
                     fields = {}
-                    for i in range(0, len(raw_fields) - 1, 2):
+                    field_len = len(raw_fields)
+                    i = 0
+                    while i < field_len - 1:
                         fields[raw_fields[i]] = raw_fields[i + 1]
+                        i += 2
                 else:
                     fields = raw_fields
 
@@ -647,6 +759,8 @@ cdef class CyGameWorld:
         except Exception:
             pass
 
+        # Postcondition: we never claim to process more than one batch.
+        assert processed <= batch_count, "processed more transfers than batch cap"
         return {'processed': processed}
 
 
@@ -657,10 +771,14 @@ cdef class CyGameEngine:
     """
 
     def __cinit__(self, object redis_client):
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
         self.redis = redis_client
         self.func_mgr = CyRedisFunctionsManager(redis_client)
         self.worlds = {}
         self.executor = ThreadPoolExecutor(max_workers=4)
+        assert self.func_mgr is not None, "functions manager must be created"
+        assert self.worlds == {}, "world cache must start empty"
 
     def __dealloc__(self):
         if self.executor:
@@ -675,13 +793,23 @@ cdef class CyGameEngine:
 
     cpdef CyGameWorld get_world(self, str world_id):
         """Get or create a game world"""
+        if not world_id:
+            raise ValueError("world_id must be a non-empty string")
         if world_id not in self.worlds:
             self.worlds[world_id] = CyGameWorld(world_id, self.redis, self.func_mgr)
-        return self.worlds[world_id]
+        world = self.worlds[world_id]
+        assert world is not None, "get_world produced a null world"
+        return world
 
     cpdef dict tick_zone(self, str world_id, str zone_id, long dt_ms=_TICK_MS,
                         int budget=_MAX_INTENTS):
         """Tick a specific zone"""
+        if not world_id or not zone_id:
+            raise ValueError("world_id and zone_id must be non-empty")
+        if dt_ms <= 0:
+            raise ValueError("dt_ms must be positive")
+        if budget <= 0:
+            raise ValueError("budget must be positive")
         world = self.get_world(world_id)
         zone = world.get_zone(zone_id)
         now_ms = int(time.time() * 1000)
@@ -786,10 +914,29 @@ def create_game_engine(redis_client=None):
 
 def run_zone_worker(engine: GameEngine, world_id: str, zone_id: str,
                    tick_ms: int = DEFAULT_TICK_MS):
-    """Run a worker that continuously ticks a zone until interrupted"""
+    """Run a worker that continuously ticks a zone until interrupted.
+
+    Exit conditions (the loop's documented termination invariant):
+      * KeyboardInterrupt — clean operator shutdown.
+      * ``max_consecutive_errors`` repeated failures — fail-safe so a
+        persistently broken zone (e.g. Redis down, bad module) cannot spin
+        in a tight retry loop forever; the worker gives up and returns.
+    A successful tick resets the consecutive-error counter.
+    """
+    if engine is None:
+        raise ValueError("engine must not be None")
+    if not world_id or not zone_id:
+        raise ValueError("world_id and zone_id must be non-empty")
+    if tick_ms <= 0:
+        raise ValueError("tick_ms must be positive")
+
+    max_consecutive_errors = 1000
+    consecutive_errors = 0
+
     while True:
         try:
             result = engine.tick_zone(world_id, zone_id, tick_ms)
+            consecutive_errors = 0  # progress made; reset the breaker
 
             if result.get('tick') != 'not_due':
                 consumed = result.get('intents_consumed', 0)
@@ -803,5 +950,11 @@ def run_zone_worker(engine: GameEngine, world_id: str, zone_id: str,
         except KeyboardInterrupt:
             break
         except Exception as e:
-            print(f"Zone worker error ({world_id}:{zone_id}): {e}")
+            consecutive_errors += 1
+            print(f"Zone worker error ({world_id}:{zone_id}): {e} "
+                  f"[{consecutive_errors}/{max_consecutive_errors}]")
+            if consecutive_errors >= max_consecutive_errors:
+                print(f"Zone worker ({world_id}:{zone_id}) giving up after "
+                      f"{consecutive_errors} consecutive errors")
+                break
             time.sleep(1.0)

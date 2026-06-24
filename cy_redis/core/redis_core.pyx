@@ -98,6 +98,12 @@ DEF CONN_CONNECTING = 1
 DEF CONN_CONNECTED = 2
 DEF CONN_ERROR = 3
 
+# Hard upper bound on RESP reply nesting depth. Real Redis replies nest only a
+# few levels; this cap turns a pathological/hostile deeply-nested reply into a
+# bounded, loud failure instead of unbounded recursion (TigerStyle: bound
+# everything; no unbounded recursion). Matches cy_redis_client.pyx.
+DEF MAX_REPLY_DEPTH = 128
+
 # Message types for internal communication
 DEF MSG_COMMAND = 1
 DEF MSG_RESPONSE = 2
@@ -274,6 +280,11 @@ cdef class RedisConnection:
 
     cdef int _connect(self):
         """Establish connection to Redis server using hiredis"""
+        # Invariants set at construction: state struct is live, host is set, and
+        # a TCP port is in 1..65535. Guard the impossible before a bad connect.
+        assert self._cs != NULL, "connect on a freed connection"
+        assert self._cs.host != NULL, "host must be set"
+        assert 0 < self._cs.port <= 65535, "port out of range"
         self._cs.ctx = redisConnect(self._cs.host, self._cs.port)
         if self._cs.ctx == NULL or self._cs.ctx.err:
             self._cs.state = CONN_ERROR
@@ -282,6 +293,8 @@ cdef class RedisConnection:
         self._cs.state = CONN_CONNECTED
         self._cs.fd = self._cs.ctx.fd
         self._cs.last_activity = <uint64_t>(time.time() * 1000000)
+        # Postcondition: a successful connect leaves us live with a context.
+        assert self._cs.ctx != NULL, "connected without a context"
         return 0
 
     def connect(self):
@@ -308,6 +321,10 @@ cdef class RedisConnection:
 
     cdef object _execute_command(self, list args):
         """Execute Redis command using hiredis"""
+        # Precondition: connection state must be allocated, and a command always
+        # carries at least its name. Both are programmer errors if violated.
+        assert self._cs != NULL, "execute on a freed connection"
+        assert len(args) > 0, "execute requires at least the command name"
         if self._cs.state != CONN_CONNECTED:
             if self._connect() != 0:
                 raise ConnectionError("Failed to connect to Redis")
@@ -337,6 +354,8 @@ cdef class RedisConnection:
                 argv[i] = <char *>arg_bytes_list[i]
                 argvlen[i] = len(arg_bytes_list[i])
 
+            # Postcondition of the argv build: every slot was populated.
+            assert len(arg_bytes_list) == argc, "argv build dropped an argument"
             reply = redisCommandArgv(self._cs.ctx, argc,
                                      <const char **>argv, <const size_t *>argvlen)
             if reply == NULL:
@@ -352,20 +371,44 @@ cdef class RedisConnection:
             free(argv)
             free(argvlen)
 
-    cdef object _parse_reply(self, redisReply *reply):
-        """Parse Redis reply into Python object"""
+    cdef object _parse_reply(self, redisReply *reply, int depth=0):
+        """Parse Redis reply into Python object.
+
+        Recurses for aggregate types; `depth` bounds the nesting so a hostile
+        or corrupt reply cannot drive unbounded recursion.
+        """
+        # Precondition: hiredis never hands us a NULL reply here — callers
+        # branch on NULL before parsing — and nesting stays within bounds.
+        assert reply != NULL, "parse called with NULL reply"
+        assert 0 <= depth <= MAX_REPLY_DEPTH, "RESP reply nesting too deep"
+
+        cdef list result
+        cdef size_t i
         if reply.type == REDIS_REPLY_STRING:
-            return reply.str.decode('utf-8') if reply.str else None
+            # Slice to reply.len and decode with errors='replace': RESP bulk
+            # strings are binary-safe and may contain NUL bytes, so a bare
+            # .decode() of the C string truncates at the first NUL and can
+            # raise on invalid UTF-8. Matches cy_redis_client.pyx.
+            if reply.str:
+                return reply.str[:reply.len].decode('utf-8', errors='replace')
+            return None
         elif reply.type == REDIS_REPLY_ARRAY:
-            return [self._parse_reply(reply.element[i]) for i in range(reply.elements)]
+            result = []
+            for i in range(reply.elements):
+                result.append(self._parse_reply(reply.element[i], depth + 1))
+            return result
         elif reply.type == REDIS_REPLY_INTEGER:
             return reply.integer
         elif reply.type == REDIS_REPLY_NIL:
             return None
         elif reply.type == REDIS_REPLY_STATUS:
-            return reply.str.decode('utf-8') if reply.str else None
+            if reply.str:
+                return reply.str[:reply.len].decode('utf-8', errors='replace')
+            return None
         elif reply.type == REDIS_REPLY_ERROR:
-            raise RedisError(reply.str.decode('utf-8') if reply.str else "Unknown error")
+            if reply.str and reply.len > 0:
+                raise RedisError(reply.str[:reply.len].decode('utf-8', errors='replace'))
+            raise RedisError("Unknown error")
         else:
             return None
 
@@ -379,6 +422,10 @@ cdef class ConnectionPool:
     cdef double timeout
 
     def __cinit__(self, str host="localhost", int port=6379, int max_connections=10, double timeout=5.0):
+        # Preconditions: a pool needs a positive capacity and a valid TCP port;
+        # these are caller errors caught loudly rather than failing later.
+        assert max_connections > 0, "max_connections must be positive"
+        assert 0 < port <= 65535, "port out of range"
         self.connections = []
         self.max_connections = max_connections
         self.lock = threading.Lock()
@@ -388,6 +435,8 @@ cdef class ConnectionPool:
 
     cpdef get_connection(self):
         """Get a connection from the pool"""
+        # Invariant: the idle list never exceeds capacity.
+        assert len(self.connections) <= self.max_connections, "idle pool overflow"
         with self.lock:
             if self.connections:
                 return self.connections.pop()
@@ -399,12 +448,17 @@ cdef class ConnectionPool:
 
     cpdef return_connection(self, conn):
         """Return connection to pool"""
+        # Precondition: only RedisConnection instances belong in this pool.
+        assert conn is not None, "cannot return a None connection"
+        assert isinstance(conn, RedisConnection), "pool holds RedisConnection only"
         cdef RedisConnection c = conn
         with self.lock:
             if len(self.connections) < self.max_connections and c.state.state == CONN_CONNECTED:
                 self.connections.append(c)
             else:
                 c._disconnect()
+            # Invariant: returning a connection never overruns capacity.
+            assert len(self.connections) <= self.max_connections, "idle pool overflow"
 
 # Main Redis client
 cdef class CyRedisClient:
@@ -511,6 +565,10 @@ cdef class CyRedisClient:
 
     cdef list _parse_xread_result(self, list result):
         """Parse XREAD result"""
+        # Precondition: XREAD replies are an array (parsed to a list) of
+        # per-stream entries; the caller already handled the nil (no data) case.
+        assert result is not None, "xread result must not be None here"
+        assert isinstance(result, list), "xread result must be a list"
         parsed = []
         for stream_data in result:
             if len(stream_data) >= 2:

@@ -60,6 +60,13 @@ cdef class CyRedisJSON:
     def json_set(self, key: str, path: str, value: Any, nx: bool = False,
                  xx: bool = False) -> Optional[str]:
         """Set JSON value at path"""
+        # Preconditions: key/path identify the target; NX and XX are mutually
+        # exclusive (set-if-absent vs set-if-present) and cannot both hold.
+        if key is None or path is None:
+            raise ValueError("key and path must not be None")
+        if nx and xx:
+            raise ValueError("nx and xx are mutually exclusive")
+
         conn = self.pool.get_connection()
         if conn is None:
             raise ConnectionError("No available connections")
@@ -71,6 +78,8 @@ cdef class CyRedisJSON:
             elif xx:
                 args.append('XX')
 
+            # Invariant: the optional flag adds at most one trailing token.
+            assert len(args) <= 5, "JSON.SET takes at most one NX/XX flag"
             return conn.execute_command(args)
         finally:
             self.pool.return_connection(conn)
@@ -111,6 +120,11 @@ cdef class CyRedisJSON:
 
     def json_mget(self, keys: List[str], path: str = '$') -> List[Optional[Any]]:
         """Get JSON values from multiple keys"""
+        # Precondition: JSON.MGET needs at least one key, else the command is
+        # malformed (path with no keys).
+        if not keys:
+            raise ValueError("json_mget requires at least one key")
+
         conn = self.pool.get_connection()
         if conn == None:
             raise ConnectionError("No available connections")
@@ -120,9 +134,15 @@ cdef class CyRedisJSON:
             args.extend(keys)
             args.append(path)
 
+            # Invariant: command is MGET + one token per key + the path.
+            assert len(args) == 2 + len(keys), "one arg per key plus path"
+
             result = conn.execute_command(args)
             if result:
-                return [json.loads(r) if r else None for r in result]
+                # Bounded by len(result); Redis returns one entry per key.
+                parsed = [json.loads(r) if r else None for r in result]
+                assert len(parsed) == len(result), "one parsed value per reply"
+                return parsed
             return []
         finally:
             self.pool.return_connection(conn)
@@ -239,6 +259,11 @@ cdef class CyRedisJSON:
     def json_arrindex(self, key: str, path: str, value: Any, start: int = 0,
                       stop: int = None) -> Optional[int]:
         """Find index of value in JSON array"""
+        # Precondition: a range search must be ordered when both ends are given
+        # (RedisJSON treats stop=0 as "end", so only validate positive bounds).
+        if stop is not None and start > 0 and stop > 0 and start > stop:
+            raise ValueError("start must not exceed stop")
+
         conn = self.pool.get_connection()
         if conn == None:
             raise ConnectionError("No available connections")
@@ -249,6 +274,8 @@ cdef class CyRedisJSON:
                 args.append(str(start))
                 if stop is not None:
                     args.append(str(stop))
+            # Invariant: 4 base tokens, optionally + start, optionally + stop.
+            assert 4 <= len(args) <= 6, "ARRINDEX arg count within bounds"
 
             result = conn.execute_command(args)
             if isinstance(result, list) and result:

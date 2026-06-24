@@ -96,26 +96,32 @@ cdef class CyRedisGraph:
             'statistics': {},
             'metadata': []
         }
+        cdef int reply_length = len(result)
+        # Precondition: guarded above to be a non-empty list.
+        assert reply_length > 0, "non-empty reply expected past the guard"
 
         # Parse result sets
-        if len(result) > 0 and isinstance(result[0], list):
+        if isinstance(result[0], list):
             # First element is metadata (column names)
             if result[0]:
                 parsed['metadata'] = result[0]
 
-            # Following elements are result rows
-            if len(result) > 1:
+            # Following elements are result rows. Bounded by len(result[1]).
+            if reply_length > 1:
                 for row in result[1]:
                     if isinstance(row, list):
                         parsed['results'].append(row)
 
-        # Last element is statistics
-        if len(result) > 1 and isinstance(result[-1], list):
+        # Last element is statistics. Bounded by len(result[-1]).
+        if reply_length > 1 and isinstance(result[-1], list):
             for stat in result[-1]:
                 if isinstance(stat, str) and ': ' in stat:
                     key, value = stat.split(': ', 1)
                     parsed['statistics'][key] = value
 
+        # Postcondition: we never invent rows beyond those present in the reply.
+        assert len(parsed['results']) <= reply_length, \
+            "parsed rows cannot exceed reply length"
         return parsed
 
     def delete(self, graph_name: str) -> str:
@@ -285,14 +291,22 @@ cdef class CyRedisGraph:
 
     cdef str _format_value(self, value):
         """Format value for Cypher query"""
+        # NOTE(latent bug): string values are interpolated without escaping, so
+        # a value containing a single quote breaks the query (Cypher injection).
+        # Preserved as-is per the no-behavior-change constraint.
+        cdef str formatted
         if isinstance(value, str):
-            return f"'{value}'"
+            formatted = f"'{value}'"
         elif isinstance(value, bool):
-            return 'true' if value else 'false'
+            formatted = 'true' if value else 'false'
         elif value is None:
-            return 'null'
+            formatted = 'null'
         else:
-            return str(value)
+            formatted = str(value)
+        # Postcondition: every branch yields a non-empty Cypher literal.
+        assert formatted is not None and len(formatted) > 0, \
+            "formatted value must be a non-empty literal"
+        return formatted
 
     # ===== ASYNC OPERATIONS =====
 

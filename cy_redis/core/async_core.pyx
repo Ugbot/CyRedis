@@ -22,6 +22,8 @@ class AsyncMessageQueue:
     """Simple async-safe queue using a list and asyncio locks."""
 
     def __init__(self, capacity: int = 1024):
+        # Precondition: a bounded queue needs a positive capacity.
+        assert capacity > 0, "queue capacity must be positive"
         self.capacity = capacity
         self._queue = []
         self._lock = asyncio.Lock()
@@ -29,17 +31,27 @@ class AsyncMessageQueue:
         self._not_full = asyncio.Condition(self._lock)
 
     async def put(self, msg: AsyncMessage):
+        # Precondition: only AsyncMessage values flow through this queue.
+        assert msg is not None, "cannot enqueue None"
         async with self._lock:
+            # Bounded wait loop: blocks only while full, woken by get()'s
+            # not_full.notify(); capacity is the explicit upper bound.
             while len(self._queue) >= self.capacity:
                 await self._not_full.wait()
             self._queue.append(msg)
+            # Invariant: the queue never overruns its declared capacity.
+            assert len(self._queue) <= self.capacity, "queue overflow"
             self._not_empty.notify()
 
     async def get(self) -> AsyncMessage:
         async with self._lock:
+            # Bounded wait loop: blocks only while empty, woken by put()'s
+            # not_empty.notify().
             while not self._queue:
                 await self._not_empty.wait()
             msg = self._queue.pop(0)
+            # Postcondition: a dequeued message is always a real value.
+            assert msg is not None, "dequeued a None message"
             self._not_full.notify()
             return msg
 
@@ -56,6 +68,9 @@ class AsyncRedisConnection:
     """Async Redis connection using thread pool"""
 
     def __init__(self, host="localhost", port=6379):
+        # Precondition: a valid TCP port is 1..65535.
+        assert 0 < port <= 65535, "port out of range"
+        assert host is not None, "host must be set"
         self.host = host
         self.port = port
         self._connection = None
@@ -64,6 +79,8 @@ class AsyncRedisConnection:
         """Lazy connection creation"""
         if self._connection is None:
             self._connection = CyRedisConnection(self.host, self.port)
+        # Postcondition: callers always receive a live connection object.
+        assert self._connection is not None, "failed to create connection"
         return self._connection
 
     def connect(self) -> int:
@@ -80,6 +97,9 @@ class AsyncRedisConnection:
 
     def execute_command(self, command):
         """Execute command synchronously"""
+        # Precondition: a command always carries at least its name.
+        assert command is not None, "command must not be None"
+        assert len(command) > 0, "command requires at least its name"
         return self._get_connection().execute_command(command)
 
     async def execute_command_async(self, command, executor=None):
@@ -92,6 +112,9 @@ class AsyncRedisClient:
     """High-level async Redis client using thread pools with uvloop"""
 
     def __init__(self, host="localhost", port=6379, max_connections=10):
+        # Preconditions: valid TCP port and a positive pool capacity.
+        assert 0 < port <= 65535, "port out of range"
+        assert max_connections > 0, "max_connections must be positive"
         self.host = host
         self.port = port
         self.max_connections = max_connections
@@ -157,6 +180,9 @@ class AsyncRedisClient:
 
     async def execute(self, command: list):
         """Execute a Redis command (list form) asynchronously."""
+        # Precondition: a command always carries at least its name.
+        assert command is not None, "command must not be None"
+        assert len(command) > 0, "command requires at least its name"
         await self._ensure_loop()
         conn = self._get_connection()
         loop = asyncio.get_running_loop()

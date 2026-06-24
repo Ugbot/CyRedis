@@ -33,6 +33,8 @@ cdef class CyLuaScriptManager:
     cdef object executor
 
     def __cinit__(self, CyRedisClient redis_client, str namespace="scripts"):
+        assert redis_client is not None, "redis_client must not be None"
+        assert namespace is not None and len(namespace) > 0, "namespace must be non-empty"
         self.redis = redis_client
         self.namespace = namespace
         self.loaded_scripts = {}
@@ -40,6 +42,9 @@ cdef class CyLuaScriptManager:
         self.script_sources = {}
         self.script_metadata = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
+        # Postcondition: caches start empty and aligned.
+        assert len(self.loaded_scripts) == 0
+        assert self.executor is not None
 
     def __dealloc__(self):
         if self.executor:
@@ -47,7 +52,11 @@ cdef class CyLuaScriptManager:
 
     cdef str _compute_script_hash(self, str script):
         """Compute SHA1 hash of script for caching"""
-        return hashlib.sha1(script.encode('utf-8')).hexdigest()
+        assert script is not None, "script must not be None"
+        cdef str digest = hashlib.sha1(script.encode('utf-8')).hexdigest()
+        # A SHA-1 hex digest is always exactly 40 characters.
+        assert len(digest) == 40, "unexpected SHA-1 digest length"
+        return digest
 
     cpdef str register_script(self, str name, str script, str version="1.0.0",
                              dict metadata=None):
@@ -55,6 +64,11 @@ cdef class CyLuaScriptManager:
         Register a script with versioning and metadata.
         Returns the script SHA.
         """
+        # Preconditions: well-formed name/script/version (programmer error).
+        assert name is not None and len(name) > 0, "name must be non-empty"
+        assert script is not None and len(script) > 0, "script must be non-empty"
+        assert version is not None and len(version) > 0, "version must be non-empty"
+
         cdef str existing_version, existing_sha, computed_sha
 
         # Check if script already exists with same version
@@ -87,24 +101,33 @@ cdef class CyLuaScriptManager:
             if metadata:
                 self.script_metadata[name] = metadata
 
+            # Postcondition: a freshly registered script is in the local cache.
+            assert self.loaded_scripts[name] == computed_sha
             return computed_sha
         except Exception as e:
             raise Exception(f"Failed to register script {name}: {e}")
 
     cpdef object execute_script(self, str name, list keys=None, list args=None):
         """Execute a registered script by name"""
+        assert name is not None and len(name) > 0, "name must be non-empty"
+
+        # Caller error (unregistered name) stays an explicit raise.
         if name not in self.loaded_scripts:
             raise Exception(f"Script {name} not registered")
 
         cdef str sha = self.loaded_scripts[name]
+        # Invariant: a registered name always maps to a real SHA.
+        assert sha is not None and len(sha) > 0, "registered script has no SHA"
         return self.redis.evalsha(sha, keys or [], args or [])
 
     cpdef dict get_script_info(self, str name):
         """Get comprehensive information about a registered script"""
+        assert name is not None and len(name) > 0, "name must be non-empty"
         if name not in self.loaded_scripts:
             return {}
 
         cdef str sha = self.loaded_scripts[name]
+        assert sha is not None and len(sha) > 0, "registered script has no SHA"
         cdef list exists_result = self.redis.script_exists([sha])
         cdef bint cached = bool(exists_result[0]) if exists_result else False
 
@@ -148,6 +171,7 @@ cdef class CyLuaScriptManager:
 
     cpdef dict validate_script(self, str script):
         """Validate script syntax and check for issues"""
+        assert script is not None, "script must not be None"
         cdef str sha
         cdef list exists
         cdef object test_result
@@ -220,6 +244,9 @@ cdef class CyLuaScriptManager:
 
     cpdef object load_script_from_file(self, str name, str filepath, str version="1.0.0"):
         """Load a script from file"""
+        assert name is not None and len(name) > 0, "name must be non-empty"
+        assert filepath is not None and len(filepath) > 0, "filepath must be non-empty"
+        assert version is not None and len(version) > 0, "version must be non-empty"
         try:
             with open(filepath, 'r') as f:
                 script_content = f.read()
@@ -242,10 +269,13 @@ cdef class CyLuaScriptManager:
         cdef list exists
 
         for name, sha in self.loaded_scripts.items():
+            assert sha is not None and len(sha) > 0, "cached script missing SHA"
             exists = self.redis.script_exists([sha])
             if exists and exists[0]:
                 cached_count += 1
             total_size += len(self.script_sources.get(name, ""))
+
+        assert cached_count <= len(self.loaded_scripts), "cached count exceeds total"
 
         stats['cache_info'] = {
             'cached_scripts': cached_count,
@@ -274,6 +304,11 @@ cdef class CyLuaScriptManager:
         Returns:
             Dict with results including mapped functions
         """
+        # Preconditions: well-formed identifiers and source (programmer error).
+        assert name is not None and len(name) > 0, "name must be non-empty"
+        assert script is not None and len(script) > 0, "script must be non-empty"
+        assert version is not None and len(version) > 0, "version must be non-empty"
+
         cdef dict result = {
             'success': False,
             'name': name,
@@ -284,6 +319,8 @@ cdef class CyLuaScriptManager:
             'tests_failed': [],
             'error': None
         }
+        cdef str temp_sha
+        cdef str final_sha
 
         try:
             # Step 1: Validate script syntax
@@ -294,35 +331,13 @@ cdef class CyLuaScriptManager:
 
             # Step 2: Load script temporarily (don't register yet)
             temp_sha = self.redis.script_load(script)
+            assert temp_sha is not None and len(temp_sha) > 0, "script_load returned no SHA"
 
-            # Step 3: Run test cases if provided
+            # Step 3: Run test cases if provided. Helper records pass/fail into
+            # result and returns True iff at least one test failed.
             if test_cases:
-                for test_name, test_data in test_cases.items():
-                    try:
-                        keys = test_data.get('keys', [])
-                        args = test_data.get('args', [])
-                        expected = test_data.get('expected', None)
-
-                        actual = self.redis.evalsha(temp_sha, keys, args)
-
-                        if expected is not None and actual != expected:
-                            result['tests_failed'].append({
-                                'test': test_name,
-                                'expected': expected,
-                                'actual': actual
-                            })
-                        else:
-                            result['tests_passed'].append(test_name)
-
-                    except Exception as e:
-                        result['tests_failed'].append({
-                            'test': test_name,
-                            'error': str(e)
-                        })
-
-                # If any tests failed, abort
-                if result['tests_failed']:
-                    # Clean up temporary script
+                if self._run_test_cases(temp_sha, test_cases, result):
+                    # Clean up temporary script on any failure.
                     try:
                         self.redis.script_flush()
                     except:
@@ -338,6 +353,8 @@ cdef class CyLuaScriptManager:
             result['functions'] = self._create_function_mappings(name, script, final_sha)
 
             result['success'] = True
+            # Postcondition: a successful run always carries a SHA.
+            assert result['sha'] is not None
             return result
 
         except Exception as e:
@@ -349,8 +366,52 @@ cdef class CyLuaScriptManager:
                 pass
             return result
 
+    cdef bint _run_test_cases(self, str temp_sha, dict test_cases, dict result):
+        """Run each test case against temp_sha, recording results.
+
+        Mutates result['tests_passed'] / result['tests_failed']. Returns True iff
+        any test failed. The loop is bounded by the size of test_cases.
+        """
+        assert temp_sha is not None and len(temp_sha) > 0, "temp_sha must be a real SHA"
+        assert test_cases is not None, "test_cases must not be None"
+        assert isinstance(result['tests_passed'], list)
+        assert isinstance(result['tests_failed'], list)
+
+        cdef int total_tests = len(test_cases)
+        cdef int seen = 0
+        for test_name, test_data in test_cases.items():
+            seen += 1
+            assert seen <= total_tests, "test loop exceeded its bound"
+            try:
+                keys = test_data.get('keys', [])
+                args = test_data.get('args', [])
+                expected = test_data.get('expected', None)
+
+                actual = self.redis.evalsha(temp_sha, keys, args)
+
+                if expected is not None and actual != expected:
+                    result['tests_failed'].append({
+                        'test': test_name,
+                        'expected': expected,
+                        'actual': actual
+                    })
+                else:
+                    result['tests_passed'].append(test_name)
+
+            except Exception as e:
+                result['tests_failed'].append({
+                    'test': test_name,
+                    'error': str(e)
+                })
+
+        # Postcondition: every test landed in exactly one bucket.
+        assert (len(result['tests_passed']) + len(result['tests_failed'])) >= total_tests
+        return len(result['tests_failed']) > 0
+
     cdef dict _create_function_mappings(self, str name, str script, str sha):
         """Create function mappings from script analysis"""
+        assert name is not None, "name must not be None"
+        assert sha is not None and len(sha) > 0, "sha must be a real SHA"
         cdef dict functions = {}
 
         # Analyze script for function patterns (basic analysis)
@@ -375,6 +436,8 @@ cdef class CyLuaScriptManager:
         # Always provide generic execute function
         functions['execute'] = lambda keys, args: self.redis.evalsha(sha, keys, args)
 
+        # Postcondition: a generic executor is always available.
+        assert 'execute' in functions
         return functions
 
     cpdef dict atomic_deploy_scripts(self, dict scripts_config):
@@ -393,6 +456,9 @@ cdef class CyLuaScriptManager:
         Returns:
             Dict with deployment results
         """
+        assert scripts_config is not None, "scripts_config must not be None"
+        assert isinstance(scripts_config, dict), "scripts_config must be a dict"
+
         cdef dict results = {
             'success': True,
             'deployed_scripts': [],
@@ -401,9 +467,15 @@ cdef class CyLuaScriptManager:
         }
 
         cdef dict temp_state = {}  # Track what we've loaded so far
+        cdef int total_scripts = len(scripts_config)
+        cdef int seen = 0
 
         try:
+            # Loop is bounded by the number of configured scripts.
             for script_name, config in scripts_config.items():
+                seen += 1
+                assert seen <= total_scripts, "deploy loop exceeded its bound"
+                assert 'script' in config, "each config must carry a 'script'"
                 script = config['script']
                 version = config.get('version', '1.0.0')
                 test_cases = config.get('test_cases')
@@ -430,40 +502,56 @@ cdef class CyLuaScriptManager:
             # If all succeeded, we're done
             if results['success']:
                 return results
-            else:
-                # Rollback - remove all scripts we loaded
-                for script_name in results['deployed_scripts']:
-                    try:
-                        self.redis.hdel(f"{self.namespace}:shas", script_name)
-                        self.redis.hdel(f"{self.namespace}:versions", script_name)
-                        self.redis.hdel(f"{self.namespace}:sources", script_name)
-                        self.redis.hdel(f"{self.namespace}:metadata", script_name)
-                    except:
-                        pass  # Best effort cleanup
 
-                # Clear local state
-                for script_name in results['deployed_scripts']:
-                    if script_name in self.loaded_scripts:
-                        del self.loaded_scripts[script_name]
-                    if script_name in self.script_versions:
-                        del self.script_versions[script_name]
-                    if script_name in self.script_sources:
-                        del self.script_sources[script_name]
-                    if script_name in self.script_metadata:
-                        del self.script_metadata[script_name]
-
-                # Flush script cache to clean up
-                try:
-                    self.redis.script_flush()
-                except:
-                    pass
-
-                return results
+            # Otherwise roll back everything we managed to deploy.
+            self._rollback_deployed_scripts(results['deployed_scripts'])
+            return results
 
         except Exception as e:
             results['success'] = False
             results['error'] = str(e)
             return results
+
+    cdef void _rollback_deployed_scripts(self, list deployed_scripts):
+        """Undo a partial deployment: drop Redis metadata and local caches.
+
+        Best-effort: Redis hdel failures are swallowed so the local state is
+        always cleared. The loops are bounded by len(deployed_scripts).
+        """
+        assert deployed_scripts is not None, "deployed_scripts must not be None"
+        assert isinstance(deployed_scripts, list), "deployed_scripts must be a list"
+
+        cdef int total = len(deployed_scripts)
+        cdef int seen = 0
+
+        # Remove all scripts we loaded from Redis-side metadata.
+        for script_name in deployed_scripts:
+            seen += 1
+            assert seen <= total, "rollback loop exceeded its bound"
+            try:
+                self.redis.hdel(f"{self.namespace}:shas", script_name)
+                self.redis.hdel(f"{self.namespace}:versions", script_name)
+                self.redis.hdel(f"{self.namespace}:sources", script_name)
+                self.redis.hdel(f"{self.namespace}:metadata", script_name)
+            except:
+                pass  # Best effort cleanup
+
+        # Clear local state for the same set of scripts.
+        for script_name in deployed_scripts:
+            if script_name in self.loaded_scripts:
+                del self.loaded_scripts[script_name]
+            if script_name in self.script_versions:
+                del self.script_versions[script_name]
+            if script_name in self.script_sources:
+                del self.script_sources[script_name]
+            if script_name in self.script_metadata:
+                del self.script_metadata[script_name]
+
+        # Flush script cache to clean up.
+        try:
+            self.redis.script_flush()
+        except:
+            pass
 
 
 # Python wrapper for the optimized script manager

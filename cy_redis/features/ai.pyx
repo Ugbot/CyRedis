@@ -158,6 +158,13 @@ cdef class CyRedisAI:
             outputs: Output tensor keys
             timeout: Execution timeout in ms
         """
+        # Precondition: RedisAI requires at least one input and one output;
+        # an empty list would emit a count of 0 and a malformed command.
+        if not inputs:
+            raise ValueError("modelexecute requires at least one input")
+        if not outputs:
+            raise ValueError("modelexecute requires at least one output")
+
         conn = self.pool.get_connection()
         if conn == None:
             raise ConnectionError("No available connections")
@@ -169,6 +176,11 @@ cdef class CyRedisAI:
             args.append('OUTPUTS')
             args.append(str(len(outputs)))
             args.extend(outputs)
+
+            # Invariant: token count is fixed wrt the input/output cardinalities
+            # (3 header + 1 inputs-count + n_in + 1 OUTPUTS + 1 out-count + n_out).
+            assert len(args) == 6 + len(inputs) + len(outputs), \
+                "arg count must match declared input/output sizes"
 
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])
@@ -191,6 +203,16 @@ cdef class CyRedisAI:
             values: NumPy array or list of values
             blob: Raw binary data
         """
+        cdef int dims_appended = 0
+
+        # Precondition: shape dimensions must be non-negative (a negative dim is
+        # a caller error and would make the element-count product meaningless).
+        if shape is None:
+            raise ValueError("shape must not be None")
+        for dim in shape:
+            if dim < 0:
+                raise ValueError("tensor shape dimensions must be non-negative")
+
         conn = self.pool.get_connection()
         if conn == None:
             raise ConnectionError("No available connections")
@@ -201,6 +223,9 @@ cdef class CyRedisAI:
             # Add shape
             for dim in shape:
                 args.append(str(dim))
+                dims_appended += 1
+            # Invariant: emitted exactly one token per declared dimension.
+            assert dims_appended == len(shape), "must emit one token per dim"
 
             if values is not None:
                 # Convert to NumPy if needed
@@ -255,33 +280,56 @@ cdef class CyRedisAI:
 
         cdef dict parsed = {}
         cdef int i = 0
+        cdef int reply_length = len(result)
+        # Precondition: the reply is a non-empty list (guaranteed above).
+        assert reply_length > 0, "non-empty reply expected past the guard"
 
-        while i < len(result):
+        # Bounded by reply_length: every branch advances `i` by >=1, so the
+        # outer loop terminates in at most `reply_length` iterations.
+        while i < reply_length:
             if result[i] == b'dtype':
+                # NOTE(latent bug): a trailing lone b'dtype' indexes result[i+1]
+                # out of range; preserved as-is to keep behavior unchanged.
                 parsed['dtype'] = result[i + 1].decode('utf-8') if isinstance(result[i + 1], bytes) else result[i + 1]
                 i += 2
             elif result[i] == b'shape':
                 i += 1
                 shape = []
-                while i < len(result) and isinstance(result[i], int):
+                while i < reply_length and isinstance(result[i], int):
                     shape.append(result[i])
                     i += 1
                 parsed['shape'] = shape
             elif result[i] == b'values' or result[i] == b'blob':
-                if with_blob and i + 1 < len(result):
+                if with_blob and i + 1 < reply_length:
                     blob_data = result[i + 1]
                     if isinstance(blob_data, bytes) and 'dtype' in parsed and 'shape' in parsed:
-                        # Convert to NumPy array
+                        # Convert to NumPy array. Reconstructed element count must
+                        # equal the product of the declared shape, else the reply
+                        # is malformed (truncated/oversized blob) -> raise.
                         np_dtype = self._redis_dtype_to_numpy(parsed['dtype'])
-                        parsed['values'] = np.frombuffer(blob_data, dtype=np_dtype).reshape(parsed['shape'])
+                        flat = np.frombuffer(blob_data, dtype=np_dtype)
+                        expected_elements = 1
+                        for dim in parsed['shape']:
+                            assert dim >= 0, "tensor dimension must be non-negative"
+                            expected_elements *= dim
+                        if flat.size != expected_elements:
+                            raise ValueError(
+                                "tensor blob length %d does not match shape %r "
+                                "(expected %d elements)"
+                                % (flat.size, parsed['shape'], expected_elements)
+                            )
+                        parsed['values'] = flat.reshape(parsed['shape'])
                 i += 2
             else:
                 i += 1
 
+        # Postcondition: the scan consumed the whole reply, never ran past it.
+        assert i >= reply_length, "parser must consume the full reply"
         return parsed
 
     cdef object _redis_dtype_to_numpy(self, str dtype):
         """Convert Redis AI dtype to NumPy dtype"""
+        assert dtype is not None, "dtype must not be None"
         dtype_map = {
             'FLOAT': np.float32,
             'DOUBLE': np.float64,
@@ -301,9 +349,12 @@ cdef class CyRedisAI:
 
         cdef dict parsed = {}
         cdef int i = 0
+        cdef int reply_length = len(result)
 
-        while i < len(result):
-            if i + 1 < len(result):
+        # Bounded by reply_length: `i` advances by 2 each iteration, so the loop
+        # runs at most ceil(reply_length / 2) times.
+        while i < reply_length:
+            if i + 1 < reply_length:
                 key = result[i].decode('utf-8') if isinstance(result[i], bytes) else result[i]
                 value = result[i + 1]
                 if isinstance(value, bytes):
@@ -311,6 +362,9 @@ cdef class CyRedisAI:
                 parsed[key] = value
             i += 2
 
+        # Postcondition: scan never reads before the start and stops past the end.
+        assert i >= reply_length, "parser must consume the full reply"
+        assert len(parsed) <= (reply_length + 1) // 2, "at most one entry per pair"
         return parsed
 
     # ===== SCRIPT OPERATIONS =====
@@ -361,6 +415,12 @@ cdef class CyRedisAI:
             outputs: Output tensor keys
             timeout: Execution timeout in ms
         """
+        # Precondition: a script execution needs at least one input and output.
+        if not inputs:
+            raise ValueError("scriptexecute requires at least one input")
+        if not outputs:
+            raise ValueError("scriptexecute requires at least one output")
+
         conn = self.pool.get_connection()
         if conn == None:
             raise ConnectionError("No available connections")
@@ -372,6 +432,11 @@ cdef class CyRedisAI:
             args.append('OUTPUTS')
             args.append(str(len(outputs)))
             args.extend(outputs)
+
+            # Invariant: 4 header tokens + 1 inputs-count + n_in + 1 OUTPUTS kw
+            # + 1 outputs-count + n_out.
+            assert len(args) == 7 + len(inputs) + len(outputs), \
+                "arg count must match declared input/output sizes"
 
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])
@@ -404,6 +469,12 @@ cdef class CyRedisAI:
             persist: Tensors to persist
             timeout: Execution timeout in ms
         """
+        cdef int commands_emitted = 0
+
+        # Precondition: a DAG must contain at least one command to execute.
+        if not commands:
+            raise ValueError("dagexecute requires at least one command")
+
         conn = self.pool.get_connection()
         if conn == None:
             raise ConnectionError("No available connections")
@@ -421,10 +492,13 @@ cdef class CyRedisAI:
                 args.append(str(len(persist)))
                 args.extend(persist)
 
-            # Add commands
+            # Add commands. Bounded by len(commands); each command contributes a
+            # '|>' separator plus its own tokens.
             for cmd in commands:
                 args.append('|>')
                 args.extend(cmd)
+                commands_emitted += 1
+            assert commands_emitted == len(commands), "must emit every command"
 
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])

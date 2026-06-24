@@ -47,7 +47,14 @@ class WebAppSupport:
 
     def __init__(self, redis_client: CyRedisClient = None,
                  host: str = "localhost", port: int = 6379):
+        # Preconditions: a default-constructed client needs a valid endpoint.
+        if not host:
+            raise ValueError("host must be a non-empty string")
+        if not (0 < port <= 65535):
+            raise ValueError("port must be in 1..65535")
+
         self.redis_client = redis_client or CyRedisClient(host, port)
+        assert self.redis_client is not None, "redis_client must be set"
 
         # Initialize all managers
         self.worker_queue = WorkerQueue("default", self.redis_client)
@@ -64,11 +71,18 @@ class WebAppSupport:
         # Worker coordinator for scaling and recovery
         self.worker_coordinator = WorkerCoordinator(self.redis_client)
 
+        # Postcondition: every coordinator the hooks rely on is constructed.
+        assert self.lifecycle_manager is not None, "lifecycle_manager required"
+        assert self.worker_coordinator is not None, "worker_coordinator required"
+
         # Setup enhanced lifecycle hooks
         self._setup_enhanced_lifecycle_hooks()
 
     def _setup_enhanced_lifecycle_hooks(self):
         """Setup enhanced lifecycle hooks with worker coordination"""
+        assert self.lifecycle_manager is not None, "lifecycle_manager required"
+        assert self.worker_queue is not None, "worker_queue required"
+
         def enhanced_startup():
             self.worker_queue.start()
             print("WebAppSupport with worker coordination initialized")
@@ -97,19 +111,25 @@ class WebAppSupport:
         signal.signal(signal.SIGINT, lambda sig, frame: immediate_shutdown())
 
     def _monitor_workers(self):
-        """Background worker monitoring for dead worker detection"""
+        """Background worker monitoring for dead worker detection.
+
+        Exit invariant: this runs on a daemon thread whose lifetime is bounded
+        by the process — it terminates when the interpreter shuts the daemon
+        thread down. Each iteration sleeps, so the loop cannot busy-spin.
+        """
+        import time
+        assert self.worker_coordinator is not None, "worker_coordinator required"
         while True:
             try:
                 dead_workers = self.worker_coordinator.detect_dead_workers()
-                for worker_id in dead_workers:
+                # Bounded fan-out: one recovery call per detected worker.
+                for worker_id in (dead_workers or []):
                     self.worker_coordinator.handle_dead_worker(worker_id)
 
-                import time
                 time.sleep(30)  # Check every 30 seconds
 
             except Exception as e:
                 print(f"Worker monitoring error: {e}")
-                import time
                 time.sleep(60)  # Wait longer on error
 
     def initialize(self):
@@ -135,7 +155,14 @@ class WebAppSupport:
     # Convenience methods for common operations
     def create_user_session(self, user_id: str, device_info: Dict[str, Any] = None) -> str:
         """Create a new user session with multi-session tracking"""
+        # Precondition: a session must belong to an identified user.
+        if not user_id:
+            raise ValueError("user_id must be a non-empty string")
+
         session_id = self.session_manager.create_session(user_id)
+        # Postcondition: the session manager must hand back a usable id before
+        # we register it for multi-session tracking.
+        assert session_id, "create_session must return a non-empty session id"
         self.multi_session_tracker.register_session(user_id, session_id, device_info)
         return session_id
 
@@ -291,7 +318,14 @@ class WebApplicationSupport:
 
     def __init__(self, redis_client: CyRedisClient = None,
                  host: str = "localhost", port: int = 6379):
+        # Preconditions: a default-constructed client needs a valid endpoint.
+        if not host:
+            raise ValueError("host must be a non-empty string")
+        if not (0 < port <= 65535):
+            raise ValueError("port must be in 1..65535")
+
         self.redis_client = redis_client or CyRedisClient(host, port)
+        assert self.redis_client is not None, "redis_client must be set"
 
         # Initialize all managers
         self.worker_queue = WorkerQueue("default", self.redis_client)
@@ -308,11 +342,18 @@ class WebApplicationSupport:
         # Worker coordinator for scaling and recovery
         self.worker_coordinator = WorkerCoordinator(self.redis_client)
 
+        # Postcondition: every coordinator the hooks rely on is constructed.
+        assert self.lifecycle_manager is not None, "lifecycle_manager required"
+        assert self.worker_coordinator is not None, "worker_coordinator required"
+
         # Setup enhanced lifecycle hooks
         self._setup_enhanced_lifecycle_hooks()
 
     def _setup_enhanced_lifecycle_hooks(self):
         """Setup enhanced lifecycle hooks with worker coordination"""
+        assert self.lifecycle_manager is not None, "lifecycle_manager required"
+        assert self.worker_queue is not None, "worker_queue required"
+
         def enhanced_startup():
             self.worker_queue.start()
             print("WebAppSupport with worker coordination initialized")
@@ -341,19 +382,25 @@ class WebApplicationSupport:
         signal.signal(signal.SIGINT, lambda sig, frame: immediate_shutdown())
 
     def _monitor_workers(self):
-        """Background worker monitoring for dead worker detection"""
+        """Background worker monitoring for dead worker detection.
+
+        Exit invariant: this runs on a daemon thread whose lifetime is bounded
+        by the process — it terminates when the interpreter shuts the daemon
+        thread down. Each iteration sleeps, so the loop cannot busy-spin.
+        """
+        import time
+        assert self.worker_coordinator is not None, "worker_coordinator required"
         while True:
             try:
                 dead_workers = self.worker_coordinator.detect_dead_workers()
-                for worker_id in dead_workers:
+                # Bounded fan-out: one recovery call per detected worker.
+                for worker_id in (dead_workers or []):
                     self.worker_coordinator.handle_dead_worker(worker_id)
 
-                import time
                 time.sleep(30)  # Check every 30 seconds
 
             except Exception as e:
                 print(f"Worker monitoring error: {e}")
-                import time
                 time.sleep(60)  # Wait longer on error
 
     def initialize(self):
@@ -367,7 +414,14 @@ class WebApplicationSupport:
     # Convenience methods for common operations
     def create_user_session(self, user_id: str, device_info: Dict[str, Any] = None) -> str:
         """Create a new user session with multi-session tracking"""
+        # Precondition: a session must belong to an identified user.
+        if not user_id:
+            raise ValueError("user_id must be a non-empty string")
+
         session_id = self.session_manager.create_session(user_id)
+        # Postcondition: the session manager must hand back a usable id before
+        # we register it for multi-session tracking.
+        assert session_id, "create_session must return a non-empty session id"
         self.multi_session_tracker.register_session(user_id, session_id, device_info)
         return session_id
 

@@ -37,6 +37,10 @@ cdef class LifecycleManager:
     cdef str heartbeat_key
 
     def __cinit__(self, object redis_client, str worker_id=None):
+        # Precondition: a Redis client is mandatory for coordination.
+        if redis_client is None:
+            raise ValueError("redis_client must not be None")
+
         self.redis_client = redis_client
         self.startup_hooks = []
         self.shutdown_hooks = []
@@ -48,6 +52,10 @@ cdef class LifecycleManager:
         self.workload_transfer_key = "workers:workload_transfer"
         self.heartbeat_key = f"workers:heartbeat:{self.worker_id}"
 
+        # Postcondition: identity and keys derived before registration.
+        assert self.worker_id, "worker_id must be non-empty"
+        assert self.heartbeat_key.endswith(self.worker_id), "heartbeat key must embed worker_id"
+
         # Register this worker
         self._register_worker()
 
@@ -56,7 +64,12 @@ cdef class LifecycleManager:
         pid = os.getpid()
         hostname = socket.gethostname()
         timestamp = int(time.time() * 1000)
-        return f"worker_{hostname}_{pid}_{timestamp}"
+        # Postconditions: identity components are well-formed.
+        assert pid > 0, "process id must be positive"
+        assert hostname, "hostname must be non-empty"
+        worker_id = f"worker_{hostname}_{pid}_{timestamp}"
+        assert worker_id.startswith("worker_"), "worker_id must carry the worker_ prefix"
+        return worker_id
 
     def _register_worker(self):
         """Register this worker in the cluster"""
@@ -85,15 +98,25 @@ cdef class LifecycleManager:
 
     def add_startup_hook(self, hook_func: Callable, priority: int = 0):
         """Add a startup hook function with priority"""
+        if not callable(hook_func):
+            raise ValueError("hook_func must be callable")
+        hooks_before = len(self.startup_hooks)
         self.startup_hooks.append((priority, hook_func))
         # Sort by priority (lower number = higher priority)
         self.startup_hooks.sort(key=lambda x: x[0])
+        # Postcondition: exactly one hook added.
+        assert len(self.startup_hooks) == hooks_before + 1, "startup hook not appended"
 
     def add_shutdown_hook(self, hook_func: Callable, priority: int = 0):
         """Add a shutdown hook function with priority"""
+        if not callable(hook_func):
+            raise ValueError("hook_func must be callable")
+        hooks_before = len(self.shutdown_hooks)
         self.shutdown_hooks.append((priority, hook_func))
         # Sort by priority (lower number = higher priority)
         self.shutdown_hooks.sort(key=lambda x: x[0])
+        # Postcondition: exactly one hook added.
+        assert len(self.shutdown_hooks) == hooks_before + 1, "shutdown hook not appended"
 
     def initialize(self):
         """Run all startup hooks in priority order"""
@@ -227,17 +250,25 @@ cdef class LifecycleManager:
 
     def _get_available_workers(self) -> List[str]:
         """Get list of available workers"""
+        # A peer is available if running and seen within this many seconds.
+        available_heartbeat_timeout_seconds = 60
+        assert available_heartbeat_timeout_seconds > 0, "heartbeat timeout must be positive"
         try:
             workers = self.redis_client.hgetall(self.worker_status_key)
             available = []
 
+            # Bound: one iteration per registered worker.
             for worker_id, worker_info_str in workers.items():
                 worker_info = json.loads(worker_info_str)
-                if (worker_id != self.worker_id and
-                    worker_info.get('status') == 'running' and
-                    time.time() - worker_info.get('last_heartbeat', 0) < 60):  # 60 second timeout
+                seconds_since_heartbeat = time.time() - worker_info.get('last_heartbeat', 0)
+                is_other_worker = worker_id != self.worker_id
+                is_running = worker_info.get('status') == 'running'
+                is_recent = seconds_since_heartbeat < available_heartbeat_timeout_seconds
+                if is_other_worker and is_running and is_recent:
                     available.append(worker_id)
 
+            # Postcondition: this worker never appears in its own peer list.
+            assert self.worker_id not in available, "self must be excluded from peers"
             return available
 
         except Exception as e:
@@ -246,10 +277,17 @@ cdef class LifecycleManager:
 
     def _distribute_workload(self, workload: Dict[str, Any], available_workers: List[str]):
         """Distribute workload to available workers"""
+        # Preconditions: callers (_yield_workload) only invoke this with a
+        # non-empty worker list; the divisor below depends on it.
+        assert isinstance(workload, dict), "workload must be a dict"
+        if not available_workers:
+            raise ValueError("available_workers must not be empty")
         try:
             # Distribute sessions
             if workload.get('sessions'):
+                assert len(available_workers) >= 1, "divisor must be positive"
                 sessions_per_worker = len(workload['sessions']) // len(available_workers)
+                # Bound: one iteration per available worker.
                 for i, worker_id in enumerate(available_workers):
                     start_idx = i * sessions_per_worker
                     end_idx = start_idx + sessions_per_worker if i < len(available_workers) - 1 else len(workload['sessions'])
@@ -279,24 +317,36 @@ cdef class LifecycleManager:
             print(f"Error distributing workload: {e}")
 
     def _wait_for_tasks(self, timeout: int = 30):
-        """Wait for active tasks to complete"""
+        """Wait for active tasks to complete.
+
+        Exit invariant: the loop terminates either when no active work remains
+        or once ``timeout`` seconds have elapsed. With a 2-second sleep per
+        iteration, the wall-clock timeout bounds the iteration count, so the
+        loop is provably finite.
+        """
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
         start_time = time.time()
 
         while time.time() - start_time < timeout:
             active_tasks = self._get_active_workload()
 
             # Check if we still have active work
-            has_work = (len(active_tasks.get('sessions', [])) > 0 or
-                       active_tasks.get('processing_tasks', 0) > 0)
+            active_session_count = len(active_tasks.get('sessions', []))
+            active_processing_count = active_tasks.get('processing_tasks', 0)
+            has_work = active_session_count > 0 or active_processing_count > 0
 
             if not has_work:
                 print("All active tasks completed")
                 break
 
-            print(f"Waiting for {len(active_tasks.get('sessions', []))} sessions and {active_tasks.get('processing_tasks', 0)} tasks to complete...")
+            print(f"Waiting for {active_session_count} sessions and {active_processing_count} tasks to complete...")
             time.sleep(2)
 
-        if time.time() - start_time >= timeout:
+        # Postcondition: we never wait beyond a small slack over the timeout.
+        elapsed_seconds = time.time() - start_time
+        assert elapsed_seconds >= 0, "elapsed time must be non-negative"
+        if elapsed_seconds >= timeout:
             print(f"Shutdown timeout reached after {timeout} seconds")
 
     def _transfer_session_state(self):
@@ -307,10 +357,14 @@ cdef class LifecycleManager:
 
     def _update_worker_status(self, status: str):
         """Update worker status in Redis"""
+        if not status:
+            raise ValueError("status must be a non-empty string")
         try:
             worker_info = json.loads(self.redis_client.hget(self.worker_status_key, self.worker_id) or '{}')
             worker_info['status'] = status
             worker_info['last_heartbeat'] = time.time()
+            # Postcondition: the in-memory record reflects the requested status.
+            assert worker_info['status'] == status, "status not applied before persist"
             self.redis_client.hset(self.worker_status_key, self.worker_id, json.dumps(worker_info))
         except Exception as e:
             print(f"Error updating worker status: {e}")
@@ -335,9 +389,12 @@ cdef class LifecycleManager:
 
     def is_healthy(self) -> bool:
         """Check if worker is healthy"""
+        healthy_heartbeat_timeout_seconds = 60  # 60 second timeout
+        assert healthy_heartbeat_timeout_seconds > 0, "heartbeat timeout must be positive"
         try:
             worker_info = json.loads(self.redis_client.hget(self.worker_status_key, self.worker_id) or '{}')
             last_heartbeat = worker_info.get('last_heartbeat', 0)
-            return time.time() - last_heartbeat < 60  # 60 second timeout
+            seconds_since_heartbeat = time.time() - last_heartbeat
+            return seconds_since_heartbeat < healthy_heartbeat_timeout_seconds
         except Exception:
             return False

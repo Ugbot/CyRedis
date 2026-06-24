@@ -89,8 +89,19 @@ cdef class CyBloomFilter:
         @param capacity: Expected number of elements
         @param false_positive_rate: Target false positive rate (0.0 to 1.0)
         """
+        # Caller/environment error: the C++ ctor takes log() of the rate, so a
+        # rate outside (0, 1) yields a non-positive/NaN bit count -> raise.
+        if capacity == 0:
+            raise ValueError("capacity must be positive")
+        if not (0.0 < false_positive_rate < 1.0):
+            raise ValueError("false_positive_rate must be in (0.0, 1.0)")
+
         self._filter = new BloomFilter(capacity, false_positive_rate)
+        # Postcondition: allocation succeeded (C++ `new` raises on failure, but
+        # assert the impossible NULL so a corrupted state fails loudly here).
+        assert self._filter != NULL, "BloomFilter allocation returned NULL"
         self._executor = ThreadPoolExecutor(max_workers=4)
+        assert self._executor is not None, "executor must be constructed"
 
     def __dealloc__(self):
         if self._filter != NULL:
@@ -104,13 +115,23 @@ cdef class CyBloomFilter:
 
     def add(self, str item):
         """Add an item to the filter"""
+        assert self._filter != NULL, "filter used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
+        cdef size_t size_before = self._filter.size()
         self._filter.add(cpp_item)
+        # Postcondition: add() always inserts exactly one logical item.
+        assert self._filter.size() == size_before + 1, "size must grow by one"
 
     def contains(self, str item) -> bool:
         """Check if item might be in the set"""
+        assert self._filter != NULL, "filter used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
-        return self._filter.contains(cpp_item)
+        cdef cpp_bool present = self._filter.contains(cpp_item)
+        return present
 
     def clear(self):
         """Clear all items from the filter"""
@@ -176,7 +197,14 @@ cdef class CyCuckooFilter:
         Initialize Cuckoo filter
         @param capacity: Expected number of elements
         """
+        if capacity == 0:
+            raise ValueError("capacity must be positive")
+
         self._filter = new CuckooFilter(capacity)
+        # Postconditions: allocation succeeded and the derived bucket count is
+        # non-zero (hash1/hash2 take `% num_buckets_`, so zero would divide-by-0).
+        assert self._filter != NULL, "CuckooFilter allocation returned NULL"
+        assert self._filter.num_buckets() > 0, "num_buckets must be positive"
         self._executor = ThreadPoolExecutor(max_workers=4)
 
     def __dealloc__(self):
@@ -194,21 +222,42 @@ cdef class CyCuckooFilter:
         Add an item to the filter
         @return: True if successfully added, False if filter is full
         """
+        assert self._filter != NULL, "filter used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
-        return self._filter.add(cpp_item)
+        cdef size_t size_before = self._filter.size()
+        cdef cpp_bool inserted = self._filter.add(cpp_item)
+        # Postcondition: size grows by one on success, is unchanged on failure
+        # (filter full). Never any other transition.
+        assert self._filter.size() == size_before + (1 if inserted else 0), \
+            "size delta must match insert outcome"
+        return inserted
 
     def remove(self, str item) -> bool:
         """
         Remove an item from the filter
         @return: True if item was found and removed, False otherwise
         """
+        assert self._filter != NULL, "filter used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
-        return self._filter.remove(cpp_item)
+        cdef size_t size_before = self._filter.size()
+        cdef cpp_bool removed = self._filter.remove(cpp_item)
+        # Postcondition: size shrinks by one on success, unchanged otherwise.
+        assert self._filter.size() == size_before - (1 if removed else 0), \
+            "size delta must match remove outcome"
+        return removed
 
     def contains(self, str item) -> bool:
         """Check if item might be in the set"""
+        assert self._filter != NULL, "filter used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
-        return self._filter.contains(cpp_item)
+        cdef cpp_bool present = self._filter.contains(cpp_item)
+        return present
 
     def clear(self):
         """Clear all items from the filter"""
@@ -275,7 +324,19 @@ cdef class CyCountMinSketch:
         @param epsilon: Error rate (smaller = more accurate, more memory)
         @param delta: Confidence (1 - delta is probability of correct estimate)
         """
+        # Caller error: the C++ ctor uses exp(1)/epsilon and log(1/delta) to
+        # size the table; non-positive values produce inf/NaN dimensions.
+        if not (epsilon > 0.0):
+            raise ValueError("epsilon must be positive")
+        if not (0.0 < delta < 1.0):
+            raise ValueError("delta must be in (0.0, 1.0)")
+
         self._sketch = new CountMinSketch(epsilon, delta)
+        # Postconditions: allocation succeeded and both dimensions are non-zero
+        # (hash() takes `% width_`; estimate() iterates `depth_` rows).
+        assert self._sketch != NULL, "CountMinSketch allocation returned NULL"
+        assert self._sketch.width() > 0 and self._sketch.depth() > 0, \
+            "sketch dimensions must be positive"
         self._executor = ThreadPoolExecutor(max_workers=4)
 
     def __dealloc__(self):
@@ -290,13 +351,27 @@ cdef class CyCountMinSketch:
 
     def add(self, str item, unsigned int count=1):
         """Add an item with given count"""
+        assert self._sketch != NULL, "sketch used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
+        cdef unsigned long long total_before = self._sketch.total_count()
         self._sketch.add(cpp_item, count)
+        # Postcondition: the running total advances by exactly `count`.
+        assert self._sketch.total_count() == total_before + count, \
+            "total_count must advance by count"
 
     def estimate(self, str item) -> int:
         """Estimate frequency of an item (always >= actual)"""
+        assert self._sketch != NULL, "sketch used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
-        return self._sketch.estimate(cpp_item)
+        cdef unsigned int est = self._sketch.estimate(cpp_item)
+        # Postcondition: a point estimate can never exceed the total inserted.
+        assert est <= self._sketch.total_count(), \
+            "estimate must not exceed total_count"
+        return est
 
     def clear(self):
         """Clear all counts"""
@@ -324,8 +399,15 @@ cdef class CyCountMinSketch:
 
     def conservative_add(self, str item, unsigned int count=1):
         """Conservative update: only update if new value is larger"""
+        assert self._sketch != NULL, "sketch used after dealloc"
+        if item is None:
+            raise ValueError("item must not be None")
         cdef string cpp_item = item.encode('utf-8')
+        cdef unsigned long long total_before = self._sketch.total_count()
         self._sketch.conservative_add(cpp_item, count)
+        # Postcondition: conservative_add still bumps the global total by count.
+        assert self._sketch.total_count() == total_before + count, \
+            "total_count must advance by count"
 
     # Async operations
     async def add_async(self, str item, unsigned int count=1):
@@ -367,13 +449,23 @@ cdef class CyTopK:
         @param epsilon: Count-Min Sketch error rate
         @param delta: Count-Min Sketch confidence
         """
+        if k <= 0:
+            raise ValueError("k must be positive")
+
         self._sketch = CyCountMinSketch(epsilon, delta)
         self._heap_dict = {}
         self._k = k
         self._executor = ThreadPoolExecutor(max_workers=4)
+        # Postcondition: tracker starts empty and within its declared bound.
+        assert len(self._heap_dict) == 0, "tracker must start empty"
+        assert self._k > 0, "k invariant must hold"
 
     def add(self, str item):
         """Add an item to the stream"""
+        assert self._k > 0, "k invariant must hold"
+        if item is None:
+            raise ValueError("item must not be None")
+
         # Update Count-Min Sketch
         self._sketch.add(item, 1)
 
@@ -383,11 +475,19 @@ cdef class CyTopK:
         # Update heap
         self._heap_dict[item] = freq
 
-        # Keep only top K
-        if len(self._heap_dict) > self._k:
+        # Keep only top K. Inserting one item can push the dict at most one
+        # element over the cap, so a single eviction always restores the bound;
+        # `while` is bounded by that invariant rather than running unboundedly.
+        cdef int evictions = 0
+        while len(self._heap_dict) > self._k:
             # Remove item with minimum frequency
             min_item = min(self._heap_dict, key=self._heap_dict.get)
             del self._heap_dict[min_item]
+            evictions += 1
+            assert evictions <= 1, "at most one eviction per add"
+
+        # Postcondition: never track more than k items.
+        assert len(self._heap_dict) <= self._k, "tracker must stay within k"
 
     def get_top_k(self) -> List[Tuple[str, int]]:
         """Get top K items sorted by frequency (descending)"""

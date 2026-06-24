@@ -29,6 +29,12 @@ from typing import Any, Dict, List, Optional
 from cy_redis.core.cy_redis_client cimport CyRedisClient
 
 
+# Fail-safe ceiling on how many historical stream entries a single rewind /
+# resume request may pull back. Even an unbounded "(since" XRANGE is capped at
+# this many entries so a replay can never fan out without limit.
+DEF _MAX_HISTORY_ENTRIES = 10000
+
+
 # ---------------------------------------------------------------------------
 # Lua routing function loaded on CyChannelManager.start()
 # Routes a message to all matching subscribers in one Redis call.
@@ -85,6 +91,11 @@ cdef class CyChannelConnection:
     """
 
     def __cinit__(self, websocket, str conn_id):
+        # Preconditions: a connection needs a stable id and a live socket.
+        if not conn_id:
+            raise ValueError("conn_id must be a non-empty string")
+        if websocket is None:
+            raise ValueError("websocket is required")
         self.conn_id = conn_id
         self.websocket = websocket
         self._channels = set()
@@ -117,7 +128,10 @@ cdef class CyChannelConnection:
             raise StopAsyncIteration
 
     cpdef set get_channels(self):
-        return set(self._channels)
+        # Postcondition: callers receive an independent copy they may mutate.
+        result = set(self._channels)
+        assert result is not self._channels, "must return a defensive copy"
+        return result
 
     def __repr__(self):
         return f"<CyChannelConnection id={self.conn_id!r} channels={self._channels!r}>"
@@ -147,6 +161,14 @@ cdef class CyChannelManager:
     def __cinit__(self, redis_client,
                   str key_prefix='cy:chan',
                   int stream_maxlen=1000):
+        # Preconditions: routing keys need a prefix and the stream needs a
+        # positive trim length, otherwise XADD MAXLEN would be meaningless.
+        if redis_client is None:
+            raise ValueError("redis_client is required")
+        if not key_prefix:
+            raise ValueError("key_prefix must be a non-empty string")
+        if stream_maxlen <= 0:
+            raise ValueError("stream_maxlen must be positive")
         self._redis = redis_client
         self._key_prefix = key_prefix
         self._stream_maxlen = stream_maxlen
@@ -257,10 +279,15 @@ cdef class CyChannelManager:
             whose ``data`` payload matches **all** pairs are delivered to this
             connection.  Pass ``None`` (default) to receive everything.
         """
+        # Precondition: a connection must join a named channel.
+        if not channel:
+            raise ValueError("channel must be a non-empty string")
+
         await websocket.accept()
 
         if conn_id is None:
             conn_id = str(uuid.uuid4())
+        assert conn_id, "conn_id must be resolved to a non-empty value"
 
         conn = CyChannelConnection(websocket, conn_id)
 
@@ -334,6 +361,10 @@ cdef class CyChannelManager:
         3. Published to the Redis pub/sub channel so all manager instances
            deliver to their local connections.
         """
+        # Precondition: a publish must target a named channel.
+        if not channel:
+            raise ValueError("channel must be a non-empty string")
+
         envelope = {
             'event': 'message',
             'channel': channel,
@@ -342,6 +373,7 @@ cdef class CyChannelManager:
             'data': data,
         }
         raw = json.dumps(envelope)
+        assert raw, "serialised envelope must be non-empty"
         loop = asyncio.get_event_loop()
         stream_key = self._stream_key(channel)
         pubsub_key = self._pubsub_key(channel)
@@ -391,29 +423,46 @@ cdef class CyChannelManager:
             Return only messages with stream ID **strictly after** *since*
             (exclusive, using Redis ``(id`` notation).  Ignores *count*.
         """
+        # Precondition: an explicit count must be a sane positive request.
+        if count is not None and count <= 0:
+            raise ValueError("count must be positive when provided")
+
         loop = asyncio.get_event_loop()
         stream_key = self._stream_key(channel)
 
         def _history_sync():
             if since is not None:
-                # Exclusive range start: "(since" returns entries after *since*
+                # Exclusive range start: "(since" returns entries after *since*.
+                # Cap the reply with COUNT so even a far-back cursor cannot pull
+                # an unbounded number of entries in one shot.
                 result = self._redis.execute_command(
-                    ['XRANGE', stream_key, f'({since}', '+']
+                    ['XRANGE', stream_key, f'({since}', '+',
+                     'COUNT', str(_MAX_HISTORY_ENTRIES)]
                 )
             else:
-                c = count if count is not None else 50
+                requested = count if count is not None else 50
+                # Bound the rewind window to the fail-safe ceiling.
+                bounded_count = min(requested, _MAX_HISTORY_ENTRIES)
+                assert 0 < bounded_count <= _MAX_HISTORY_ENTRIES, \
+                    "history count must stay within the fail-safe ceiling"
                 result = self._redis.execute_command(
-                    ['XREVRANGE', stream_key, '+', '-', 'COUNT', str(c)]
+                    ['XREVRANGE', stream_key, '+', '-', 'COUNT', str(bounded_count)]
                 )
                 if result:
                     result = list(reversed(result))
             return result or []
 
         raw = await loop.run_in_executor(None, _history_sync)
-        return self._parse_stream_entries(raw)
+        messages = self._parse_stream_entries(raw)
+        # Postcondition: never hand back more than the fail-safe ceiling.
+        assert len(messages) <= _MAX_HISTORY_ENTRIES, \
+            "parsed history must respect the fail-safe ceiling"
+        return messages
 
     def _parse_stream_entries(self, raw_entries) -> List[Dict]:
         messages = []
+        # Bounded by the number of stream entries Redis returned, which the
+        # caller (history) already caps at _MAX_HISTORY_ENTRIES via COUNT.
         for entry in raw_entries:
             if not entry or len(entry) < 2:
                 continue
@@ -572,7 +621,12 @@ cdef class CyChannelManager:
 
     async def _replay_history(self, conn: 'CyChannelConnection',
                                str channel, rewind, since):
+        assert conn is not None, "replay target connection must exist"
         entries = await self.history(channel, count=rewind, since=since)
+        # history() caps its result at _MAX_HISTORY_ENTRIES, so this delivery
+        # loop is bounded by that same ceiling.
+        assert len(entries) <= _MAX_HISTORY_ENTRIES, \
+            "replay must not exceed the history ceiling"
         for entry in entries:
             try:
                 await conn.send_json(entry)
@@ -599,8 +653,13 @@ cdef class CyChannelManager:
         pattern = f"{self._key_prefix}:*:events"
         prefix_len = len(self._key_prefix) + 1   # "cy:chan:" chars
         suffix_len = len(":events")
+        # Invariant: the slice bounds below assume both affixes are present.
+        assert prefix_len > 0 and suffix_len > 0, "channel affix lengths"
 
         iterator = RedisPSubIterator(self._redis, pattern, timeout_ms=500)
+        # Exit invariant: the loop runs only while self._running is True; stop()
+        # clears the flag and cancels the task, and the iterator is always
+        # closed in the finally clause so its connection cannot leak.
         try:
             async for msg in iterator:
                 if not self._running:
@@ -658,6 +717,10 @@ cdef class CyChannelManager:
                 if cid in self._connections
             }
 
+        # Bounded by the number of locally-connected matches; can never exceed
+        # the count of live connections on this manager instance.
+        assert len(conn_map) <= len(self._connections), \
+            "delivery set cannot exceed live connection count"
         for conn_id, conn in conn_map.items():
             if exclude and conn_id == sender:
                 continue

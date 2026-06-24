@@ -388,9 +388,12 @@ cdef class CyRedisFunctionsManager:
     cdef object executor
 
     def __cinit__(self, redis_client):
+        assert redis_client is not None, "redis_client must not be None"
         self.redis = redis_client
         self.loaded_libraries = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
+        assert self.executor is not None
+        assert len(self.loaded_libraries) == 0
 
     def __dealloc__(self):
         if self.executor:
@@ -400,10 +403,17 @@ cdef class CyRedisFunctionsManager:
         """
         Load a Redis Functions library
         """
+        # Precondition: arguments are well-formed (programmer error if not).
+        assert library_name is not None, "library_name must not be None"
+        assert version is not None and len(version) > 0, "version must be non-empty"
+
+        # Caller/environment error stays an explicit raise, not an assert.
         if library_name not in FUNCTION_LIBRARIES:
             raise ValueError(f"Unknown library: {library_name}")
 
         lib_info = FUNCTION_LIBRARIES[library_name]
+        # The manifest must describe the functions this library registers.
+        assert 'functions' in lib_info, "library manifest missing 'functions'"
 
         # Check if already loaded with correct version
         try:
@@ -429,7 +439,11 @@ cdef class CyRedisFunctionsManager:
 
     cdef str _get_library_code(self, str library_name):
         """Get the Lua code for a library"""
-        return _LIBRARY_CODE.get(library_name, "")
+        assert library_name is not None, "library_name must not be None"
+        cdef str code = _LIBRARY_CODE.get(library_name, "")
+        # Postcondition: never return None; missing code is the empty string.
+        assert code is not None
+        return code
 
     cpdef dict load_all_libraries(self):
         """Load all available function libraries"""
@@ -448,8 +462,14 @@ cdef class CyRedisFunctionsManager:
 
         Format: FCALL function_name numkeys [key ...] [arg ...]
         """
+        # Precondition: a real function name to dispatch.
+        assert full_function_name is not None, "full_function_name must not be None"
+        assert len(full_function_name) > 0, "full_function_name must be non-empty"
+
         cdef list keys_list = keys if keys is not None else []
         cdef list args_list = args if args is not None else []
+        # FCALL's numkeys argument must match the keys we forward.
+        assert len(keys_list) >= 0
         return self.redis.execute_command(
             ['FCALL', full_function_name, str(len(keys_list))] + keys_list + args_list
         )
@@ -491,10 +511,14 @@ cdef class CyLocks:
     cdef CyRedisFunctionsManager func_mgr
 
     def __init__(self, func_mgr):
+        assert func_mgr is not None, "func_mgr must not be None"
         self.func_mgr = func_mgr
 
     def acquire(self, key: str, owner: str, ttl_ms: int = 30000, fair_queue: str = None):
         """Acquire a distributed reentrant lock. Returns dict with acquired + fencing_token."""
+        assert key is not None and len(key) > 0, "key must be non-empty"
+        assert owner is not None and len(owner) > 0, "owner must be non-empty"
+        assert ttl_ms > 0, "ttl_ms must be positive"
         lock_key = f"cy:lock:{{{key}}}"
         fair_key = f"cy:lockq:{{{key}}}" if fair_queue else ""
         result = self.func_mgr.call_function(
@@ -508,6 +532,8 @@ cdef class CyLocks:
 
     def release(self, key: str, owner: str, fair_queue: str = None):
         """Release a distributed lock."""
+        assert key is not None and len(key) > 0, "key must be non-empty"
+        assert owner is not None and len(owner) > 0, "owner must be non-empty"
         lock_key = f"cy:lock:{{{key}}}"
         fair_key = f"cy:lockq:{{{key}}}" if fair_queue else ""
         result = self.func_mgr.call_function(
@@ -519,6 +545,9 @@ cdef class CyLocks:
 
     def refresh(self, key: str, owner: str, ttl_ms: int = 30000):
         """Extend a held lock's TTL."""
+        assert key is not None and len(key) > 0, "key must be non-empty"
+        assert owner is not None and len(owner) > 0, "owner must be non-empty"
+        assert ttl_ms > 0, "ttl_ms must be positive"
         result = self.func_mgr.call_function(
             "cy_locks_refresh",
             keys=[f"cy:lock:{{{key}}}"],
@@ -532,10 +561,15 @@ cdef class CyRateLimiter:
     cdef CyRedisFunctionsManager func_mgr
 
     def __init__(self, func_mgr):
+        assert func_mgr is not None, "func_mgr must not be None"
         self.func_mgr = func_mgr
 
     def token_bucket(self, key: str, capacity: int, refill_interval_ms: int, cost: int = 1):
         """Token bucket rate limiting. refill_interval_ms = ms between each +1 token refill."""
+        assert key is not None and len(key) > 0, "key must be non-empty"
+        assert capacity > 0, "capacity must be positive"
+        assert refill_interval_ms > 0, "refill_interval_ms must be positive"
+        assert cost > 0, "cost must be positive"
         result = self.func_mgr.call_function(
             "cy_rate_token_bucket",
             keys=[f"cy:rate:{{{key}}}"],
@@ -552,6 +586,9 @@ cdef class CyRateLimiter:
 
     def sliding_window(self, key: str, window_ms: int, max_requests: int):
         """Sliding window rate limiting."""
+        assert key is not None and len(key) > 0, "key must be non-empty"
+        assert window_ms > 0, "window_ms must be positive"
+        assert max_requests > 0, "max_requests must be positive"
         result = self.func_mgr.call_function(
             "cy_rate_sliding_window",
             keys=[f"cy:rate:{{{key}}}"],
@@ -567,6 +604,10 @@ cdef class CyRateLimiter:
 
     def leaky_bucket(self, key: str, rate_per_ms: float, burst: int, cost: int = 1):
         """Leaky bucket rate limiting."""
+        assert key is not None and len(key) > 0, "key must be non-empty"
+        assert rate_per_ms > 0.0, "rate_per_ms must be positive"
+        assert burst > 0, "burst must be positive"
+        assert cost > 0, "cost must be positive"
         result = self.func_mgr.call_function(
             "cy_rate_leaky_bucket",
             keys=[f"cy:rate:{{{key}}}"],
@@ -586,11 +627,18 @@ cdef class CyQueue:
     cdef CyRedisFunctionsManager func_mgr
 
     def __init__(self, func_mgr):
+        assert func_mgr is not None, "func_mgr must not be None"
         self.func_mgr = func_mgr
 
     def enqueue(self, name: str, message_id: str, payload: str,
                 delay_s: int = 0, ttl_ms: int = 0, priority: int = 0):
         """Enqueue a message. Returns 'enqueued', 'delayed', or 'duplicate'."""
+        assert name is not None and len(name) > 0, "queue name must be non-empty"
+        assert message_id is not None, "message_id must not be None"
+        assert payload is not None, "payload must not be None"
+        assert delay_s >= 0, "delay_s must be non-negative"
+        assert ttl_ms >= 0, "ttl_ms must be non-negative"
+        assert priority >= 0, "priority must be non-negative"
         result = self.func_mgr.call_function(
             "cy_queue_enqueue",
             args=[name, message_id, payload, str(delay_s), str(ttl_ms), str(priority)],
@@ -603,6 +651,9 @@ cdef class CyQueue:
 
     def pull(self, name: str, visibility_s: int = 30, max_messages: int = 1):
         """Pull messages from queue with visibility timeout (seconds)."""
+        assert name is not None and len(name) > 0, "queue name must be non-empty"
+        assert visibility_s > 0, "visibility_s must be positive"
+        assert max_messages > 0, "max_messages must be positive"
         result = self.func_mgr.call_function(
             "cy_queue_pull",
             args=[name, str(visibility_s), str(max_messages)],
@@ -611,11 +662,15 @@ cdef class CyQueue:
 
     def ack(self, name: str, message_id: str):
         """Acknowledge successful message processing."""
+        assert name is not None and len(name) > 0, "queue name must be non-empty"
+        assert message_id is not None, "message_id must not be None"
         result = self.func_mgr.call_function("cy_queue_ack", args=[name, message_id])
         return result == 1
 
     def nack(self, name: str, message_id: str, requeue: bool = True):
         """Negative acknowledge — requeue or send to DLQ."""
+        assert name is not None and len(name) > 0, "queue name must be non-empty"
+        assert message_id is not None, "message_id must not be None"
         result = self.func_mgr.call_function(
             "cy_queue_nack",
             args=[name, message_id, "1" if requeue else "0"],
