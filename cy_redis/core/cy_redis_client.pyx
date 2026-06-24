@@ -501,6 +501,16 @@ cdef class CyRedisConnectionPool:
     def get_connections(self):
         return self._connections
 
+    @property
+    def _available_connections(self):
+        """Idle connections currently parked in the pool."""
+        return self._connections
+
+    @property
+    def _in_use_connections(self):
+        """A list whose length reflects how many connections are checked out."""
+        return [None] * self._in_use
+
     def get_max_connections(self):
         return self._max_connections
 
@@ -615,11 +625,19 @@ cdef class CyRedisPipeline:
         self._queue(['GET', key], 0)
         return self
 
+    # Method names whose Redis command differs from the uppercased name.
+    _CMD_ALIASES = {
+        'delete': 'DEL',
+        'incrby': 'INCRBY',
+        'decrby': 'DECRBY',
+    }
+
     def __getattr__(self, name):
-        """Any other command name buffers as an uppercased Redis command."""
+        """Any other command name buffers as a Redis command (uppercased,
+        with a few aliases like delete -> DEL)."""
         if name.startswith('_'):
             raise AttributeError(name)
-        cmd = name.upper()
+        cmd = self._CMD_ALIASES.get(name, name.upper())
         def _buffered(*args):
             full = [cmd]
             full.extend(args)
@@ -2133,9 +2151,10 @@ cdef class CyRedisClient:
 
     # ===== HASH OPERATIONS =====
 
-    def hset(self, key: str, field: str = None, value: str = None,
-             mapping: Dict[str, str] = None) -> int:
-        """Set hash field(s)"""
+    def hset(self, key: str, field=None, value=None,
+             mapping: Dict = None) -> int:
+        """Set hash field(s). Values are coerced to strings, so non-str
+        scalars (ints, floats) are accepted."""
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
@@ -2143,7 +2162,7 @@ cdef class CyRedisClient:
             if mapping:
                 for k, v in mapping.items():
                     args.extend([str(k), str(v)])
-            elif field and value:
+            elif field is not None and value is not None:
                 args.extend([str(field), str(value)])
             return conn.execute_command(args)
         finally:

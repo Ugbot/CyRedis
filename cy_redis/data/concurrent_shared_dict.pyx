@@ -26,8 +26,8 @@ cdef class ConcurrentSharedDict:
     """
 
     cdef object redis_client
-    cdef str dict_name
-    cdef str dict_key
+    cdef readonly str dict_name
+    cdef readonly str dict_key
     cdef str lock_key
     cdef dict local_cache
     cdef double cache_ttl
