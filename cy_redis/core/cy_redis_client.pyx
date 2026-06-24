@@ -514,6 +514,15 @@ cdef class CyRedisConnectionPool:
     def get_max_connections(self):
         return self._max_connections
 
+    def disconnect(self):
+        """Close and drop all idle connections. In-use connections reconnect
+        lazily on next use."""
+        cdef CyRedisConnection conn
+        with self._lock:
+            while self._connections:
+                conn = self._connections.pop()
+                conn._disconnect()
+
     def get_lock(self):
         return self._lock
 
@@ -623,6 +632,15 @@ cdef class CyRedisPipeline:
 
     def get(self, key):
         self._queue(['GET', key], 0)
+        return self
+
+    def xadd(self, stream, fields, id='*'):
+        """Buffer an XADD, expanding the field mapping into field/value pairs."""
+        args = ['XADD', stream, id]
+        for k, v in fields.items():
+            args.append(str(k))
+            args.append(v if isinstance(v, (str, bytes)) else str(v))
+        self._queue(args, 0)
         return self
 
     # Method names whose Redis command differs from the uppercased name.
