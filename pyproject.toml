@@ -26,7 +26,7 @@ keywords = [
     "client",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
@@ -97,10 +97,10 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bengamble/cy-redis"
-Repository = "https://github.com/bengamble/cy-redis"
-Issues = "https://github.com/bengamble/cy-redis/issues"
-Changelog = "https://github.com/bengamble/cy-redis/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Ugbot/CyRedis"
+Repository = "https://github.com/Ugbot/CyRedis"
+Issues = "https://github.com/Ugbot/CyRedis/issues"
+Changelog = "https://github.com/Ugbot/CyRedis/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 zip-safe = false
@@ -422,3 +422,17 @@ package = true
 
 [tool.uv.sources]
 # Vendored libraries are built locally — never resolved from PyPI
+
+# ── cibuildwheel: binary wheels for PyPI ────────────────────────────────────────
+[tool.cibuildwheel]
+# CPython 3.9–3.13; no PyPy (the extensions use CPython C-API + numpy), no 32-bit.
+build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+skip = "*_i686 *-win32 pp*"
+# setup.py builds the vendored hiredis static lib during build_ext, so no extra
+# before-build step is needed. Sanity-check the wheel imports after building.
+test-command = "python -c \"import cy_redis; from cy_redis import CyRedisClient; print('cy-redis', cy_redis.__version__)\""
+
+[tool.cibuildwheel.macos]
+# Match the deployment target the vendored hiredis static lib is built against,
+# so the wheel platform tag isn't artificially narrowed.
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }

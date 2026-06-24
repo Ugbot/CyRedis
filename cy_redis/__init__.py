@@ -14,7 +14,7 @@ This package provides a comprehensive Redis client implementation with:
 
 from typing import Optional, Any
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Only import what's currently built and working
 _core_available: bool
