@@ -227,3 +227,7 @@ hiredis/*.o
 hiredis/libhiredis.a
 hiredis/libhiredis.dylib
 hiredis/libhiredis.so*
+
+# Editor / local tooling artifacts
+.undo-redo-ned.json
+.codex/
