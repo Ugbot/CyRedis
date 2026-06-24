@@ -375,11 +375,16 @@ cdef class CyRedisConnectionPool:
     cpdef CyRedisConnection get_connection(self):
         """Get a connection, blocking up to wait_timeout if pool is exhausted.
 
-        Returns None if pool is exhausted (no connection available within timeout).
-        Raises ConnectionError only if the underlying TCP connect fails.
+        Raises ConnectionError if the pool is exhausted (no connection became
+        available within wait_timeout) or if the underlying TCP connect fails.
+        Always returns a live connection on success — never None — so callers
+        can use the result directly without a None check.
         """
         if not self._semaphore.acquire(timeout=self._wait_timeout):
-            return None
+            raise ConnectionError(
+                f"Connection pool exhausted: no connection available within "
+                f"{self._wait_timeout}s (max_connections={self._max_connections})"
+            )
         with self._lock:
             if self._connections:
                 self._in_use += 1
