@@ -118,13 +118,16 @@ class ConnectionError(RedisError):
 # Cython connection class
 cdef class CyRedisConnection:
 
-    def __cinit__(self, str host="localhost", int port=6379, double timeout=5.0):
+    def __cinit__(self, str host="localhost", int port=6379, double timeout=5.0,
+                  str password=None, int db=0):
         self.ctx = <redisContext *>0
         self._connected = False
         self._host = host
         self._port = port
         self._timeout = timeout
         self._protocol_version = RESP2
+        self._password = password
+        self._db = db
 
     @property
     def connected(self):
@@ -179,7 +182,33 @@ cdef class CyRedisConnection:
             return -1
 
         self._connected = True
+        # Authenticate and select the target database before the connection is
+        # considered usable. A failure here means the socket is up but the
+        # session is unauthorized/misconfigured — tear it down and report -1.
+        if not self._auth_and_select():
+            self._disconnect()
+            return -1
         return 0
+
+    cdef bint _auth_and_select(self) except *:
+        """Send AUTH (if a password is set) and SELECT (if db != 0).
+
+        Returns True on success, False if the server rejected auth/select.
+        Requires a live, connected context (the caller guarantees this).
+        """
+        assert self._connected, "_auth_and_select requires a live connection"
+        assert self.ctx != <redisContext *>0, "_auth_and_select on NULL context"
+        assert 0 <= self._db <= 65535, "db index out of range"
+        try:
+            if self._password:
+                self._execute_raw(['AUTH', self._password])
+            if self._db != 0:
+                self._execute_raw(['SELECT', str(self._db)])
+        except (RedisError, ConnectionError):
+            # Bad password, invalid db index, or the server dropped us mid
+            # handshake — the session is unusable.
+            return False
+        return True
 
     cdef void _disconnect(self):
         """Disconnect from Redis server"""
@@ -372,7 +401,9 @@ cdef class CyRedisConnectionPool:
 
     def __cinit__(self, str host="localhost", int port=6379,
                   int max_connections=10, double timeout=5.0,
-                  double wait_timeout=5.0):
+                  double wait_timeout=5.0, str password=None, int db=0):
+        assert max_connections > 0, "max_connections must be positive"
+        assert 0 <= db <= 65535, "db index out of range"
         self._connections = []
         self._max_connections = max_connections
         self._in_use = 0
@@ -383,6 +414,8 @@ cdef class CyRedisConnectionPool:
         self._host = host
         self._port = port
         self._timeout = timeout
+        self._password = password
+        self._db = db
 
     def get_connections(self):
         return self._connections
@@ -421,7 +454,8 @@ cdef class CyRedisConnectionPool:
                 return self._connections.pop()
 
             # No idle connection — create a new one (semaphore already claimed a slot)
-            conn = CyRedisConnection(self._host, self._port, self._timeout)
+            conn = CyRedisConnection(self._host, self._port, self._timeout,
+                                     self._password, self._db)
             if conn._connect() == 0:
                 self._total_created += 1
                 self._in_use += 1
@@ -533,8 +567,10 @@ cdef class CyRedisPipeline:
 cdef class CyRedisClient:
 
     def __cinit__(self, str host="localhost", int port=6379,
-                  int max_connections=10, int max_workers=4, bint auto_negotiate=True):
-        self._pool = CyRedisConnectionPool(host, port, max_connections)
+                  int max_connections=10, int max_workers=4, bint auto_negotiate=True,
+                  str password=None, int db=0):
+        self._pool = CyRedisConnectionPool(host, port, max_connections,
+                                           password=password, db=db)
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._stream_offsets = {}
         self._offset_lock = threading.Lock()

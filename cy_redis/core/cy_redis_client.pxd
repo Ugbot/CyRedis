@@ -73,8 +73,11 @@ cdef class CyRedisConnection:
     cdef int _port
     cdef double _timeout
     cdef int _protocol_version
+    cdef str _password
+    cdef int _db
 
     cdef int _connect(self)
+    cdef bint _auth_and_select(self) except *
     cdef void _disconnect(self)
     cdef object _execute_raw(self, list args)
     cdef object _ensure_connected_and_run(self, list args)
@@ -93,6 +96,8 @@ cdef class CyRedisConnectionPool:
     cdef str _host
     cdef int _port
     cdef double _timeout
+    cdef str _password
+    cdef int _db
 
     cpdef CyRedisConnection get_connection(self)
     cpdef void return_connection(self, CyRedisConnection conn)
