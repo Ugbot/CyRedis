@@ -25,6 +25,11 @@ cdef class SharedStateManager:
     Provides distributed locks, counters, and shared data structures.
     """
 
+    cdef object redis_client
+    cdef str locks_key
+    cdef str counters_key
+    cdef str data_key
+
     def __cinit__(self, CyRedisClient redis_client):
         self.redis_client = redis_client
         self.locks_key = "shared:locks"

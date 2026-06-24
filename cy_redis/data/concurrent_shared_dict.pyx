@@ -25,6 +25,15 @@ cdef class ConcurrentSharedDict:
     Thread-safe and process-safe dictionary that can be accessed by multiple users.
     """
 
+    cdef object redis_client
+    cdef str dict_name
+    cdef str dict_key
+    cdef str lock_key
+    cdef dict local_cache
+    cdef double cache_ttl
+    cdef double last_sync
+    cdef object lock
+
     def __cinit__(self, str dict_name, redis_client):
         # Preconditions: invalid caller arguments raise, not assert.
         if not dict_name:

@@ -31,6 +31,13 @@ cdef class TokenManager:
     Supports access tokens, refresh tokens, and token revocation.
     """
 
+    cdef object redis_client
+    cdef str secret_key
+    cdef int access_token_expiry
+    cdef int refresh_token_expiry
+    cdef str blacklist_key
+    cdef str refresh_tokens_key
+
     def __cinit__(self, CyRedisClient redis_client, str secret_key=None,
                   int access_token_expiry=900, int refresh_token_expiry=604800):
         # Preconditions: the C signature guarantees the types, but not the

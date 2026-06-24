@@ -24,6 +24,10 @@ cdef class PasswordResetManager:
     Short-lived password tokens for password reset functionality.
     """
 
+    cdef object redis_client
+    cdef int token_expiry
+    cdef str tokens_key
+
     def __cinit__(self, CyRedisClient redis_client, int token_expiry=900):
         # Preconditions for invariants the rest of the class depends on.
         assert redis_client is not None, "redis_client must not be None"

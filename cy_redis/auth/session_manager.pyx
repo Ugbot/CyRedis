@@ -30,6 +30,13 @@ cdef class SessionManager:
     Supports multiple sessions per user with automatic cleanup.
     """
 
+    cdef object redis_client
+    cdef int session_timeout
+    cdef int cleanup_interval
+    cdef double last_cleanup
+    cdef str sessions_key
+    cdef str users_sessions_key
+
     def __cinit__(self, CyRedisClient redis_client, int session_timeout=3600,
                   int cleanup_interval=300):
         # Preconditions: timeouts must be positive durations in seconds.

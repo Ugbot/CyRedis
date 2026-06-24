@@ -26,6 +26,10 @@ cdef class TwoFactorAuth:
     Two-factor authentication support with TOTP and backup codes.
     """
 
+    cdef object redis_client
+    cdef str backup_codes_key
+    cdef str totp_secrets_key
+
     def __cinit__(self, CyRedisClient redis_client):
         assert redis_client is not None, "redis_client must not be None"
         self.redis_client = redis_client
