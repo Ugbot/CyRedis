@@ -96,30 +96,33 @@ def cyredis_client(redis_client):
 
 @pytest.fixture
 def hp_redis_client(redis_available):
-    """Provide a HighPerformanceRedis client for testing."""
-    if not redis_available:
-        pytest.skip("Redis not available")
+    """Provide a CyRedis client for the worker/lock/queue tests.
+
+    Yields a real CyRedisClient so the Cython managers and locks (which are
+    typed against it) accept it directly.
+    """
     if not CYREDIS_AVAILABLE:
         pytest.skip("CyRedis not built")
+    if not redis_available:
+        pytest.skip("Redis not available")
 
-    client = HighPerformanceRedis(
-        host=REDIS_HOST,
-        port=REDIS_PORT,
-        db=REDIS_DB,
-        password=REDIS_PASSWORD
-    )
-
+    client = _make_cyredis_client()
     yield client
-
-    # Cleanup
     try:
-        test_keys = client.keys("test:*")
-        if test_keys:
-            client.delete(*test_keys)
+        client.execute_command(["FLUSHDB"])
     except Exception:
         pass
-    finally:
-        client.close()
+
+
+@pytest.fixture
+def benchmark_config():
+    """Configuration for the performance/benchmark tests."""
+    return {
+        "iterations": int(os.getenv("BENCHMARK_ITERATIONS", "1000")),
+        "concurrency": int(os.getenv("BENCHMARK_CONCURRENCY", "8")),
+        "warmup": int(os.getenv("BENCHMARK_WARMUP", "100")),
+        "value_size": int(os.getenv("BENCHMARK_VALUE_SIZE", "100")),
+    }
 
 
 @pytest.fixture
