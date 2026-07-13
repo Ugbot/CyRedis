@@ -24,7 +24,7 @@ pip install cy-redis
 ```
 
 Binary wheels are published for CPython 3.9–3.14 on Linux (x86_64/aarch64,
-glibc and musl) and macOS (x86_64 on 13.0+, arm64 on 14.0+). On other platforms pip builds from
+glibc and musl) and macOS (arm64 on 14.0+, x86_64 on 15.0+). On other platforms pip builds from
 the sdist, which needs a C/C++ toolchain and `make` (the vendored hiredis
 builds automatically).
 

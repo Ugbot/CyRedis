@@ -51,10 +51,12 @@ jobs:
         include:
           - os: ubuntu-latest      # manylinux + musllinux x86_64
           - os: ubuntu-24.04-arm   # manylinux + musllinux aarch64 (native arm runner)
-          - os: macos-13           # x86_64
+          # macos-13 was retired Dec 2025; macos-15-intel is the last Intel
+          # image (until Aug 2027).
+          - os: macos-15-intel     # x86_64
             # Wheels bundle Homebrew's libssl/libcrypto; their minimum macOS
             # target is the floor for the wheel tag (delocate enforces it).
-            macos-target: "13.0"
+            macos-target: "15.0"
           - os: macos-14           # arm64
             macos-target: "14.0"
     steps:
