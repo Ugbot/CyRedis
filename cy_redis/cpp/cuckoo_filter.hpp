@@ -4,10 +4,13 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <cstddef>
 #include <random>
 #include <stdexcept>
 
 namespace cyredis {
+
+using std::size_t;
 
 /**
  * High-performance Cuckoo Filter implementation

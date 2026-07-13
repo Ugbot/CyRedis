@@ -6,8 +6,11 @@
 #include <cmath>
 #include <functional>
 #include <cstdint>
+#include <cstddef>
 
 namespace cyredis {
+
+using std::size_t;
 
 /**
  * High-performance Bloom Filter implementation

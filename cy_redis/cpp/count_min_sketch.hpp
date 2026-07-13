@@ -6,8 +6,11 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <cstddef>
 
 namespace cyredis {
+
+using std::size_t;
 
 /**
  * High-performance Count-Min Sketch implementation
