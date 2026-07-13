@@ -185,6 +185,9 @@ sources = ["cy_redis/features/probabilistic.pyx"]
 include-dirs = [".", "hiredis", "cy_redis/cpp"]
 extra-objects = ["hiredis/libhiredis.a"]
 language = "c++"
+# The cpp/ headers use constexpr etc.; some toolchains (macOS runners) still
+# default to pre-C++11, so pin the standard explicitly.
+extra-compile-args = ["-std=c++14"]
 
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.features.json_ops"
@@ -210,6 +213,7 @@ sources = ["cy_redis/features/ai.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 language = "c++"
+extra-compile-args = ["-std=c++14"]
 # numpy include dir injected at build time by setup.py cmdclass
 
 # ── cy_redis auth ──────────────────────────────────────────────────────────────
