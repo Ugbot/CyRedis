@@ -6,6 +6,8 @@ High-performance Redis client for Python, built with Cython and the vendored [hi
 
 - **Full Redis command coverage** — strings, lists, sets, sorted sets, hashes, streams, HyperLogLog, bitmaps, pub/sub, scripting, transactions
 - **Sync and async** — every operation has a sync path and an `*_async` coroutine; async path uses `run_in_executor` over the same native pool
+- **TLS** — native via hiredis_ssl/OpenSSL, including mutual TLS and SNI; connection retry with exponential backoff built in
+- **RPC** — Redis-backed request/response with service discovery, heartbeat liveness, and multi-worker servers (`cy_redis.communication.rpc`)
 - **Distributed WebSocket channels** — `CyChannelManager` gives you Redis-backed pub/sub channels with stream rewind, per-subscriber filters, and presence tracking; drops into FastAPI in three lines ([docs/web-channels.md](docs/web-channels.md))
 - **Web layer** — HTTP response cache, JWT tokens, session management, 2FA, password reset ([docs/web.md](docs/web.md))
 - **Redis Streams** — async iterators for `SUBSCRIBE`, `PSUBSCRIBE`, and `XREAD`; ClickHouse bridge for materializing query results into streams ([docs/streams.md](docs/streams.md))
@@ -18,7 +20,29 @@ High-performance Redis client for Python, built with Cython and the vendored [hi
 ## Quick start
 
 ```bash
-# Build and install (requires Cython >= 3.0; vendored hiredis builds automatically)
+pip install cy-redis
+```
+
+Binary wheels are published for CPython 3.9–3.14 on Linux (x86_64/aarch64,
+glibc and musl) and macOS (x86_64/arm64). On other platforms pip builds from
+the sdist, which needs a C/C++ toolchain and `make` (the vendored hiredis
+builds automatically).
+
+Optional feature layers (the core client has no runtime dependencies):
+
+```bash
+pip install "cy-redis[async]"   # uvloop
+pip install "cy-redis[ai]"      # numpy (vector/AI features)
+pip install "cy-redis[auth]"    # PyJWT + pyotp (tokens, 2FA)
+pip install "cy-redis[web]"     # fastapi + PyJWT + pyotp
+pip install "cy-redis[game]"    # msgpack (game engine)
+pip install "cy-redis[all]"     # everything above
+```
+
+Working from a checkout:
+
+```bash
+# Editable install (requires Cython >= 3.0)
 uv pip install -e .
 
 # Or build extensions in-place for development
@@ -28,16 +52,29 @@ uv run python setup.py build_ext --inplace
 uv build
 ```
 
-Optional feature layers (the core client has no runtime dependencies):
+### TLS
 
-```bash
-uv pip install -e ".[async]"   # uvloop
-uv pip install -e ".[ai]"      # numpy (vector/AI features)
-uv pip install -e ".[auth]"    # PyJWT + pyotp (tokens, 2FA)
-uv pip install -e ".[web]"     # fastapi + PyJWT + pyotp
-uv pip install -e ".[game]"    # msgpack (game engine)
-uv pip install -e ".[all]"     # everything above
+TLS rides on the vendored hiredis_ssl + OpenSSL — no Python-level socket
+wrapping. PyPI wheels always ship it; source builds need OpenSSL development
+headers (the build falls back to plain-TCP-only with a warning if they are
+missing).
+
+```python
+from cy_redis import CyRedisClient
+
+client = CyRedisClient(
+    host="redis.example.com", port=6380,
+    use_tls=True,
+    ssl_ca_certs="/path/to/ca.pem",     # omit to use the system trust store
+    ssl_certfile="/path/to/client.crt", # optional: mutual TLS
+    ssl_keyfile="/path/to/client.key",
+    ssl_server_name="redis.example.com",  # optional: SNI override
+)
 ```
+
+Connection establishment also retries transient TCP failures with exponential
+backoff (`connect_retries=2, connect_backoff=0.1` by default); TLS and AUTH
+errors are configuration problems and are never retried.
 
 ```python
 from cy_redis import CyRedisClient

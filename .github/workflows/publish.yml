@@ -22,7 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # hiredis is vendored in-tree; the psqlodbc submodule is only used by
+          # the pgcache server module and never by the sdist/wheel builds.
+          submodules: false
 
       - uses: actions/setup-python@v5
         with:
@@ -54,10 +56,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # hiredis is vendored in-tree; the psqlodbc submodule is only used by
+          # the pgcache server module and never by the sdist/wheel builds.
+          submodules: false
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21
+        uses: pypa/cibuildwheel@v4.1
 
       - uses: actions/upload-artifact@v4
         with:

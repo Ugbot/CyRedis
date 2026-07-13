@@ -1,12 +1,30 @@
 """Communication components for CyRedis.
 
-Redis-backed reliable queues and messaging. (The ``rpc`` and ``messaging_core``
-sources are not currently compiled into the package.)
+Redis-backed reliable queues, messaging, and RPC with service discovery,
+heartbeat liveness, and multi-worker servers.
 """
 
 from cy_redis.communication.messaging import CyReliableQueue, ReliableQueue
+from cy_redis.communication.rpc import (
+    CyRPCClient,
+    CyRPCRequest,
+    CyRPCResponse,
+    CyRPCServer,
+    CyRPCServiceRegistry,
+    RPCError,
+    RPCServiceUnavailable,
+    RPCTimeoutError,
+)
 
 __all__ = [
     "CyReliableQueue",
     "ReliableQueue",
+    "CyRPCClient",
+    "CyRPCRequest",
+    "CyRPCResponse",
+    "CyRPCServer",
+    "CyRPCServiceRegistry",
+    "RPCError",
+    "RPCServiceUnavailable",
+    "RPCTimeoutError",
 ]

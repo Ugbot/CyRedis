@@ -7,11 +7,10 @@ include pyproject.toml
 recursive-include cy_redis *.pyx *.pxd *.pyi *.hpp *.h py.typed
 recursive-include cyredis_game *.py *.pyx *.pxd *.md *.sh
 
-# Vendored hiredis — sources, headers, Makefile, and the prebuilt static
-# archive. setup.py rebuilds libhiredis.a from these if it is absent, so a
-# clean machine can compile the extensions from the sdist alone.
+# Vendored hiredis — sources, headers, and Makefile only. libhiredis.a is
+# deliberately NOT shipped: a static archive is platform-specific, and
+# setup.py rebuilds it from these sources on every fresh sdist install.
 recursive-include hiredis *.c *.h Makefile
-include hiredis/libhiredis.a
 
 # Lua scripts shipped at runtime
 recursive-include lua_scripts *.lua *.md
@@ -29,6 +28,7 @@ global-exclude *.pyc
 global-exclude *.pyo
 global-exclude *.so
 global-exclude *.o
+global-exclude *.a
 global-exclude __pycache__
 global-exclude .DS_Store
 global-exclude .git*

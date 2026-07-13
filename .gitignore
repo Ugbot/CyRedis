@@ -19,8 +19,12 @@ __pycache__/
 # C extensions
 *.so
 
-# Cython generated C files (should be regenerated on build)
+# Cython generated C/C++ files (regenerated from .pyx on every build).
+# cyredis_game/module/*.c are hand-written Redis-module sources and stay
+# tracked — only the top-level cyredis_game/*.c files are Cython output.
 cy_redis/**/*.c
+cy_redis/**/*.cpp
+cyredis_game/*.c
 
 # Distribution / packaging
 .Python

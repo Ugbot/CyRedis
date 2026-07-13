@@ -75,8 +75,20 @@ cdef class CyRedisConnection:
     cdef int _protocol_version
     cdef str _password
     cdef int _db
+    cdef bint _use_tls
+    cdef str _ssl_ca_certs
+    cdef str _ssl_ca_path
+    cdef str _ssl_certfile
+    cdef str _ssl_keyfile
+    cdef str _ssl_server_name
+    cdef object _ssl_context_capsule
+    cdef int _connect_retries
+    cdef double _connect_backoff
 
-    cdef int _connect(self)
+    # `except? -1`: -1 is a legitimate "connect failed" return; only treat it
+    # as an exception when one is actually set (TLS/config errors raise).
+    cdef int _connect(self) except? -1
+    cdef void _initiate_tls(self) except *
     cdef bint _auth_and_select(self) except *
     cdef void _disconnect(self)
     cdef object _execute_raw(self, list args)
@@ -98,6 +110,14 @@ cdef class CyRedisConnectionPool:
     cdef double _timeout
     cdef str _password
     cdef int _db
+    cdef bint _use_tls
+    cdef str _ssl_ca_certs
+    cdef str _ssl_ca_path
+    cdef str _ssl_certfile
+    cdef str _ssl_keyfile
+    cdef str _ssl_server_name
+    cdef int _connect_retries
+    cdef double _connect_backoff
 
     cpdef CyRedisConnection get_connection(self)
     cpdef void return_connection(self, CyRedisConnection conn)

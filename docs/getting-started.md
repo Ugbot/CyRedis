@@ -44,11 +44,25 @@ client = CyRedisClient(
     port=6379,
     password="secret",
     db=0,
-    pool_size=20,
+    max_connections=20,
+)
+
+# TLS (hiredis_ssl/OpenSSL — shipped in every PyPI wheel)
+client = CyRedisClient(
+    host="redis.example.com",
+    port=6380,
+    use_tls=True,
+    ssl_ca_certs="/path/to/ca.pem",      # omit to use the system trust store
+    ssl_certfile="/path/to/client.crt",  # optional: mutual TLS
+    ssl_keyfile="/path/to/client.key",
+    ssl_server_name="redis.example.com", # optional: SNI override
 )
 ```
 
-CyRedisClient manages a thread-safe connection pool internally. You do not need to manage connections manually.
+CyRedisClient manages a thread-safe connection pool internally. You do not
+need to manage connections manually. Transient TCP connect failures retry
+with exponential backoff (`connect_retries=2, connect_backoff=0.1` by
+default); TLS and AUTH failures never retry — they are configuration errors.
 
 ## Sync vs async
 

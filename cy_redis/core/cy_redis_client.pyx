@@ -11,6 +11,7 @@ Proper wrapper around hiredis C library for maximum performance.
 """
 
 import asyncio
+import builtins
 import threading
 import time
 from typing import Dict, List, Optional, Any, Union, Callable, Tuple
@@ -57,6 +58,7 @@ cdef extern from "hiredis.h":
     # can release the GIL across the socket round-trip.
     redisContext *redisConnect(const char *ip, int port)
     redisContext *redisConnectWithTimeout(const char *ip, int port, timeval tv) nogil
+    int redisSetTimeout(redisContext *c, const timeval tv)
     redisContext *redisConnectUnix(const char *path)
     void redisFree(redisContext *c)
     int redisReconnect(redisContext *c)
@@ -108,13 +110,6 @@ DEF REDIS_REPLY_ERROR = 6
 # bounded, loud failure instead of unbounded recursion (TigerStyle: bound
 # everything; no unbounded recursion).
 DEF MAX_REPLY_DEPTH = 128
-
-# Exception classes
-class RedisError(Exception):
-    pass
-
-class ConnectionError(RedisError):
-    pass
 
 
 def _resolve_eval_args(numkeys, rest, keys, args):
@@ -180,11 +175,49 @@ def _pairs_with_scores(reply):
         i += 2
     return result
 
+# TLS support lives in a separate extension (cy_redis.core.tls_support) that
+# links OpenSSL; it is only present when OpenSSL headers existed at build
+# time. Import lazily so plain-TCP use never touches it.
+_tls_support = None
+
+cdef object _get_tls_support():
+    global _tls_support
+    if _tls_support is None:
+        try:
+            from cy_redis.core import tls_support
+        except ImportError as exc:
+            raise RuntimeError(
+                "This cy-redis build has no TLS support (OpenSSL development "
+                "headers were not available when it was compiled). Reinstall "
+                "from a PyPI wheel, or rebuild from source with OpenSSL "
+                "installed."
+            ) from exc
+        _tls_support = tls_support
+    return _tls_support
+
+
+# Cap the exponential reconnect backoff so a long outage never grows the
+# inter-attempt delay beyond something a caller would expect from a client
+# library.
+DEF CONNECT_BACKOFF_CAP = 5.0
+
 # Cython connection class
 cdef class CyRedisConnection:
 
     def __cinit__(self, str host="localhost", int port=6379, double timeout=5.0,
-                  str password=None, int db=0):
+                  str password=None, int db=0, bint use_tls=False,
+                  str ssl_ca_certs=None, str ssl_ca_path=None,
+                  str ssl_certfile=None, str ssl_keyfile=None,
+                  str ssl_server_name=None, int connect_retries=2,
+                  double connect_backoff=0.1):
+        # Client cert and key only work as a pair; catching it here gives a
+        # clear error at construction instead of an OpenSSL one at connect.
+        if (ssl_certfile is None) != (ssl_keyfile is None):
+            raise ValueError("ssl_certfile and ssl_keyfile must be given together")
+        if connect_retries < 0:
+            raise ValueError("connect_retries must be >= 0")
+        if connect_backoff < 0:
+            raise ValueError("connect_backoff must be >= 0")
         self.ctx = <redisContext *>0
         self._connected = False
         self._host = host
@@ -193,6 +226,15 @@ cdef class CyRedisConnection:
         self._protocol_version = RESP2
         self._password = password
         self._db = db
+        self._use_tls = use_tls
+        self._ssl_ca_certs = ssl_ca_certs
+        self._ssl_ca_path = ssl_ca_path
+        self._ssl_certfile = ssl_certfile
+        self._ssl_keyfile = ssl_keyfile
+        self._ssl_server_name = ssl_server_name
+        self._ssl_context_capsule = None
+        self._connect_retries = connect_retries
+        self._connect_backoff = connect_backoff
 
     @property
     def connected(self):
@@ -223,8 +265,15 @@ cdef class CyRedisConnection:
         """Python-accessible disconnect."""
         self._disconnect()
 
-    cdef int _connect(self):
-        """Connect to Redis server. Returns 0 on success, -1 on failure."""
+    cdef int _connect(self) except? -1:
+        """Connect to Redis server. Returns 0 on success, -1 on failure.
+
+        TCP connect failures are retried up to ``connect_retries`` times with
+        exponential backoff. TLS handshake and auth failures are NOT retried:
+        they are configuration errors, and hammering the server won't fix a
+        bad certificate or password. TLS errors raise (they carry a
+        diagnostic worth surfacing); refused/timed-out sockets return -1.
+        """
         # Invariant: host/port were validated at construction; a valid TCP port
         # is 1..65535. Guard the impossible rather than emit a bad connect.
         assert 0 < self._port <= 65535, "port out of range"
@@ -240,19 +289,46 @@ cdef class CyRedisConnection:
         cdef const char* host_cstr = host_bytes
         cdef int port = self._port
         cdef redisContext *ctx
-        # The TCP connect blocks; release the GIL so other threads run. Only C
-        # data (host_cstr backed by host_bytes, port, tv) is touched here.
-        with nogil:
-            ctx = redisConnectWithTimeout(host_cstr, port, tv)
-        self.ctx = ctx
-        if self.ctx == <redisContext *>0 or self.ctx.err:
-            if self.ctx != <redisContext *>0:
-                redisFree(self.ctx)
-                self.ctx = <redisContext *>0
-            self._connected = False
-            return -1
+        cdef int attempt = 0
+        cdef double delay
+        while True:
+            # The TCP connect blocks; release the GIL so other threads run.
+            # Only C data (host_cstr backed by host_bytes, port, tv) is
+            # touched here.
+            with nogil:
+                ctx = redisConnectWithTimeout(host_cstr, port, tv)
+            if ctx != <redisContext *>0 and not ctx.err:
+                break
+            if ctx != <redisContext *>0:
+                redisFree(ctx)
+            if attempt >= self._connect_retries:
+                self._connected = False
+                return -1
+            delay = self._connect_backoff * (2.0 ** attempt)
+            if delay > CONNECT_BACKOFF_CAP:
+                delay = CONNECT_BACKOFF_CAP
+            time.sleep(delay)
+            attempt += 1
 
+        self.ctx = ctx
         self._connected = True
+        # TLS must wrap the socket before any RESP traffic (AUTH would
+        # otherwise send the password in cleartext).
+        cdef timeval tv_off
+        if self._use_tls:
+            # Bound the handshake read: a non-TLS peer never answers the
+            # ClientHello, and OpenSSL's blocking read would hang forever.
+            redisSetTimeout(self.ctx, tv)
+            try:
+                self._initiate_tls()
+            except BaseException:
+                self._disconnect()
+                raise
+            # Handshake done — restore fully blocking reads so long-blocking
+            # commands (BLPOP, pub/sub waits) are not cut off at `timeout`.
+            tv_off.tv_sec = 0
+            tv_off.tv_usec = 0
+            redisSetTimeout(self.ctx, tv_off)
         # Authenticate and select the target database before the connection is
         # considered usable. A failure here means the socket is up but the
         # session is unauthorized/misconfigured — tear it down and report -1.
@@ -260,6 +336,26 @@ cdef class CyRedisConnection:
             self._disconnect()
             return -1
         return 0
+
+    cdef void _initiate_tls(self) except *:
+        """Upgrade the freshly connected context to TLS.
+
+        The redisSSLContext is created once and cached on the connection, so
+        reconnects reuse it instead of re-reading certificate files.
+        """
+        assert self.ctx != <redisContext *>0, "TLS initiation on NULL context"
+        tls = _get_tls_support()
+        # tls_support is dependency-free and raises the builtin
+        # ConnectionError; translate to this module's ConnectionError so
+        # callers see one exception hierarchy for all connection failures.
+        try:
+            if self._ssl_context_capsule is None:
+                self._ssl_context_capsule = tls.create_ssl_context(
+                    self._ssl_ca_certs, self._ssl_ca_path, self._ssl_certfile,
+                    self._ssl_keyfile, self._ssl_server_name)
+            tls.initiate_tls(<size_t>self.ctx, self._ssl_context_capsule)
+        except builtins.ConnectionError as exc:
+            raise ConnectionError(str(exc)) from exc
 
     cdef bint _auth_and_select(self) except *:
         """Send AUTH (if a password is set) and SELECT (if db != 0).
@@ -482,7 +578,11 @@ cdef class CyRedisConnectionPool:
 
     def __cinit__(self, str host="localhost", int port=6379,
                   int max_connections=10, double timeout=5.0,
-                  double wait_timeout=5.0, str password=None, int db=0):
+                  double wait_timeout=5.0, str password=None, int db=0,
+                  bint use_tls=False, str ssl_ca_certs=None,
+                  str ssl_ca_path=None, str ssl_certfile=None,
+                  str ssl_keyfile=None, str ssl_server_name=None,
+                  int connect_retries=2, double connect_backoff=0.1):
         assert max_connections > 0, "max_connections must be positive"
         assert 0 <= db <= 65535, "db index out of range"
         self._connections = []
@@ -497,6 +597,14 @@ cdef class CyRedisConnectionPool:
         self._timeout = timeout
         self._password = password
         self._db = db
+        self._use_tls = use_tls
+        self._ssl_ca_certs = ssl_ca_certs
+        self._ssl_ca_path = ssl_ca_path
+        self._ssl_certfile = ssl_certfile
+        self._ssl_keyfile = ssl_keyfile
+        self._ssl_server_name = ssl_server_name
+        self._connect_retries = connect_retries
+        self._connect_backoff = connect_backoff
 
     def get_connections(self):
         return self._connections
@@ -555,7 +663,12 @@ cdef class CyRedisConnectionPool:
 
             # No idle connection — create a new one (semaphore already claimed a slot)
             conn = CyRedisConnection(self._host, self._port, self._timeout,
-                                     self._password, self._db)
+                                     self._password, self._db, self._use_tls,
+                                     self._ssl_ca_certs, self._ssl_ca_path,
+                                     self._ssl_certfile, self._ssl_keyfile,
+                                     self._ssl_server_name,
+                                     self._connect_retries,
+                                     self._connect_backoff)
             if conn._connect() == 0:
                 self._total_created += 1
                 self._in_use += 1
@@ -803,9 +916,21 @@ cdef class CyRedisClient:
 
     def __cinit__(self, str host="localhost", int port=6379,
                   int max_connections=10, int max_workers=4, bint auto_negotiate=True,
-                  str password=None, int db=0):
+                  str password=None, int db=0, bint use_tls=False,
+                  str ssl_ca_certs=None, str ssl_ca_path=None,
+                  str ssl_certfile=None, str ssl_keyfile=None,
+                  str ssl_server_name=None, int connect_retries=2,
+                  double connect_backoff=0.1):
         self._pool = CyRedisConnectionPool(host, port, max_connections,
-                                           password=password, db=db)
+                                           password=password, db=db,
+                                           use_tls=use_tls,
+                                           ssl_ca_certs=ssl_ca_certs,
+                                           ssl_ca_path=ssl_ca_path,
+                                           ssl_certfile=ssl_certfile,
+                                           ssl_keyfile=ssl_keyfile,
+                                           ssl_server_name=ssl_server_name,
+                                           connect_retries=connect_retries,
+                                           connect_backoff=connect_backoff)
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._stream_offsets = {}
         self._offset_lock = threading.Lock()
@@ -2988,8 +3113,18 @@ class HighPerformanceRedis:
     """
 
     def __init__(self, host: str = "localhost", port: int = 6379,
-                 max_connections: int = 10, max_workers: int = 4, use_uvloop: bool = None):
-        self.client = CyRedisClient(host, port, max_connections, max_workers)
+                 max_connections: int = 10, max_workers: int = 4, use_uvloop: bool = None,
+                 password: str = None, db: int = 0, use_tls: bool = False,
+                 ssl_ca_certs: str = None, ssl_ca_path: str = None,
+                 ssl_certfile: str = None, ssl_keyfile: str = None,
+                 ssl_server_name: str = None):
+        self.client = CyRedisClient(host, port, max_connections, max_workers,
+                                    password=password, db=db, use_tls=use_tls,
+                                    ssl_ca_certs=ssl_ca_certs,
+                                    ssl_ca_path=ssl_ca_path,
+                                    ssl_certfile=ssl_certfile,
+                                    ssl_keyfile=ssl_keyfile,
+                                    ssl_server_name=ssl_server_name)
 
         # uvloop configuration
         if use_uvloop is None:

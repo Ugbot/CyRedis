@@ -6,7 +6,8 @@ This package provides a comprehensive Redis client implementation with:
 - Connection pooling and protocol handling
 - Asynchronous operations
 - Distributed locks and coordination
-- Messaging and RPC capabilities
+- Reliable queues, messaging, and RPC with service discovery
+- Native TLS (hiredis_ssl/OpenSSL) with connection retry/backoff
 - Advanced data structures
 - Web application support with authentication and sessions
 - Worker coordination and lifecycle management

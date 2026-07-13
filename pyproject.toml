@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "Cython>=3.0,<4", "numpy>=1.21"]
+# setuptools >= 77 is required for the PEP 639 `license = "MIT"` string form.
+requires = ["setuptools>=77", "Cython>=3.0,<4", "numpy>=1.21"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -36,6 +37,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Cython",
     "Topic :: Database",
@@ -139,6 +141,16 @@ name = "cy_redis.core.async_core"
 sources = ["cy_redis/core/async_core.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
+
+# TLS support: links hiredis_ssl + OpenSSL. setup.py drops this extension when
+# OpenSSL development headers are missing at build time (plain-TCP installs
+# still work); it also injects the OpenSSL include/lib dirs on macOS.
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.tls_support"
+sources = ["cy_redis/core/tls_support.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis_ssl.a", "hiredis/libhiredis.a"]
+libraries = ["ssl", "crypto"]
 
 # ── cy_redis features ──────────────────────────────────────────────────────────
 
@@ -308,6 +320,12 @@ sources = ["cy_redis/communication/messaging.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.communication.rpc"
+sources = ["cy_redis/communication/rpc.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
 # ── cyredis_game ───────────────────────────────────────────────────────────────
 
 [[tool.setuptools.ext-modules]]
@@ -425,14 +443,26 @@ package = true
 
 # ── cibuildwheel: binary wheels for PyPI ────────────────────────────────────────
 [tool.cibuildwheel]
-# CPython 3.9–3.13; no PyPy (the extensions use CPython C-API + numpy), no 32-bit.
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+# CPython 3.9–3.14; no PyPy (the extensions use CPython C-API + numpy), no 32-bit.
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*_i686 *-win32 pp*"
 # setup.py builds the vendored hiredis static lib during build_ext, so no extra
-# before-build step is needed. Sanity-check the wheel imports after building.
-test-command = "python -c \"import cy_redis; from cy_redis import CyRedisClient; print('cy-redis', cy_redis.__version__)\""
+# before-build step is needed. Import the compiled extension modules directly —
+# cy_redis/__init__.py swallows ImportError, so `from cy_redis import
+# CyRedisClient` would pass even on a wheel whose extensions are broken. Every
+# published wheel must ship working TLS, so the check also creates a real TLS
+# context via tls_support.
+test-command = "python -c \"import cy_redis.core.cy_redis_client; import cy_redis; assert cy_redis.CyRedisClient is not None; import cy_redis.core.tls_support as t; t.create_ssl_context(); print('cy-redis', cy_redis.__version__, 'with TLS')\""
+
+[tool.cibuildwheel.linux]
+# OpenSSL headers for hiredis_ssl/tls_support: dnf on manylinux (AlmaLinux),
+# apk on musllinux (Alpine).
+before-all = "yum install -y openssl-devel || apk add --no-cache openssl-dev"
 
 [tool.cibuildwheel.macos]
 # Match the deployment target the vendored hiredis static lib is built against,
-# so the wheel platform tag isn't artificially narrowed.
+# so the wheel platform tag isn't artificially narrowed. GitHub macOS runners
+# ship Homebrew OpenSSL; hiredis's Makefile and setup.py both search the
+# Homebrew locations.
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
+before-all = "brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3"
