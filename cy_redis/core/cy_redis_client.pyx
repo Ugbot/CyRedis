@@ -387,6 +387,29 @@ cdef class CyRedisConnection:
             self.ctx = <redisContext *>0
         self._connected = False
 
+    def shutdown_socket(self):
+        """Shut down the underlying socket without freeing the context.
+
+        Wakes any thread blocked in read_reply() with an error, which is the
+        only safe way to interrupt a blocking read from another thread —
+        hiredis contexts are not thread-safe, so the blocked reader must be
+        the one to stop using the connection before disconnect() frees it.
+        """
+        import socket as _socket
+        if self.ctx == <redisContext *>0 or self.ctx.fd < 0:
+            return
+        try:
+            # fromfd dups the descriptor; shutdown() acts on the underlying
+            # socket, so it reaches the blocked reader. Closing the dup does
+            # not close the original descriptor.
+            s = _socket.fromfd(self.ctx.fd, _socket.AF_INET, _socket.SOCK_STREAM)
+            try:
+                s.shutdown(_socket.SHUT_RDWR)
+            finally:
+                s.close()
+        except OSError:
+            pass  # already closed/reset — the reader is unblocked either way
+
     cdef object _parse_reply(self, redisReply *reply, int depth=0):
         """Parse a redisReply (RESP2 and RESP3 types) into a Python object.
 
@@ -1243,32 +1266,32 @@ cdef class CyRedisClient:
     # Async operations
     async def set_async(self, key: str, value: str) -> bool:
         """Async set operation"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.set, key, value)
 
     async def get_async(self, key: str) -> Optional[str]:
         """Async get operation"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.get, key)
 
-    async def delete_async(self, key: str) -> int:
-        """Async delete operation"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self.executor, self.delete, key)
+    async def delete_async(self, *keys) -> int:
+        """Async delete operation (variadic, matching sync delete)."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self.executor, self.delete, *keys)
 
     async def xadd_async(self, stream: str, data: Dict[str, Any], message_id: str = "*") -> str:
         """Async stream add"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xadd, stream, data, message_id)
 
     async def xread_async(self, streams: Dict[str, str], count: int = 10, block: int = 1000) -> List[tuple]:
         """Async stream read"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xread, streams, count, block)
 
     async def execute_async(self, command: str, *args):
         """Generic async execution used by higher-level wrappers"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         func = getattr(self, command, None)
         if func is None or not callable(func):
             raise AttributeError(f"Unsupported command: {command}")
@@ -1349,13 +1372,13 @@ cdef class CyRedisClient:
     async def eval_async(self, script: str, keys: Optional[List[str]] = None,
                         args: Optional[List[str]] = None) -> Any:
         """Async Lua script execution"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.eval, script, keys, args)
 
     async def evalsha_async(self, sha: str, keys: Optional[List[str]] = None,
                            args: Optional[List[str]] = None) -> Any:
         """Async Lua script execution by SHA"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.evalsha, sha, keys, args)
 
     # ===== SET OPERATIONS =====
@@ -1516,42 +1539,42 @@ cdef class CyRedisClient:
     # Async Set operations
     async def sadd_async(self, key: str, *members) -> int:
         """Async add members to set"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.sadd, key, *members)
 
     async def srem_async(self, key: str, *members) -> int:
         """Async remove members from set"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.srem, key, *members)
 
     async def smembers_async(self, key: str) -> set:
         """Async get all set members"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.smembers, key)
 
     async def sismember_async(self, key: str, member: str) -> bool:
         """Async check set membership"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.sismember, key, member)
 
     async def scard_async(self, key: str) -> int:
         """Async get set cardinality"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.scard, key)
 
     async def sinter_async(self, *keys) -> set:
         """Async set intersection"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.sinter, *keys)
 
     async def sunion_async(self, *keys) -> set:
         """Async set union"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.sunion, *keys)
 
     async def sdiff_async(self, *keys) -> set:
         """Async set difference"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.sdiff, *keys)
 
     # ===== SORTED SET OPERATIONS =====
@@ -1830,7 +1853,7 @@ cdef class CyRedisClient:
                         xx: bool = False, gt: bool = False, lt: bool = False,
                         ch: bool = False, incr: bool = False) -> int:
         """Async add members to sorted set"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.zadd, key, mapping,
                                          nx, xx, gt, lt, ch, incr)
 
@@ -1838,7 +1861,7 @@ cdef class CyRedisClient:
                           byscore: bool = False, bylex: bool = False, rev: bool = False,
                           offset: int = None, count: int = None) -> List[Any]:
         """Async get range from sorted set"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.zrange, key, start, stop,
                                          withscores, byscore, bylex, rev, offset, count)
 
@@ -1846,23 +1869,23 @@ cdef class CyRedisClient:
                                  max_score: Union[str, float], withscores: bool = False,
                                  offset: int = None, count: int = None) -> List[Any]:
         """Async get members by score range"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.zrangebyscore, key,
                                          min_score, max_score, withscores, offset, count)
 
     async def zcard_async(self, key: str) -> int:
         """Async get sorted set cardinality"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.zcard, key)
 
     async def zscore_async(self, key: str, member: str) -> Optional[float]:
         """Async get member score"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.zscore, key, member)
 
     async def zrank_async(self, key: str, member: str) -> Optional[int]:
         """Async get member rank"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.zrank, key, member)
 
     # ===== HYPERLOGLOG OPERATIONS =====
@@ -1903,17 +1926,17 @@ cdef class CyRedisClient:
     # Async HyperLogLog operations
     async def pfadd_async(self, key: str, *elements) -> int:
         """Async add elements to HyperLogLog"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.pfadd, key, *elements)
 
     async def pfcount_async(self, *keys) -> int:
         """Async count unique elements"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.pfcount, *keys)
 
     async def pfmerge_async(self, dest: str, *sources) -> str:
         """Async merge HyperLogLogs"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.pfmerge, dest, *sources)
 
     # ===== BITMAP OPERATIONS =====
@@ -2012,34 +2035,34 @@ cdef class CyRedisClient:
     # Async Bitmap operations
     async def setbit_async(self, key: str, offset: int, value: int) -> int:
         """Async set bit at offset"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.setbit, key, offset, value)
 
     async def getbit_async(self, key: str, offset: int) -> int:
         """Async get bit value"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.getbit, key, offset)
 
     async def bitcount_async(self, key: str, start: int = None, end: int = None,
                             bit: bool = False) -> int:
         """Async count set bits"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.bitcount, key, start, end, bit)
 
     async def bitpos_async(self, key: str, bit: int, start: int = None, end: int = None,
                           byte: bool = True) -> int:
         """Async find first bit"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.bitpos, key, bit, start, end, byte)
 
     async def bitop_async(self, operation: str, destkey: str, *srckeys) -> int:
         """Async perform bitwise operations"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.bitop, operation, destkey, *srckeys)
 
     async def bitfield_async(self, key: str, operations: List[Dict[str, Any]]) -> List[int]:
         """Async perform bitfield operations"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.bitfield, key, operations)
 
     # ===== ENHANCED STREAM OPERATIONS =====
@@ -2284,33 +2307,33 @@ cdef class CyRedisClient:
     async def xreadgroup_async(self, group: str, consumer: str, streams: Dict[str, str],
                               count: int = None, block: int = None, noack: bool = False) -> List[Any]:
         """Async read from consumer group"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xreadgroup, group, consumer,
                                          streams, count, block, noack)
 
     async def xack_async(self, stream: str, group: str, *ids) -> int:
         """Async acknowledge messages"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xack, stream, group, *ids)
 
     async def xclaim_async(self, stream: str, group: str, consumer: str, min_idle_time: int,
                           ids: List[str], idle: int = None, time: int = None,
                           retrycount: int = None, force: bool = False, justid: bool = False) -> List[Any]:
         """Async claim pending messages"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xclaim, stream, group, consumer,
                                          min_idle_time, ids, idle, time, retrycount, force, justid)
 
     async def xpending_async(self, stream: str, group: str, start: str = None, end: str = None,
                             count: int = None, consumer: str = None) -> Any:
         """Async check pending messages"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xpending, stream, group,
                                          start, end, count, consumer)
 
     async def xlen_async(self, stream: str) -> int:
         """Async get stream length"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.xlen, stream)
 
     # ===== HASH OPERATIONS =====
@@ -2592,43 +2615,43 @@ cdef class CyRedisClient:
     async def hset_async(self, key: str, field: str = None, value: str = None,
                         mapping: Dict[str, str] = None) -> int:
         """Async set hash field(s)"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.hset, key, field, value, mapping)
 
     async def hget_async(self, key: str, field: str) -> Optional[str]:
         """Async get hash field"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.hget, key, field)
 
     async def hgetall_async(self, key: str) -> Dict[str, str]:
         """Async get all hash fields"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.hgetall, key)
 
     # Async List operations
     async def lpush_async(self, key: str, *values) -> int:
         """Async push to list head"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.lpush, key, *values)
 
     async def rpush_async(self, key: str, *values) -> int:
         """Async push to list tail"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.rpush, key, *values)
 
     async def lpop_async(self, key: str, count: int = None) -> Union[str, List[str], None]:
         """Async pop from list head"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.lpop, key, count)
 
     async def rpop_async(self, key: str, count: int = None) -> Union[str, List[str], None]:
         """Async pop from list tail"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.rpop, key, count)
 
     async def lrange_async(self, key: str, start: int, stop: int) -> List[str]:
         """Async get list range"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.lrange, key, start, stop)
 
     # ===== TRANSACTION SUPPORT =====
@@ -2683,17 +2706,17 @@ cdef class CyRedisClient:
     # Async Transaction operations
     async def multi_async(self) -> str:
         """Async start transaction"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.multi)
 
     async def exec_async(self) -> List[Any]:
         """Async execute transaction"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.exec_)
 
     async def watch_async(self, *keys) -> str:
         """Async watch keys"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.watch, *keys)
 
     # Protocol negotiation and management

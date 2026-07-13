@@ -533,15 +533,15 @@ cdef class CyAdvancedRedisClient:
     # Async versions
     async def get_async(self, str key):
         """Async get with full optimizations."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.get, key)
 
     async def set_async(self, str key, str value):
         """Async set with full optimizations."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.set, key, value)
 
     async def mget_async(self, list keys):
         """Async bulk get."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.mget, keys)

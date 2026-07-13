@@ -176,19 +176,19 @@ cdef class CyDistributedLock:
     async def try_acquire_async(self, blocking: bool = True, timeout: float = -1.0):
         """Async lock acquisition"""
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.try_acquire, blocking, timeout)
 
     async def release_async(self):
         """Async lock release"""
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.release)
 
     async def extend_async(self, ttl_ms: int = -1):
         """Async lock extension"""
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.extend, ttl_ms)
 
 

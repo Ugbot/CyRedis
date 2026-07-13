@@ -113,7 +113,9 @@ cdef class CyChannelConnection:
         async with self._send_lock:
             await self.websocket.send_text(json.dumps(data))
 
-    async def __aiter__(self):
+    def __aiter__(self):
+        # `async for` calls __aiter__ synchronously; it must be a plain
+        # method returning the iterator, not a coroutine.
         return self
 
     async def __anext__(self):
@@ -211,7 +213,7 @@ cdef class CyChannelManager:
             return
         self._running = True
         await self._ensure_routing_loaded()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         self._psub_task = loop.create_task(self._psubscribe_listener())
 
     async def stop(self):
@@ -236,7 +238,7 @@ cdef class CyChannelManager:
     async def _ensure_routing_loaded(self):
         if self._routing_loaded:
             return
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _load():
             try:
@@ -339,7 +341,7 @@ cdef class CyChannelManager:
             ``dict`` of field→value pairs, or ``None`` / ``{}`` to remove the
             filter and receive all messages.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         routes_key = self._routes_key(channel)
         raw_filter = json.dumps(filter_expr) if filter_expr else ''
         await loop.run_in_executor(
@@ -373,7 +375,7 @@ cdef class CyChannelManager:
         }
         raw = json.dumps(envelope)
         assert raw, "serialised envelope must be non-empty"
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         stream_key = self._stream_key(channel)
         pubsub_key = self._pubsub_key(channel)
         maxlen = self._stream_maxlen
@@ -426,7 +428,7 @@ cdef class CyChannelManager:
         if count is not None and count <= 0:
             raise ValueError("count must be positive when provided")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         stream_key = self._stream_key(channel)
 
         def _history_sync():
@@ -490,7 +492,7 @@ cdef class CyChannelManager:
 
     async def get_members(self, str channel) -> List[str]:
         """Return all conn_ids subscribed to *channel* (cross-server view)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             result = await loop.run_in_executor(
                 None,
@@ -506,7 +508,7 @@ cdef class CyChannelManager:
 
     async def channel_count(self, str channel) -> int:
         """Return the number of subscribers on *channel* (cross-server)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             n = await loop.run_in_executor(
                 None,
@@ -534,7 +536,7 @@ cdef class CyChannelManager:
         (conn_id, channel) pair.  Call after successfully delivering a message
         to enable lossless reconnect via ``connect(since=cursor)``.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         key = self._sub_cursor_key(conn_id, channel)
         await loop.run_in_executor(
             None,
@@ -542,7 +544,7 @@ cdef class CyChannelManager:
         )
 
     async def _load_cursor(self, str conn_id, str channel) -> Optional[str]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         key = self._sub_cursor_key(conn_id, channel)
         try:
             val = await loop.run_in_executor(
@@ -569,7 +571,7 @@ cdef class CyChannelManager:
                 conn._channels.add(channel)
 
         # Persist presence and routing filter in Redis
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         presence_key = self._presence_key(channel)
         routes_key = self._routes_key(channel)
         raw_filter = json.dumps(filter_expr) if filter_expr else ''
@@ -595,7 +597,7 @@ cdef class CyChannelManager:
         await self._remove_route(conn_id, channel)
 
     async def _remove_presence(self, str conn_id, str channel):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(
                 None,
@@ -607,7 +609,7 @@ cdef class CyChannelManager:
             pass
 
     async def _remove_route(self, str conn_id, str channel):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(
                 None,
@@ -742,7 +744,7 @@ cdef class CyChannelManager:
         if not self._routing_loaded:
             return None
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         routes_key = self._routes_key(channel)
 
         def _call():

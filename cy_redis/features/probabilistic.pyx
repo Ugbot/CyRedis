@@ -167,12 +167,12 @@ cdef class CyBloomFilter:
     # Async operations
     async def add_async(self, str item):
         """Async add item"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(self.executor, self.add, item)
 
     async def contains_async(self, str item) -> bool:
         """Async check membership"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.contains, item)
 
 
@@ -288,17 +288,17 @@ cdef class CyCuckooFilter:
     # Async operations
     async def add_async(self, str item) -> bool:
         """Async add item"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.add, item)
 
     async def remove_async(self, str item) -> bool:
         """Async remove item"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.remove, item)
 
     async def contains_async(self, str item) -> bool:
         """Async check membership"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.contains, item)
 
 
@@ -414,12 +414,12 @@ cdef class CyCountMinSketch:
     # Async operations
     async def add_async(self, str item, unsigned int count=1):
         """Async add item"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(self.executor, self.add, item, count)
 
     async def estimate_async(self, str item) -> int:
         """Async estimate frequency"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.estimate, item)
 
 
@@ -513,10 +513,10 @@ cdef class CyTopK:
     # Async operations
     async def add_async(self, str item):
         """Async add item"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self.add, item)
 
     async def get_top_k_async(self) -> List[Tuple[str, int]]:
         """Async get top K items"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self.get_top_k)

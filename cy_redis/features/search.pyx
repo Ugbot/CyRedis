@@ -529,15 +529,15 @@ cdef class CyRedisSearch:
 
     async def ft_search_async(self, index: str, query: str, **kwargs) -> Dict[str, Any]:
         """Async full-text search"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.ft_search, index, query, **kwargs)
 
     async def ft_aggregate_async(self, index: str, query: str, **kwargs) -> List[Dict]:
         """Async aggregation"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.ft_aggregate, index, query, **kwargs)
 
     async def ft_sugget_async(self, key: str, prefix: str, **kwargs) -> List[Union[str, Tuple]]:
         """Async get suggestions"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.ft_sugget, key, prefix, **kwargs)

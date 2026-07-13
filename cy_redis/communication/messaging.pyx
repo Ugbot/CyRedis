@@ -269,22 +269,22 @@ cdef class CyReliableQueue:
     # Async versions
     async def push_async(self, message, int priority=0, int delay=0):
         """Async push message"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.push, message, priority, delay)
 
     async def pop_async(self, int count=1):
         """Async pop messages"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.pop, count)
 
     async def ack_async(self, str message_id):
         """Async acknowledge"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.ack, message_id)
 
     async def nack_async(self, str message_id, bint retry=True):
         """Async negative acknowledge"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.nack, message_id, retry)
 
 

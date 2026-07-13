@@ -533,25 +533,25 @@ cdef class CyRedisAI:
     async def modelexecute_async(self, key: str, inputs: List[str], outputs: List[str],
                                 timeout: int = None) -> str:
         """Async model execution"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.modelexecute,
                                          key, inputs, outputs, timeout)
 
     async def tensorset_async(self, key: str, dtype: str, shape: List[int],
                              values: Union[cnp.ndarray, List] = None, blob: bytes = None) -> str:
         """Async tensor set"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.tensorset,
                                          key, dtype, shape, values, blob)
 
     async def tensorget_async(self, key: str, meta: bool = False, blob: bool = True) -> Dict[str, Any]:
         """Async tensor get"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.tensorget, key, meta, blob)
 
     async def dagexecute_async(self, commands: List[List[str]], load: List[str] = None,
                               persist: List[str] = None, timeout: int = None) -> List[Any]:
         """Async DAG execution"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.dagexecute,
                                          commands, load, persist, timeout)

@@ -419,37 +419,37 @@ cdef class CyRedisJSON:
     async def json_set_async(self, key: str, path: str, value: Any, nx: bool = False,
                             xx: bool = False) -> Optional[str]:
         """Async set JSON value"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_set, key, path, value, nx, xx)
 
     async def json_get_async(self, key: str, *paths, indent: str = None, newline: str = None,
                             space: str = None, noescape: bool = False) -> Optional[Any]:
         """Async get JSON value"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_get, key, *paths,
                                          indent, newline, space, noescape)
 
     async def json_mget_async(self, keys: List[str], path: str = '$') -> List[Optional[Any]]:
         """Async get multiple JSON values"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_mget, keys, path)
 
     async def json_del_async(self, key: str, path: str = '$') -> int:
         """Async delete JSON value"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_del, key, path)
 
     async def json_numincrby_async(self, key: str, path: str, value: Union[int, float]) -> Optional[float]:
         """Async increment numeric value"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_numincrby, key, path, value)
 
     async def json_arrappend_async(self, key: str, path: str, *values) -> Optional[int]:
         """Async append to JSON array"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_arrappend, key, path, *values)
 
     async def json_objkeys_async(self, key: str, path: str = '$') -> Optional[List[str]]:
         """Async get JSON object keys"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.json_objkeys, key, path)

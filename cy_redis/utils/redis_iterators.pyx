@@ -25,6 +25,16 @@ cdef class RedisStreamIterator:
     Allows iteration over stream messages for real-time streaming.
     """
 
+    cdef:
+        CyRedisClient redis_client
+        str stream_key
+        str consumer_group
+        str consumer_name
+        int batch_size
+        int block_ms
+        str last_id
+        bint is_closed
+
     def __cinit__(self, CyRedisClient redis_client, str stream_key,
                   str consumer_group=None, str consumer_name=None,
                   int batch_size=10, int block_ms=1000):
@@ -47,8 +57,8 @@ cdef class RedisStreamIterator:
         self.last_id = "0"  # Start from beginning
         self.is_closed = False
 
-    async def __aiter__(self):
-        """Async iterator protocol."""
+    def __aiter__(self):
+        """Async iterator protocol (must be a plain method returning self)."""
         return self
 
     async def __anext__(self):
@@ -171,7 +181,7 @@ cdef class RedisStreamIterator:
 
     async def _execute_xread(self):
         """Execute XREAD command."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _xread_sync():
             return self.redis_client.xread(
@@ -184,7 +194,7 @@ cdef class RedisStreamIterator:
 
     async def _execute_xreadgroup(self):
         """Execute XREADGROUP command."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _xreadgroup_sync():
             # Create consumer group if it doesn't exist
@@ -227,6 +237,14 @@ cdef class RedisListIterator:
     Allows iteration over list items for real-time streaming.
     """
 
+    cdef:
+        CyRedisClient redis_client
+        str list_key
+        int batch_size
+        int block_ms
+        long last_index
+        bint is_closed
+
     def __cinit__(self, CyRedisClient redis_client, str list_key,
                   int batch_size=10, int block_ms=1000):
         if redis_client is None:
@@ -245,8 +263,8 @@ cdef class RedisListIterator:
         self.is_closed = False
         self.last_index = 0
 
-    async def __aiter__(self):
-        """Async iterator protocol."""
+    def __aiter__(self):
+        """Async iterator protocol (must be a plain method returning self)."""
         return self
 
     async def __anext__(self):
@@ -271,7 +289,7 @@ cdef class RedisListIterator:
 
     async def _read_from_list(self):
         """Read items from list."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _list_read_sync():
             # Get list length
@@ -324,6 +342,15 @@ cdef class RedisPSubIterator:
     manager) to release the underlying connection.
     """
 
+    cdef:
+        CyRedisClient redis_client
+        str pattern
+        int timeout_ms
+        bint is_closed
+        object pubsub
+        object _msg_queue
+        object _reader_thread
+
     def __cinit__(self, CyRedisClient redis_client, str pattern,
                   int timeout_ms=1000):
         if redis_client is None:
@@ -339,7 +366,9 @@ cdef class RedisPSubIterator:
         self.is_closed = False
         self.pubsub = None
 
-    async def __aiter__(self):
+    def __aiter__(self):
+        # `async for` calls __aiter__ synchronously; it must be a plain
+        # method returning the iterator, not a coroutine.
         return self
 
     async def __anext__(self):
@@ -412,9 +441,10 @@ cdef class RedisPSubIterator:
 
         t = threading.Thread(target=_reader, daemon=True)
         t.start()
+        self._reader_thread = t
 
     async def _get_next_message(self):
-        if not hasattr(self, '_msg_queue'):
+        if self._msg_queue is None:
             return None
         # Invariant: the wait is bounded by a strictly positive timeout.
         assert self.timeout_ms > 0, "timeout_ms must be positive"
@@ -426,14 +456,24 @@ cdef class RedisPSubIterator:
             return None
 
     def close(self):
+        """Close the iterator and release the dedicated connection.
+
+        The reader thread owns the connection while it runs; sending anything
+        on it from here would race the blocked read. Shut the socket down to
+        wake the reader, wait for it to exit, then free the connection — the
+        server discards the subscription state on disconnect.
+        """
         self.is_closed = True
         if self.pubsub is not None:
             try:
-                self.pubsub.execute_command(['PUNSUBSCRIBE', self.pattern])
+                self.pubsub.shutdown_socket()
+                if self._reader_thread is not None:
+                    self._reader_thread.join(timeout=2.0)
                 self.pubsub.disconnect()
             except Exception:
                 pass
             self.pubsub = None
+            self._reader_thread = None
 
     async def __aenter__(self):
         return self
@@ -447,6 +487,15 @@ cdef class RedisPubSubIterator:
     Async iterator for Redis pub/sub.
     Allows iteration over pub/sub messages for real-time streaming.
     """
+
+    cdef:
+        CyRedisClient redis_client
+        list channels
+        int timeout_ms
+        bint is_closed
+        object pubsub
+        object _msg_queue
+        object _reader_thread
 
     def __cinit__(self, CyRedisClient redis_client, list channels,
                   int timeout_ms=1000):
@@ -466,8 +515,8 @@ cdef class RedisPubSubIterator:
         assert isinstance(self.channels, list), "channels normalized to a list"
         assert len(self.channels) > 0, "must subscribe to at least one channel"
 
-    async def __aiter__(self):
-        """Async iterator protocol."""
+    def __aiter__(self):
+        """Async iterator protocol (must be a plain method returning self)."""
         return self
 
     async def __anext__(self):
@@ -537,10 +586,11 @@ cdef class RedisPubSubIterator:
 
         t = threading.Thread(target=_reader, daemon=True)
         t.start()
+        self._reader_thread = t
 
     async def _get_next_message(self):
         """Wait for the next message from the reader thread."""
-        if not hasattr(self, '_msg_queue'):
+        if self._msg_queue is None:
             return None
         # Invariant: the wait is bounded by a strictly positive timeout.
         assert self.timeout_ms > 0, "timeout_ms must be positive"
@@ -551,16 +601,22 @@ cdef class RedisPubSubIterator:
             return None
 
     def close(self):
-        """Close the iterator and unsubscribe."""
+        """Close the iterator and release the dedicated connection.
+
+        See RedisPSubIterator.close(): the reader thread owns the connection,
+        so wake it with a socket shutdown, join, then disconnect.
+        """
         self.is_closed = True
         if self.pubsub is not None:
             try:
-                for channel in self.channels:
-                    self.pubsub.execute_command(['UNSUBSCRIBE', channel])
+                self.pubsub.shutdown_socket()
+                if self._reader_thread is not None:
+                    self._reader_thread.join(timeout=2.0)
                 self.pubsub.disconnect()
             except Exception:
                 pass
             self.pubsub = None
+            self._reader_thread = None
 
     async def __aenter__(self):
         """Async context manager entry."""

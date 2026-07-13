@@ -145,7 +145,7 @@ class AsyncRedisClient:
             if _HAS_UVLOOP:
                 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
                 asyncio.set_event_loop(uvloop.new_event_loop())
-            self._loop = asyncio.get_event_loop()
+            self._loop = asyncio.get_running_loop()
 
     def start_workers(self):
         """Start background worker threads."""

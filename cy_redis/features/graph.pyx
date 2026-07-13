@@ -317,27 +317,27 @@ cdef class CyRedisGraph:
     async def query_async(self, graph_name: str, query: str, params: Dict = None,
                          timeout: int = None, readonly: bool = False) -> Dict[str, Any]:
         """Async execute query"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.query, graph_name,
                                          query, params, timeout, readonly)
 
     async def create_node_async(self, graph_name: str, label: str,
                                properties: Dict = None) -> Dict:
         """Async create node"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.create_node,
                                          graph_name, label, properties)
 
     async def find_nodes_async(self, graph_name: str, label: str = None,
                               properties: Dict = None, limit: int = None) -> Dict:
         """Async find nodes"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.find_nodes,
                                          graph_name, label, properties, limit)
 
     async def find_shortest_path_async(self, graph_name: str, from_id: int, to_id: int,
                                       edge_type: str = None, max_hops: int = None) -> Dict:
         """Async find shortest path"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, self.find_shortest_path,
                                          graph_name, from_id, to_id, edge_type, max_hops)
