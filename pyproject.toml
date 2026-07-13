@@ -464,9 +464,9 @@ test-command = "python -c \"import cy_redis.core.cy_redis_client; import cy_redi
 before-all = "yum install -y openssl-devel || apk add --no-cache openssl-dev"
 
 [tool.cibuildwheel.macos]
-# Match the deployment target the vendored hiredis static lib is built against,
-# so the wheel platform tag isn't artificially narrowed. GitHub macOS runners
-# ship Homebrew OpenSSL; hiredis's Makefile and setup.py both search the
-# Homebrew locations.
-environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
+# GitHub macOS runners ship Homebrew OpenSSL; hiredis's Makefile and setup.py
+# both search the Homebrew locations. MACOSX_DEPLOYMENT_TARGET is set per
+# runner in the publish workflow: the wheels bundle Homebrew's libssl/
+# libcrypto, whose own minimum targets (13.0 on x86_64, 14.0 on arm64) put a
+# floor under the wheel tag — delocate rejects anything lower.
 before-all = "brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3"
