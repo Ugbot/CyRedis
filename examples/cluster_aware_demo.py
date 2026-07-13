@@ -16,12 +16,13 @@ Features demonstrated:
 
 import asyncio
 import json
-import time
 import random
-from typing import Dict, List, Any
+import time
+from typing import Any, Dict, List
 
 # Import the cluster-aware CyRedis client
 from cy_redis import CyRedisClient, CyRedisClientAsync
+
 
 def demo_cluster_connection():
     """Demonstrate cluster connection and topology"""
@@ -32,7 +33,9 @@ def demo_cluster_connection():
         try:
             # Check if cluster is enabled
             info = client.cluster_info()
-            print(f"Cluster enabled: {'cluster_enabled' in info and info['cluster_enabled'] == '1'}")
+            print(
+                f"Cluster enabled: {'cluster_enabled' in info and info['cluster_enabled'] == '1'}"
+            )
             print(f"Cluster state: {info.get('cluster_state', 'unknown')}")
 
             # Get cluster nodes
@@ -54,6 +57,7 @@ def demo_cluster_connection():
         except Exception as e:
             print(f"Cluster not available: {e}")
 
+
 def demo_key_distribution():
     """Demonstrate key distribution across cluster"""
     print("\n🎯 Key Distribution Demo")
@@ -74,7 +78,7 @@ def demo_key_distribution():
                 "user:{123}:settings",
                 "user:{123}:posts",
                 "user:{456}:profile",
-                "user:{456}:settings"
+                "user:{456}:settings",
             ]
 
             print("\nHash tag distribution:")
@@ -92,6 +96,7 @@ def demo_key_distribution():
 
         except Exception as e:
             print(f"Cluster distribution test failed: {e}")
+
 
 def demo_cluster_operations():
     """Demonstrate cluster management operations"""
@@ -126,6 +131,7 @@ def demo_cluster_operations():
         except Exception as e:
             print(f"Cluster operations demo failed: {e}")
 
+
 def demo_cluster_aware_operations():
     """Demonstrate cluster-aware operations"""
     print("\n🌐 Cluster-Aware Operations Demo")
@@ -134,13 +140,13 @@ def demo_cluster_aware_operations():
     with CyRedisClient() as client:
         try:
             # Set some data across different slots
-            test_data = {
-                f"data_{i}": f"value_{i}" for i in range(5)
-            }
+            test_data = {f"data_{i}": f"value_{i}" for i in range(5)}
 
             # Multi-set across cluster
             success_count = client.cluster_multi_set(test_data)
-            print(f"Successfully set {success_count}/{len(test_data)} keys across cluster")
+            print(
+                f"Successfully set {success_count}/{len(test_data)} keys across cluster"
+            )
 
             # Multi-get across cluster
             keys_to_get = list(test_data.keys())
@@ -159,6 +165,7 @@ def demo_cluster_aware_operations():
 
         except Exception as e:
             print(f"Cluster-aware operations demo failed: {e}")
+
 
 def demo_bitmap_cluster():
     """Demonstrate bitmap operations across cluster"""
@@ -193,6 +200,7 @@ def demo_bitmap_cluster():
         except Exception as e:
             print(f"Bitmap cluster demo failed: {e}")
 
+
 def demo_json_cluster():
     """Demonstrate JSON operations across cluster"""
     print("\n📄 JSON Operations in Cluster Demo")
@@ -206,20 +214,20 @@ def demo_json_cluster():
                     "id": 1,
                     "name": "Alice",
                     "preferences": {"theme": "dark", "notifications": True},
-                    "tags": ["premium", "verified"]
+                    "tags": ["premium", "verified"],
                 },
                 "user:bob": {
                     "id": 2,
                     "name": "Bob",
                     "preferences": {"theme": "light", "notifications": False},
-                    "tags": ["verified"]
+                    "tags": ["verified"],
                 },
                 "user:charlie": {
                     "id": 3,
                     "name": "Charlie",
                     "preferences": {"theme": "dark", "notifications": True},
-                    "tags": ["premium"]
-                }
+                    "tags": ["premium"],
+                },
             }
 
             # Store JSON documents
@@ -245,6 +253,7 @@ def demo_json_cluster():
         except Exception as e:
             print(f"JSON cluster demo failed: {e}")
 
+
 def demo_geospatial_cluster():
     """Demonstrate geospatial operations across cluster"""
     print("\n🗺️  Geospatial Operations in Cluster Demo")
@@ -255,23 +264,27 @@ def demo_geospatial_cluster():
             # Add locations across different regions
             locations = [
                 (-122.4194, 37.7749, "San Francisco"),  # California
-                (-118.2437, 34.0522, "Los Angeles"),    # California
-                (-74.0060, 40.7128, "New York"),       # New York
-                (-87.6298, 41.8781, "Chicago"),        # Illinois
-                (-71.0589, 42.3601, "Boston"),         # Massachusetts
-                (-95.3698, 29.7604, "Houston"),        # Texas
-                (-81.3792, 28.5383, "Orlando")         # Florida
+                (-118.2437, 34.0522, "Los Angeles"),  # California
+                (-74.0060, 40.7128, "New York"),  # New York
+                (-87.6298, 41.8781, "Chicago"),  # Illinois
+                (-71.0589, 42.3601, "Boston"),  # Massachusetts
+                (-95.3698, 29.7604, "Houston"),  # Texas
+                (-81.3792, 28.5383, "Orlando"),  # Florida
             ]
 
             for lon, lat, city in locations:
                 client.geoadd("us_cities", lon, lat, city)
 
             # Find cities within 1000km of Chicago
-            nearby = client.georadius("us_cities", -87.6298, 41.8781, 1000, "km", count=5)
+            nearby = client.georadius(
+                "us_cities", -87.6298, 41.8781, 1000, "km", count=5
+            )
             print(f"Cities within 1000km of Chicago: {nearby}")
 
             # Calculate distances between cities
-            sf_nyc_distance = client.geodist("us_cities", "San Francisco", "New York", "km")
+            sf_nyc_distance = client.geodist(
+                "us_cities", "San Francisco", "New York", "km"
+            )
             print(f"SF to NYC distance: {sf_nyc_distance:.2f} km")
 
             # Get geohashes for cities
@@ -283,6 +296,7 @@ def demo_geospatial_cluster():
 
         except Exception as e:
             print(f"Geospatial cluster demo failed: {e}")
+
 
 async def demo_async_cluster():
     """Demonstrate async cluster operations"""
@@ -314,6 +328,7 @@ async def demo_async_cluster():
         except Exception as e:
             print(f"Async cluster demo failed: {e}")
 
+
 def demo_cluster_failover_simulation():
     """Simulate cluster failover scenarios"""
     print("\n🔄 Cluster Failover Simulation Demo")
@@ -338,7 +353,7 @@ def demo_cluster_failover_simulation():
                 "cluster_failover",
                 "cluster_reset",
                 "cluster_bumpepoch",
-                "cluster_forget"
+                "cluster_forget",
             ]
 
             for cmd in failover_commands:
@@ -346,6 +361,7 @@ def demo_cluster_failover_simulation():
 
         except Exception as e:
             print(f"Failover simulation demo failed: {e}")
+
 
 def demo_cluster_performance():
     """Demonstrate cluster performance characteristics"""
@@ -363,7 +379,7 @@ def demo_cluster_performance():
                 lambda: client.cluster_nodes(),
                 lambda: client.cluster_slots(),
                 lambda: client.cluster_keyslot("test_key"),
-                lambda: client.cluster_health_check()
+                lambda: client.cluster_health_check(),
             ]
 
             for op in operations:
@@ -376,7 +392,9 @@ def demo_cluster_performance():
             total_time = end_time - start_time
 
             print(f"Cluster operations completed in {total_time:.3f} seconds")
-            print(f"Average time per operation: {total_time/len(operations):.3f} seconds")
+            print(
+                f"Average time per operation: {total_time/len(operations):.3f} seconds"
+            )
 
             # Test multi-key operations performance
             start_time = time.time()
@@ -397,6 +415,7 @@ def demo_cluster_performance():
 
         except Exception as e:
             print(f"Performance demo failed: {e}")
+
 
 def main():
     """Run all cluster demonstrations"""
@@ -437,6 +456,7 @@ def main():
         return 1
 
     return 0
+
 
 if __name__ == "__main__":
     exit(main())

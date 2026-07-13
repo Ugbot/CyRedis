@@ -25,7 +25,6 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-
 # How long a response may sit unclaimed before Redis expires it. Longer than
 # any sane call timeout so a slow client still finds its answer; bounded so
 # abandoned responses cannot accumulate forever.

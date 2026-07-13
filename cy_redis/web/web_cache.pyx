@@ -12,20 +12,19 @@ decorators, multiple backends, and conditional requests.
 """
 
 import asyncio
-import json
-import time
 import hashlib
 import hmac
-from typing import Dict, List, Optional, Any, Callable, Union, Tuple
-from datetime import datetime, timedelta
+import json
 import os
 import signal
 import sys
+import time
+from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 # Import core Redis functionality
 from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock
-
 
 # ===== HTTP CACHE HEADERS AND CONDITIONAL REQUESTS =====
 
@@ -170,9 +169,9 @@ cdef class PickleCoder(Coder):
 
     def encode(self, value: Any) -> bytes:
         """Encode to (optionally HMAC-signed) pickle bytes."""
-        import pickle
-        import hmac
         import hashlib
+        import hmac
+        import pickle
         payload = pickle.dumps(value)
         if self._secret:
             signature = hmac.new(self._secret, payload, hashlib.sha256).digest()
@@ -187,9 +186,9 @@ cdef class PickleCoder(Coder):
         """Verify the signature (if signing is enabled), then unpickle."""
         if not isinstance(value, (bytes, bytearray)):
             raise TypeError("PickleCoder.decode expects bytes")
-        import pickle
-        import hmac
         import hashlib
+        import hmac
+        import pickle
         value = bytes(value)
         if self._secret:
             if len(value) < 32:

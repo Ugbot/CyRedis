@@ -9,12 +9,13 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 # Import our web application support (Python implementation for demo)
 print("Note: Using Python fallback implementation for demo")
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
 
 class WebApplicationSupport:
     """Fallback Python implementation for demo purposes"""
@@ -36,49 +37,63 @@ class WebApplicationSupport:
     def shutdown(self):
         print("WebApplicationSupport shutdown (Python fallback)")
 
-    def create_user_session(self, user_id: str, device_info: Dict[str, Any] = None) -> str:
+    def create_user_session(
+        self, user_id: str, device_info: Dict[str, Any] = None
+    ) -> str:
         import uuid
+
         session_id = str(uuid.uuid4())
         return session_id
 
     def authenticate_user(self, user_id: str, password: str) -> Dict[str, Any]:
         import secrets
+
         return {
-            'access_token': secrets.token_urlsafe(32),
-            'refresh_token': secrets.token_urlsafe(32),
-            'token_type': 'bearer'
+            "access_token": secrets.token_urlsafe(32),
+            "refresh_token": secrets.token_urlsafe(32),
+            "token_type": "bearer",
         }
 
-    def verify_user_access(self, token: str, required_claims: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-        return {'user_id': 'demo_user', 'type': 'access'}
+    def verify_user_access(
+        self, token: str, required_claims: Dict[str, Any] = None
+    ) -> Optional[Dict[str, Any]]:
+        return {"user_id": "demo_user", "type": "access"}
 
     def enqueue_task(self, task_data: Dict[str, Any], delay: int = 0) -> str:
         import uuid
+
         task_id = str(uuid.uuid4())
         return task_id
 
     def get_queue_stats(self) -> Dict[str, Any]:
-        return {'queue_length': 0, 'processing_count': 0, 'completed_count': 0, 'failed_count': 0}
+        return {
+            "queue_length": 0,
+            "processing_count": 0,
+            "completed_count": 0,
+            "failed_count": 0,
+        }
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        return {'id': session_id, 'user_id': 'demo_user'}
+        return {"id": session_id, "user_id": "demo_user"}
 
     def destroy_session(self, session_id: str):
         pass
 
     def enable_2fa(self, user_id: str) -> Dict[str, Any]:
         import secrets
+
         return {
-            'totp_secret': secrets.token_urlsafe(32),
-            'backup_codes': ['DEMO' + str(i) for i in range(10)],
-            'qr_code_url': 'otpauth://totp/CyRedisApp:demo?secret=demo&issuer=CyRedisApp'
+            "totp_secret": secrets.token_urlsafe(32),
+            "backup_codes": ["DEMO" + str(i) for i in range(10)],
+            "qr_code_url": "otpauth://totp/CyRedisApp:demo?secret=demo&issuer=CyRedisApp",
         }
 
     def verify_totp(self, user_id: str, token: str) -> bool:
-        return token == '123456'
+        return token == "123456"
 
     def refresh_access_token(self, refresh_token: str) -> Optional[str]:
         import secrets
+
         return secrets.token_urlsafe(32)
 
     def revoke_token(self, token: str):
@@ -104,11 +119,11 @@ class WebApplicationSupport:
 
             def get_stats(self):
                 return {
-                    'name': self.dict_name,
-                    'key_count': len(self),
-                    'total_size_bytes': 0,
-                    'cache_age_seconds': 0,
-                    'cache_ttl_seconds': 30
+                    "name": self.dict_name,
+                    "key_count": len(self),
+                    "total_size_bytes": 0,
+                    "cache_age_seconds": 0,
+                    "cache_ttl_seconds": 30,
                 }
 
         return SimpleSharedDict(name, initial_data or {})
@@ -138,23 +153,27 @@ class WebApplication:
     def _initialize_app_settings(self):
         """Initialize default application settings"""
         if not self.application_settings:
-            self.application_settings.update({
-                'app_name': 'CyRedis Web App',
-                'version': '1.0.0',
-                'max_login_attempts': 5,
-                'session_timeout': 3600,
-                'rate_limit_per_minute': 100,
-                'features': {
-                    '2fa_enabled': True,
-                    'password_reset_enabled': True,
-                    'multi_session_tracking': True,
-                    'worker_queues': True
+            self.application_settings.update(
+                {
+                    "app_name": "CyRedis Web App",
+                    "version": "1.0.0",
+                    "max_login_attempts": 5,
+                    "session_timeout": 3600,
+                    "rate_limit_per_minute": 100,
+                    "features": {
+                        "2fa_enabled": True,
+                        "password_reset_enabled": True,
+                        "multi_session_tracking": True,
+                        "worker_queues": True,
+                    },
                 }
-            })
+            )
 
     # ===== USER AUTHENTICATION & AUTHORIZATION =====
 
-    async def register_user(self, username: str, email: str, password: str) -> Dict[str, Any]:
+    async def register_user(
+        self, username: str, email: str, password: str
+    ) -> Dict[str, Any]:
         """Register a new user"""
         # Check if user already exists
         if self.user_profiles.get(f"user:{username}"):
@@ -163,21 +182,20 @@ class WebApplication:
         # Create user profile
         user_id = str(uuid.uuid4())
         user_profile = {
-            'id': user_id,
-            'username': username,
-            'email': email,
-            'password_hash': self._hash_password(password),  # In production, use proper hashing
-            'created_at': time.time(),
-            'is_active': True,
-            'is_verified': False,
-            'login_attempts': 0,
-            'last_login': None,
-            '2fa_enabled': False,
-            'roles': ['user'],
-            'preferences': {
-                'theme': 'light',
-                'notifications': True
-            }
+            "id": user_id,
+            "username": username,
+            "email": email,
+            "password_hash": self._hash_password(
+                password
+            ),  # In production, use proper hashing
+            "created_at": time.time(),
+            "is_active": True,
+            "is_verified": False,
+            "login_attempts": 0,
+            "last_login": None,
+            "2fa_enabled": False,
+            "roles": ["user"],
+            "preferences": {"theme": "light", "notifications": True},
         }
 
         # Store user profile
@@ -186,12 +204,16 @@ class WebApplication:
 
         # Initialize rate limiting for user
         self.rate_limits[f"login_attempts:{username}"] = {
-            'count': 0,
-            'window_start': time.time(),
-            'blocked_until': None
+            "count": 0,
+            "window_start": time.time(),
+            "blocked_until": None,
         }
 
-        return {"success": True, "user_id": user_id, "message": "User registered successfully"}
+        return {
+            "success": True,
+            "user_id": user_id,
+            "message": "User registered successfully",
+        }
 
     async def authenticate_user(self, username: str, password: str) -> Dict[str, Any]:
         """Authenticate user and return tokens"""
@@ -199,60 +221,67 @@ class WebApplication:
         rate_limit = self.rate_limits.get(f"login_attempts:{username}", {})
         current_time = time.time()
 
-        if rate_limit.get('blocked_until') and current_time < rate_limit['blocked_until']:
+        if (
+            rate_limit.get("blocked_until")
+            and current_time < rate_limit["blocked_until"]
+        ):
             return {"success": False, "error": "Account temporarily locked"}
 
         # Get user profile
         user_profile = self.user_profiles.get(f"user:{username}")
-        if not user_profile or not self._verify_password(password, user_profile['password_hash']):
+        if not user_profile or not self._verify_password(
+            password, user_profile["password_hash"]
+        ):
             # Increment failed attempts
-            rate_limit['count'] = rate_limit.get('count', 0) + 1
-            if rate_limit['count'] >= 5:
-                rate_limit['blocked_until'] = current_time + 300  # 5 minutes lock
+            rate_limit["count"] = rate_limit.get("count", 0) + 1
+            if rate_limit["count"] >= 5:
+                rate_limit["blocked_until"] = current_time + 300  # 5 minutes lock
             self.rate_limits[f"login_attempts:{username}"] = rate_limit
             return {"success": False, "error": "Invalid credentials"}
 
         # Check if 2FA is required
-        if user_profile.get('2fa_enabled', False):
+        if user_profile.get("2fa_enabled", False):
             # Return challenge for 2FA verification
             return {
                 "success": False,
                 "requires_2fa": True,
-                "user_id": user_profile['id'],
-                "message": "2FA verification required"
+                "user_id": user_profile["id"],
+                "message": "2FA verification required",
             }
 
         # Successful authentication
         session_id = self.app_support.create_user_session(
-            user_profile['id'],
-            device_info={'user_agent': 'example_app', 'ip': '127.0.0.1'}
+            user_profile["id"],
+            device_info={"user_agent": "example_app", "ip": "127.0.0.1"},
         )
 
         # Update user profile
-        user_profile['last_login'] = current_time
-        user_profile['login_attempts'] = 0
+        user_profile["last_login"] = current_time
+        user_profile["login_attempts"] = 0
         self.user_profiles[f"user:{username}"] = user_profile
 
         # Reset rate limiting
         self.rate_limits[f"login_attempts:{username}"] = {
-            'count': 0,
-            'window_start': current_time,
-            'blocked_until': None
+            "count": 0,
+            "window_start": current_time,
+            "blocked_until": None,
         }
 
         # Create authentication tokens
-        tokens = self.app_support.authenticate_user(user_profile['id'], "dummy_password")
+        tokens = self.app_support.authenticate_user(
+            user_profile["id"], "dummy_password"
+        )
 
         return {
             "success": True,
-            "user_id": user_profile['id'],
+            "user_id": user_profile["id"],
             "session_id": session_id,
             "tokens": tokens,
             "user": {
-                'username': username,
-                'roles': user_profile['roles'],
-                'preferences': user_profile['preferences']
-            }
+                "username": username,
+                "roles": user_profile["roles"],
+                "preferences": user_profile["preferences"],
+            },
         }
 
     async def verify_2fa(self, user_id: str, token: str) -> Dict[str, Any]:
@@ -264,8 +293,7 @@ class WebApplication:
 
             # Create session and tokens
             session_id = self.app_support.create_user_session(
-                user_id,
-                device_info={'user_agent': 'example_app', 'ip': '127.0.0.1'}
+                user_id, device_info={"user_agent": "example_app", "ip": "127.0.0.1"}
             )
 
             tokens = self.app_support.authenticate_user(user_id, "dummy_password")
@@ -275,10 +303,10 @@ class WebApplication:
                 "session_id": session_id,
                 "tokens": tokens,
                 "user": {
-                    'username': username,
-                    'roles': user_profile['roles'],
-                    'preferences': user_profile['preferences']
-                }
+                    "username": username,
+                    "roles": user_profile["roles"],
+                    "preferences": user_profile["preferences"],
+                },
             }
 
         return {"success": False, "error": "Invalid 2FA token"}
@@ -317,21 +345,21 @@ class WebApplication:
             return {"success": False, "error": "User not found"}
 
         user_profile = self.user_profiles.get(f"user:{username}")
-        if user_profile.get('2fa_enabled'):
+        if user_profile.get("2fa_enabled"):
             return {"success": False, "error": "2FA already enabled"}
 
         # Enable 2FA
         setup_info = self.app_support.enable_2fa(user_id)
 
         # Update user profile
-        user_profile['2fa_enabled'] = True
+        user_profile["2fa_enabled"] = True
         self.user_profiles[f"user:{username}"] = user_profile
 
         return {
             "success": True,
-            "totp_secret": setup_info['totp_secret'],
-            "backup_codes": setup_info['backup_codes'],
-            "qr_code_url": setup_info['qr_code_url']
+            "totp_secret": setup_info["totp_secret"],
+            "backup_codes": setup_info["backup_codes"],
+            "qr_code_url": setup_info["qr_code_url"],
         }
 
     def verify_2fa_setup(self, user_id: str, token: str) -> bool:
@@ -345,12 +373,12 @@ class WebApplication:
             return {"success": False, "error": "User not found"}
 
         user_profile = self.user_profiles.get(f"user:{username}")
-        if not self._verify_password(password, user_profile['password_hash']):
+        if not self._verify_password(password, user_profile["password_hash"]):
             return {"success": False, "error": "Invalid password"}
 
         # Disable 2FA
         self.app_support.two_factor_auth.disable_2fa(user_id)
-        user_profile['2fa_enabled'] = False
+        user_profile["2fa_enabled"] = False
         self.user_profiles[f"user:{username}"] = user_profile
 
         return {"success": True, "message": "2FA disabled"}
@@ -364,9 +392,9 @@ class WebApplication:
         username = None
 
         for key, profile in self.user_profiles.items():
-            if key.startswith('user:') and profile.get('email') == email:
+            if key.startswith("user:") and profile.get("email") == email:
                 user_profile = profile
-                username = profile['username']
+                username = profile["username"]
                 break
 
         if not user_profile:
@@ -375,7 +403,7 @@ class WebApplication:
 
         # Create reset token
         reset_token = self.app_support.password_reset.create_reset_token(
-            user_profile['id'], email
+            user_profile["id"], email
         )
 
         # In production, you'd send an email here
@@ -383,7 +411,9 @@ class WebApplication:
 
         return {"success": True, "message": "Reset link sent to email"}
 
-    async def reset_password(self, reset_token: str, new_password: str) -> Dict[str, Any]:
+    async def reset_password(
+        self, reset_token: str, new_password: str
+    ) -> Dict[str, Any]:
         """Reset password with token"""
         token_data = self.app_support.password_reset.verify_reset_token(reset_token)
 
@@ -396,7 +426,7 @@ class WebApplication:
             return {"success": False, "error": "User not found"}
 
         user_profile = self.user_profiles.get(f"user:{username}")
-        user_profile['password_hash'] = self._hash_password(new_password)
+        user_profile["password_hash"] = self._hash_password(new_password)
         self.user_profiles[f"user:{username}"] = user_profile
 
         return {"success": True, "message": "Password reset successfully"}
@@ -419,55 +449,62 @@ class WebApplication:
         """Get shared data"""
         return self.app_support.get_shared_data(key)
 
-    def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+    def update_user_preferences(
+        self, user_id: str, preferences: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Update user preferences"""
         username = self.user_profiles.get(f"user_id:{user_id}")
         if not username:
             return {"success": False, "error": "User not found"}
 
         user_profile = self.user_profiles.get(f"user:{username}")
-        user_profile['preferences'].update(preferences)
+        user_profile["preferences"].update(preferences)
         self.user_profiles[f"user:{username}"] = user_profile
 
-        return {"success": True, "preferences": user_profile['preferences']}
+        return {"success": True, "preferences": user_profile["preferences"]}
 
     # ===== BACKGROUND TASKS =====
 
     def enqueue_email_task(self, to_email: str, subject: str, body: str):
         """Enqueue email sending task"""
         task_data = {
-            'type': 'send_email',
-            'to_email': to_email,
-            'subject': subject,
-            'body': body,
-            'timestamp': time.time()
+            "type": "send_email",
+            "to_email": to_email,
+            "subject": subject,
+            "body": body,
+            "timestamp": time.time(),
         }
 
         return self.app_support.enqueue_task(task_data)
 
     def enqueue_cleanup_task(self):
         """Enqueue cleanup task"""
-        task_data = {
-            'type': 'cleanup_expired_sessions',
-            'timestamp': time.time()
-        }
+        task_data = {"type": "cleanup_expired_sessions", "timestamp": time.time()}
 
         return self.app_support.enqueue_task(task_data, delay=3600)  # Run every hour
 
-    # ===== ADMIN OPERATIONS =====
+        # ===== ADMIN OPERATIONS =====
 
         def get_system_stats(self) -> Dict[str, Any]:
             """Get system-wide statistics"""
             return {
-                'users_count': len([k for k in self.user_profiles.keys() if k.startswith('user:')]),
-                'active_sessions': 0,  # Fallback implementation doesn't track sessions
-                'queue_stats': self.app_support.get_queue_stats(),
-                'rate_limits_count': len([k for k in self.rate_limits.keys() if k.startswith('login_attempts:')]),
-                'shared_dicts_stats': {
-                    'user_profiles': self.user_profiles.get_stats(),
-                    'app_settings': self.application_settings.get_stats(),
-                    'rate_limits': self.rate_limits.get_stats()
-                }
+                "users_count": len(
+                    [k for k in self.user_profiles.keys() if k.startswith("user:")]
+                ),
+                "active_sessions": 0,  # Fallback implementation doesn't track sessions
+                "queue_stats": self.app_support.get_queue_stats(),
+                "rate_limits_count": len(
+                    [
+                        k
+                        for k in self.rate_limits.keys()
+                        if k.startswith("login_attempts:")
+                    ]
+                ),
+                "shared_dicts_stats": {
+                    "user_profiles": self.user_profiles.get_stats(),
+                    "app_settings": self.application_settings.get_stats(),
+                    "rate_limits": self.rate_limits.get_stats(),
+                },
             }
 
     def cleanup_expired_data(self):
@@ -480,6 +517,7 @@ class WebApplication:
     def _hash_password(self, password: str) -> str:
         """Simple password hash (use proper hashing in production)"""
         import hashlib
+
         return hashlib.sha256(password.encode()).hexdigest()
 
     def _verify_password(self, password: str, password_hash: str) -> bool:
@@ -488,6 +526,7 @@ class WebApplication:
 
 
 # ===== EXAMPLE USAGE =====
+
 
 async def example_usage():
     """Example usage of the web application"""
@@ -507,10 +546,10 @@ async def example_usage():
         auth_result = await app.authenticate_user("johndoe", "password123")
         print(f"Authentication result: {auth_result}")
 
-        if auth_result['success']:
-            user_id = auth_result['user_id']
-            session_id = auth_result['session_id']
-            access_token = auth_result['tokens']['access_token']
+        if auth_result["success"]:
+            user_id = auth_result["user_id"]
+            session_id = auth_result["session_id"]
+            access_token = auth_result["tokens"]["access_token"]
 
             # 3. Enable 2FA
             print(f"\n🔒 Enabling 2FA for user {user_id}...")
@@ -519,7 +558,9 @@ async def example_usage():
 
             # 4. Update user preferences
             print(f"\n⚙️  Updating user preferences for {user_id}...")
-            prefs_result = app.update_user_preferences(user_id, {'theme': 'dark', 'notifications': False})
+            prefs_result = app.update_user_preferences(
+                user_id, {"theme": "dark", "notifications": False}
+            )
             print(f"Preferences update: {prefs_result}")
 
             # 5. Increment a counter
@@ -529,11 +570,15 @@ async def example_usage():
 
             # 6. Set some shared data
             print("\n💾 Setting shared data...")
-            app.set_shared_data("last_maintenance", {"timestamp": time.time(), "type": "daily"})
+            app.set_shared_data(
+                "last_maintenance", {"timestamp": time.time(), "type": "daily"}
+            )
 
             # 7. Enqueue a background task
             print("\n📧 Enqueuing email task...")
-            task_id = app.enqueue_email_task("admin@example.com", "Daily Report", "System running smoothly")
+            task_id = app.enqueue_email_task(
+                "admin@example.com", "Daily Report", "System running smoothly"
+            )
             print(f"Task enqueued with ID: {task_id}")
 
         # 8. Get system statistics
@@ -558,6 +603,7 @@ async def example_usage():
     except Exception as e:
         print(f"❌ Error in example: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:

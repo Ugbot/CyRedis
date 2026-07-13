@@ -11,13 +11,14 @@ Provides distributed worker queue system for background task processing.
 """
 
 import json
+import threading
 import time
 import uuid
-import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 # Import core Redis functionality
+
 from cy_redis.core.cy_redis_client cimport CyRedisClient
 
 

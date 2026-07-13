@@ -3,21 +3,23 @@ Unit tests for CyRedis worker coordination features.
 Tests core logic without requiring Redis connections.
 """
 
-import pytest
-import time
 import json
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, List, Any
+import time
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 try:
     from cy_redis.web_app_support import (
+        ConcurrentSharedDict,
         LifecycleManager,
+        MultiSessionTracker,
+        SessionManager,
         WorkerCoordinator,
         WorkerQueue,
-        SessionManager,
-        MultiSessionTracker,
-        ConcurrentSharedDict
     )
+
     CYREDIS_WEB_AVAILABLE = True
 except ImportError:
     CYREDIS_WEB_AVAILABLE = False
@@ -34,8 +36,10 @@ class TestWorkerIDGeneration:
         if not CYREDIS_WEB_AVAILABLE:
             pytest.skip("Worker coordination modules not available")
 
-        with patch('cy_redis.workers.lifecycle_manager.os') as mock_os, \
-             patch('cy_redis.workers.lifecycle_manager.socket') as mock_socket:
+        with (
+            patch("cy_redis.workers.lifecycle_manager.os") as mock_os,
+            patch("cy_redis.workers.lifecycle_manager.socket") as mock_socket,
+        ):
 
             mock_os.getpid.return_value = 12345
             mock_socket.gethostname.return_value = "test-host"
@@ -47,7 +51,9 @@ class TestWorkerIDGeneration:
             assert len(manager.worker_id) > 20
 
 
-@pytest.mark.skipif(not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available")
+@pytest.mark.skipif(
+    not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available"
+)
 class TestWorkerCoordinatorLogic:
     """Test worker coordinator logic without Redis."""
 
@@ -57,11 +63,7 @@ class TestWorkerCoordinatorLogic:
         coordinator = WorkerCoordinator(mock_redis, coordinator_id="test_coord")
 
         worker_id = "test_worker_123"
-        worker_info = {
-            'hostname': 'test_host',
-            'pid': 12345,
-            'status': 'running'
-        }
+        worker_info = {"hostname": "test_host", "pid": 12345, "status": "running"}
 
         # Mock the Redis call
         mock_redis.hset.return_value = 1
@@ -78,11 +80,11 @@ class TestWorkerCoordinatorLogic:
 
         # Parse the JSON value
         stored_data = json.loads(value)
-        assert stored_data['hostname'] == 'test_host'
-        assert stored_data['pid'] == 12345
-        assert stored_data['status'] == 'running'
-        assert 'registered_at' in stored_data
-        assert stored_data['coordinator_id'] == 'test_coord'
+        assert stored_data["hostname"] == "test_host"
+        assert stored_data["pid"] == 12345
+        assert stored_data["status"] == "running"
+        assert "registered_at" in stored_data
+        assert stored_data["coordinator_id"] == "test_coord"
 
     def test_worker_filtering_logic(self):
         """Test worker filtering logic."""
@@ -92,29 +94,35 @@ class TestWorkerCoordinatorLogic:
         # Mock Redis response with worker data
         current_time = time.time()
         mock_redis.hgetall.return_value = {
-            'worker_1': json.dumps({
-                'worker_id': 'worker_1',
-                'status': 'running',
-                'last_heartbeat': current_time
-            }),
-            'worker_2': json.dumps({
-                'worker_id': 'worker_2',
-                'status': 'running',
-                'last_heartbeat': current_time - 150  # Old heartbeat
-            }),
-            'worker_3': json.dumps({
-                'worker_id': 'worker_3',
-                'status': 'stopped',
-                'last_heartbeat': current_time
-            })
+            "worker_1": json.dumps(
+                {
+                    "worker_id": "worker_1",
+                    "status": "running",
+                    "last_heartbeat": current_time,
+                }
+            ),
+            "worker_2": json.dumps(
+                {
+                    "worker_id": "worker_2",
+                    "status": "running",
+                    "last_heartbeat": current_time - 150,  # Old heartbeat
+                }
+            ),
+            "worker_3": json.dumps(
+                {
+                    "worker_id": "worker_3",
+                    "status": "stopped",
+                    "last_heartbeat": current_time,
+                }
+            ),
         }
 
         healthy_workers = coordinator.get_healthy_workers()
 
         # Should only include recently active running workers
-        assert 'worker_1' in healthy_workers
-        assert 'worker_2' not in healthy_workers  # Old heartbeat
-        assert 'worker_3' not in healthy_workers  # Stopped status
+        assert "worker_1" in healthy_workers
+        assert "worker_2" not in healthy_workers  # Old heartbeat
+        assert "worker_3" not in healthy_workers  # Stopped status
 
     def test_dead_worker_detection_logic(self):
         """Test dead worker detection logic."""
@@ -123,30 +131,36 @@ class TestWorkerCoordinatorLogic:
 
         current_time = time.time()
         mock_redis.hgetall.return_value = {
-            'alive_worker': json.dumps({
-                'worker_id': 'alive_worker',
-                'status': 'running',
-                'last_heartbeat': current_time
-            }),
-            'dead_worker': json.dumps({
-                'worker_id': 'dead_worker',
-                'status': 'running',
-                'last_heartbeat': current_time - 150  # 2.5 minutes ago
-            }),
-            'stopped_worker': json.dumps({
-                'worker_id': 'stopped_worker',
-                'status': 'stopped',
-                'last_heartbeat': current_time - 150
-            })
+            "alive_worker": json.dumps(
+                {
+                    "worker_id": "alive_worker",
+                    "status": "running",
+                    "last_heartbeat": current_time,
+                }
+            ),
+            "dead_worker": json.dumps(
+                {
+                    "worker_id": "dead_worker",
+                    "status": "running",
+                    "last_heartbeat": current_time - 150,  # 2.5 minutes ago
+                }
+            ),
+            "stopped_worker": json.dumps(
+                {
+                    "worker_id": "stopped_worker",
+                    "status": "stopped",
+                    "last_heartbeat": current_time - 150,
+                }
+            ),
         }
 
         dead_workers = coordinator.detect_dead_workers()
 
         # Should detect dead_worker as dead (old heartbeat, running status)
         # Should not detect stopped_worker as dead (stopped status)
-        assert 'dead_worker' in dead_workers
-        assert 'stopped_worker' not in dead_workers
-        assert 'alive_worker' not in dead_workers
+        assert "dead_worker" in dead_workers
+        assert "stopped_worker" not in dead_workers
+        assert "alive_worker" not in dead_workers
 
     def test_cluster_stats_calculation(self):
         """Test cluster statistics calculation."""
@@ -155,35 +169,47 @@ class TestWorkerCoordinatorLogic:
 
         current_time = time.time()
         mock_redis.hgetall.return_value = {
-            'worker_1': json.dumps({
-                'worker_id': 'worker_1',
-                'status': 'running',
-                'last_heartbeat': current_time
-            }),
-            'worker_2': json.dumps({
-                'worker_id': 'worker_2',
-                'status': 'running',
-                'last_heartbeat': current_time - 150  # Old heartbeat
-            }),
-            'worker_3': json.dumps({
-                'worker_id': 'worker_3',
-                'status': 'stopped',
-                'last_heartbeat': current_time
-            })
+            "worker_1": json.dumps(
+                {
+                    "worker_id": "worker_1",
+                    "status": "running",
+                    "last_heartbeat": current_time,
+                }
+            ),
+            "worker_2": json.dumps(
+                {
+                    "worker_id": "worker_2",
+                    "status": "running",
+                    "last_heartbeat": current_time - 150,  # Old heartbeat
+                }
+            ),
+            "worker_3": json.dumps(
+                {
+                    "worker_id": "worker_3",
+                    "status": "stopped",
+                    "last_heartbeat": current_time,
+                }
+            ),
         }
 
         stats = coordinator.get_cluster_stats()
 
-        assert stats['total_workers'] == 3
-        assert stats['healthy_workers'] == 1  # Only worker_1 (running + recent heartbeat)
-        assert stats['dead_workers'] == 1     # Only worker_2 (running + old heartbeat)
+        assert stats["total_workers"] == 3
+        assert (
+            stats["healthy_workers"] == 1
+        )  # Only worker_1 (running + recent heartbeat)
+        assert stats["dead_workers"] == 1  # Only worker_2 (running + old heartbeat)
 
-        status_counts = stats['workers_by_status']
-        assert status_counts['running'] == 2  # worker_1 and worker_2 (status still running)
-        assert status_counts['stopped'] == 1  # worker_3
+        status_counts = stats["workers_by_status"]
+        assert (
+            status_counts["running"] == 2
+        )  # worker_1 and worker_2 (status still running)
+        assert status_counts["stopped"] == 1  # worker_3
 
 
-@pytest.mark.skipif(not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available")
+@pytest.mark.skipif(
+    not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available"
+)
 class TestLifecycleManagerLogic:
     """Test lifecycle manager logic without Redis."""
 
@@ -204,9 +230,13 @@ class TestLifecycleManagerLogic:
             execution_order.append(2)
 
         # Add hooks with different priorities
-        manager.add_startup_hook(hook_priority_1, priority=1)  # Highest priority (lowest number)
+        manager.add_startup_hook(
+            hook_priority_1, priority=1
+        )  # Highest priority (lowest number)
         manager.add_startup_hook(hook_priority_2, priority=2)
-        manager.add_startup_hook(hook_priority_3, priority=3)  # Lowest priority (highest number)
+        manager.add_startup_hook(
+            hook_priority_3, priority=3
+        )  # Lowest priority (highest number)
 
         # Simulate initialization (without actually running Redis operations)
         # Just test that hooks are stored in correct order
@@ -246,14 +276,16 @@ class TestLifecycleManagerLogic:
         manager = LifecycleManager(mock_redis, worker_id="test_worker")
 
         # Mock Redis responses
-        mock_redis.hget.return_value = json.dumps({
-            'worker_id': 'test_worker',
-            'status': 'starting',
-            'last_heartbeat': time.time()
-        })
+        mock_redis.hget.return_value = json.dumps(
+            {
+                "worker_id": "test_worker",
+                "status": "starting",
+                "last_heartbeat": time.time(),
+            }
+        )
 
         # Test status updates
-        manager._update_worker_status('running')
+        manager._update_worker_status("running")
         mock_redis.hset.assert_called()
 
         # Verify the call structure
@@ -267,7 +299,7 @@ class TestLifecycleManagerLogic:
         assert field == "test_worker"
 
         updated_data = json.loads(value)
-        assert updated_data['status'] == 'running'
+        assert updated_data["status"] == "running"
 
 
 class TestConcurrentSharedDictLogic:
@@ -306,7 +338,9 @@ class TestConcurrentSharedDictLogic:
         assert float_result == expected_float
 
 
-@pytest.mark.skipif(not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available")
+@pytest.mark.skipif(
+    not CYREDIS_WEB_AVAILABLE, reason="Worker coordination modules not available"
+)
 class TestErrorHandlingLogic:
     """Test error handling logic without external dependencies."""
 
@@ -333,8 +367,8 @@ class TestErrorHandlingLogic:
 
         # Mock malformed JSON response
         mock_redis.hgetall.return_value = {
-            'worker_1': 'invalid json{',
-            'worker_2': '{"valid": "json"}'
+            "worker_1": "invalid json{",
+            "worker_2": '{"valid": "json"}',
         }
 
         # Should handle malformed data gracefully
@@ -386,17 +420,21 @@ class TestPerformanceCharacteristics:
         for i in range(1000):
             worker_id = f"worker_{i}"
             workers[worker_id] = {
-                'worker_id': worker_id,
-                'status': 'running',
-                'last_heartbeat': current_time if i % 10 != 0 else current_time - 150  # 10% dead
+                "worker_id": worker_id,
+                "status": "running",
+                "last_heartbeat": (
+                    current_time if i % 10 != 0 else current_time - 150
+                ),  # 10% dead
             }
 
         # Test filtering logic (simulates get_healthy_workers)
         start_time = time.time()
         healthy_workers = []
         for worker_id, worker_info in workers.items():
-            if (worker_info['status'] == 'running' and
-                worker_info['last_heartbeat'] > current_time - 60):
+            if (
+                worker_info["status"] == "running"
+                and worker_info["last_heartbeat"] > current_time - 60
+            ):
                 healthy_workers.append(worker_id)
         end_time = time.time()
 

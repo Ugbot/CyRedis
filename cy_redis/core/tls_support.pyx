@@ -15,10 +15,10 @@ cleanup path to forget.
 """
 
 from cpython.pycapsule cimport (
-    PyCapsule_New,
+    PyCapsule_Destructor,
     PyCapsule_GetPointer,
     PyCapsule_IsValid,
-    PyCapsule_Destructor,
+    PyCapsule_New,
 )
 
 

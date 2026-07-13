@@ -3,9 +3,10 @@ Test the pytest configuration and fixtures.
 This is a meta-test to validate that the test infrastructure is working correctly.
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.unit

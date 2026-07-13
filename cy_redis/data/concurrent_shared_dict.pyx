@@ -12,7 +12,7 @@ Thread-safe and process-safe dictionary that can be accessed by multiple users.
 
 import json
 import time
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 # Import dependencies
 from cy_redis.core.cy_redis_client import CyRedisClient

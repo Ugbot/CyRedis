@@ -1,12 +1,15 @@
 """
 Unit tests for distributed.pyx - Distributed locks and primitives
 """
-import pytest
-import time
+
 import threading
+import time
 import uuid
-from cy_redis.features.distributed import CyDistributedLock, CyReadWriteLock
+
+import pytest
+
 from cy_redis.core.cy_redis_client import CyRedisClient
+from cy_redis.features.distributed import CyDistributedLock, CyReadWriteLock
 
 
 @pytest.fixture
@@ -19,11 +22,7 @@ def redis_client():
 def distributed_lock(redis_client):
     """Create a distributed lock for testing"""
     lock_key = f"test_lock_{uuid.uuid4().hex[:8]}"
-    lock = CyDistributedLock(
-        redis_client,
-        lock_key,
-        ttl_ms=30000
-    )
+    lock = CyDistributedLock(redis_client, lock_key, ttl_ms=30000)
     yield lock
     # Cleanup
     try:
@@ -224,9 +223,9 @@ class TestCyReadWriteLock:
         read_write_lock.try_read_lock()
         stats = read_write_lock.get_stats()
 
-        assert 'readers' in stats
-        assert 'writer' in stats
-        assert stats['readers'] > 0
+        assert "readers" in stats
+        assert "writer" in stats
+        assert stats["readers"] > 0
 
         read_write_lock.release_read_lock()
 
@@ -300,5 +299,5 @@ class TestAsyncLocks:
             pass
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

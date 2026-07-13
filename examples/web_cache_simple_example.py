@@ -5,12 +5,12 @@ Demonstrates the web cache concepts without requiring compiled Cython modules.
 """
 
 import asyncio
-import json
-import time
-import random
 import hashlib
-from typing import Dict, Any, Optional, List
+import json
+import random
+import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 
 class SimpleWebCache:
@@ -19,7 +19,12 @@ class SimpleWebCache:
     Demonstrates the concepts without requiring compiled modules.
     """
 
-    def __init__(self, backend_type: str = "memory", prefix: str = "cyredis:cache", default_ttl: int = 300):
+    def __init__(
+        self,
+        backend_type: str = "memory",
+        prefix: str = "cyredis:cache",
+        default_ttl: int = 300,
+    ):
         self.backend_type = backend_type
         self.prefix = prefix
         self.default_ttl = default_ttl
@@ -81,7 +86,7 @@ class SimpleWebCache:
             pattern = f"{self.prefix}:{pattern}*"
             keys_to_delete = []
             for key in self.cache.keys():
-                if key.startswith(pattern.replace('*', '')):
+                if key.startswith(pattern.replace("*", "")):
                     keys_to_delete.append(key)
 
             for key in keys_to_delete:
@@ -103,11 +108,11 @@ class SimpleWebCache:
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
         return {
-            'backend_type': self.backend_type,
-            'prefix': self.prefix,
-            'default_ttl': self.default_ttl,
-            'keys_count': len(self.cache),
-            'memory_usage': len(json.dumps(self.cache))
+            "backend_type": self.backend_type,
+            "prefix": self.prefix,
+            "default_ttl": self.default_ttl,
+            "keys_count": len(self.cache),
+            "memory_usage": len(json.dumps(self.cache)),
         }
 
 
@@ -124,30 +129,32 @@ class HTTPCacheHeaders:
         etag_data = hashlib.md5(content_str.encode()).hexdigest()
         return f'"{etag_data}"'
 
-    def set_cache_headers(self, response: Dict[str, Any], max_age: int = 3600,
-                         cache_control: str = None) -> Dict[str, Any]:
+    def set_cache_headers(
+        self, response: Dict[str, Any], max_age: int = 3600, cache_control: str = None
+    ) -> Dict[str, Any]:
         """Set cache headers on response"""
-        headers = response.get('headers', {})
+        headers = response.get("headers", {})
 
         if cache_control:
             headers[self.cache_control_header] = cache_control
         else:
             headers[self.cache_control_header] = f"max-age={max_age}"
 
-        response['headers'] = headers
+        response["headers"] = headers
         return response
 
     def set_etag_header(self, response: Dict[str, Any], etag: str) -> Dict[str, Any]:
         """Set ETag header on response"""
-        headers = response.get('headers', {})
+        headers = response.get("headers", {})
         headers[self.etag_header_name] = etag
-        response['headers'] = headers
+        response["headers"] = headers
         return response
 
-    def check_conditional_request(self, request_headers: Dict[str, str],
-                                current_etag: str) -> bool:
+    def check_conditional_request(
+        self, request_headers: Dict[str, str], current_etag: str
+    ) -> bool:
         """Check if request has matching ETag for conditional request"""
-        if_none_match = request_headers.get('If-None-Match')
+        if_none_match = request_headers.get("If-None-Match")
         if if_none_match and if_none_match == current_etag:
             return True
         return False
@@ -155,15 +162,14 @@ class HTTPCacheHeaders:
     def create_304_response(self) -> Dict[str, Any]:
         """Create 304 Not Modified response"""
         return {
-            'status_code': 304,
-            'headers': {
-                self.cache_control_header: "max-age=3600"
-            }
+            "status_code": 304,
+            "headers": {self.cache_control_header: "max-age=3600"},
         }
 
 
 # Global functions for decorators
 _cache_instance = None
+
 
 def get_cache() -> SimpleWebCache:
     """Get global cache instance"""
@@ -179,6 +185,7 @@ def cache(ttl: int = None, namespace: str = ""):
 
     def decorator(func):
         if asyncio.iscoroutinefunction(func):
+
             async def async_wrapper(*args, **kwargs):
                 # Build cache key (simplified)
                 func_name = f"{func.__module__}.{func.__name__}"
@@ -198,6 +205,7 @@ def cache(ttl: int = None, namespace: str = ""):
 
             return async_wrapper
         else:
+
             def sync_wrapper(*args, **kwargs):
                 # Build cache key (simplified)
                 func_name = f"{func.__module__}.{func.__name__}"
@@ -227,9 +235,10 @@ def cached_endpoint(ttl: int = None, namespace: str = ""):
 
     def decorator(func):
         if asyncio.iscoroutinefunction(func):
+
             async def async_wrapper(*args, **kwargs):
                 # Extract request from kwargs if present
-                request = kwargs.get('request')
+                request = kwargs.get("request")
 
                 # Build cache key (simplified)
                 func_name = f"{func.__module__}.{func.__name__}"
@@ -263,6 +272,7 @@ def cached_endpoint(ttl: int = None, namespace: str = ""):
 
             return async_wrapper
         else:
+
             def sync_wrapper(*args, **kwargs):
                 # Build cache key (simplified)
                 func_name = f"{func.__module__}.{func.__name__}"
@@ -295,13 +305,19 @@ def cached_endpoint(ttl: int = None, namespace: str = ""):
 
 class MockRequest:
     """Mock request object for demonstration"""
-    def __init__(self, method: str = "GET", path: str = "/api/users",
-                 query_params: List[tuple] = None, headers: Dict[str, str] = None):
+
+    def __init__(
+        self,
+        method: str = "GET",
+        path: str = "/api/users",
+        query_params: List[tuple] = None,
+        headers: Dict[str, str] = None,
+    ):
         self.method = method
-        self.url = type('obj', (object,), {'path': path})()
-        self.query_params = type('obj', (object,), {
-            'items': lambda: query_params or []
-        })()
+        self.url = type("obj", (object,), {"path": path})()
+        self.query_params = type(
+            "obj", (object,), {"items": lambda: query_params or []}
+        )()
         self.headers = headers or {}
 
 
@@ -315,7 +331,12 @@ class ExampleAPI:
         self.users_db = {
             "1": {"id": "1", "name": "Alice", "email": "alice@example.com", "age": 30},
             "2": {"id": "2", "name": "Bob", "email": "bob@example.com", "age": 25},
-            "3": {"id": "3", "name": "Charlie", "email": "charlie@example.com", "age": 35}
+            "3": {
+                "id": "3",
+                "name": "Charlie",
+                "email": "charlie@example.com",
+                "age": 35,
+            },
         }
 
     def get_expensive_data(self, user_id: str) -> Dict[str, Any]:
@@ -333,7 +354,7 @@ class ExampleAPI:
             "user": user,
             "computed_at": time.time(),
             "random_factor": random.randint(1, 100),
-            "cached": False
+            "cached": False,
         }
 
     @cache(ttl=60, namespace="expensive_data")
@@ -353,22 +374,13 @@ class ExampleAPI:
         if not user:
             return {"error": "User not found", "status_code": 404}
 
-        return {
-            "data": user,
-            "cached": False,
-            "timestamp": time.time()
-        }
+        return {"data": user, "cached": False, "timestamp": time.time()}
 
     def create_user(self, name: str, email: str, age: int) -> Dict[str, Any]:
         """Create new user (invalidates caches)"""
         user_id = str(len(self.users_db) + 1)
 
-        new_user = {
-            "id": user_id,
-            "name": name,
-            "email": email,
-            "age": age
-        }
+        new_user = {"id": user_id, "name": name, "email": email, "age": age}
 
         self.users_db[user_id] = new_user
 
@@ -462,9 +474,7 @@ async def main():
         # Demonstrate conditional request
         print("\nConditional request simulation:")
         conditional_request = MockRequest(
-            method="GET",
-            path="/api/users/2",
-            headers={"If-None-Match": etag}
+            method="GET", path="/api/users/2", headers={"If-None-Match": etag}
         )
 
         # This would return 304 in a real implementation
@@ -482,6 +492,7 @@ async def main():
     except Exception as e:
         print(f"❌ Error during demonstration: {e}")
         import traceback
+
         traceback.print_exc()
 
 

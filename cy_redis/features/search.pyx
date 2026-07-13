@@ -15,8 +15,8 @@ Supports RediSearch module commands:
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
 

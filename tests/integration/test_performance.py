@@ -9,11 +9,12 @@ Tests performance characteristics including:
 - Comparison with baseline operations
 """
 
-import pytest
-import time
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import statistics
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import pytest
 
 
 @pytest.mark.integration
@@ -291,7 +292,9 @@ class TestPerformanceLatency:
             "GET": lambda i: redis_client.get(f"perf:lat:get:{i}"),
             "INCR": lambda i: redis_client.incr(f"perf:lat:incr:{i}"),
             "LPUSH": lambda i: redis_client.lpush(f"perf:lat:list:{i}", f"item_{i}"),
-            "HSET": lambda i: redis_client.hset(f"perf:lat:hash:{i}", "field", f"value_{i}"),
+            "HSET": lambda i: redis_client.hset(
+                f"perf:lat:hash:{i}", "field", f"value_{i}"
+            ),
         }
 
         # Pre-populate for GET
@@ -320,7 +323,9 @@ class TestPerformanceLatency:
 
         # Print results
         print("\nOperation Latencies (ms):")
-        print(f"{'Operation':<10} {'Mean':<8} {'Median':<8} {'Min':<8} {'Max':<8} {'P95':<8} {'P99':<8}")
+        print(
+            f"{'Operation':<10} {'Mean':<8} {'Median':<8} {'Min':<8} {'Max':<8} {'P95':<8} {'P99':<8}"
+        )
         print("-" * 68)
         for op_name, stats in results.items():
             print(
@@ -345,7 +350,9 @@ class TestPerformanceLatency:
 
         # P95 latency should be reasonable (< 10ms for local Redis)
         for op_name, stats in results.items():
-            assert stats["p95"] < 100, f"{op_name} P95 latency too high: {stats['p95']:.3f}ms"
+            assert (
+                stats["p95"] < 100
+            ), f"{op_name} P95 latency too high: {stats['p95']:.3f}ms"
 
     def test_batch_vs_individual_latency(self, redis_client, benchmark_config):
         """Compare batch vs individual operation latencies."""
@@ -470,7 +477,7 @@ class TestPerformanceStress:
             # Adjust based on actual API
             try:
                 # Some clients have explicit connect/disconnect
-                if hasattr(redis_client, 'ping'):
+                if hasattr(redis_client, "ping"):
                     redis_client.ping()
             except:
                 pass

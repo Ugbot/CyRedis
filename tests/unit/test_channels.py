@@ -5,10 +5,11 @@ All tests use a MockWebSocket and a MockRedisClient — no running Redis or
 FastAPI server required.  The mock client records every execute_command /
 publish call so assertions can inspect Redis interactions without network I/O.
 """
+
 import asyncio
 import json
 import uuid
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,6 +19,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 # ---------------------------------------------------------------------------
 # Mock helpers
 # ---------------------------------------------------------------------------
+
 
 class MockWebSocket:
     """ASGI WebSocket stub backed by asyncio queues."""
@@ -67,18 +69,18 @@ class MockRedisClient:
     """
 
     def __init__(self):
-        self._store: dict = {}         # simple key-value store
-        self._hashes: dict = {}        # HASH key -> {field: value}
-        self._streams: dict = {}       # stream key -> [{id, payload}]
+        self._store: dict = {}  # simple key-value store
+        self._hashes: dict = {}  # HASH key -> {field: value}
+        self._streams: dict = {}  # stream key -> [{id, payload}]
         self._pubsub_calls: list = []  # (channel, message) tuples
-        self._commands: list = []      # all execute_command calls
+        self._commands: list = []  # all execute_command calls
         self._stream_counter: int = 0
 
     # --- Connection pool stubs (used by RedisPSubIterator) ---
     @property
     def pool(self):
         m = MagicMock()
-        m.get_host.return_value = 'localhost'
+        m.get_host.return_value = "localhost"
         m.get_port.return_value = 6379
         return m
 
@@ -88,90 +90,106 @@ class MockRedisClient:
 
     def execute_command(self, args: list):
         self._commands.append(args)
-        cmd = args[0].upper() if args else ''
+        cmd = args[0].upper() if args else ""
 
-        if cmd == 'XADD':
+        if cmd == "XADD":
             # XADD stream_key MAXLEN ~ N * field value
             stream_key = args[1]
             self._stream_counter += 1
             entry_id = f"1000000{self._stream_counter:06d}-0"
             # Find payload in args
             try:
-                p_idx = args.index('payload')
+                p_idx = args.index("payload")
                 payload = args[p_idx + 1]
             except (ValueError, IndexError):
-                payload = ''
-            self._streams.setdefault(stream_key, []).append(
-                (entry_id, payload)
-            )
+                payload = ""
+            self._streams.setdefault(stream_key, []).append((entry_id, payload))
             return entry_id.encode()
 
-        if cmd == 'XREVRANGE':
+        if cmd == "XREVRANGE":
             stream_key = args[1]
             count = int(args[5]) if len(args) > 5 else 50
             entries = self._streams.get(stream_key, [])[-count:]
             # Return newest-first
             result = []
             for eid, payload in reversed(entries):
-                result.append([eid.encode(), [b'payload', payload.encode()
-                               if isinstance(payload, str) else payload]])
+                result.append(
+                    [
+                        eid.encode(),
+                        [
+                            b"payload",
+                            payload.encode() if isinstance(payload, str) else payload,
+                        ],
+                    ]
+                )
             return result
 
-        if cmd == 'XRANGE':
+        if cmd == "XRANGE":
             stream_key = args[1]
             since_raw = args[2]
             entries = self._streams.get(stream_key, [])
-            if since_raw.startswith('('):
+            if since_raw.startswith("("):
                 since = since_raw[1:]
                 entries = [(eid, p) for eid, p in entries if eid > since]
             result = []
             for eid, payload in entries:
-                result.append([eid.encode(), [b'payload', payload.encode()
-                               if isinstance(payload, str) else payload]])
+                result.append(
+                    [
+                        eid.encode(),
+                        [
+                            b"payload",
+                            payload.encode() if isinstance(payload, str) else payload,
+                        ],
+                    ]
+                )
             return result
 
-        if cmd == 'HSET':
+        if cmd == "HSET":
             key, field, value = args[1], args[2], args[3]
             self._hashes.setdefault(key, {})[field] = value
             return 1
 
-        if cmd == 'HDEL':
+        if cmd == "HDEL":
             key, field = args[1], args[2]
             self._hashes.get(key, {}).pop(field, None)
             return 1
 
-        if cmd == 'HKEYS':
+        if cmd == "HKEYS":
             key = args[1]
-            return [k.encode() if isinstance(k, str) else k
-                    for k in self._hashes.get(key, {}).keys()]
+            return [
+                k.encode() if isinstance(k, str) else k
+                for k in self._hashes.get(key, {}).keys()
+            ]
 
-        if cmd == 'HLEN':
+        if cmd == "HLEN":
             return len(self._hashes.get(args[1], {}))
 
-        if cmd == 'HGETALL':
+        if cmd == "HGETALL":
             items = []
             for k, v in self._hashes.get(args[1], {}).items():
                 items.append(k.encode() if isinstance(k, str) else k)
                 items.append(v.encode() if isinstance(v, str) else v)
             return items
 
-        if cmd == 'SET':
+        if cmd == "SET":
             self._store[args[1]] = args[2]
-            return b'OK'
+            return b"OK"
 
-        if cmd == 'GET':
+        if cmd == "GET":
             val = self._store.get(args[1])
             return val.encode() if isinstance(val, str) else val
 
-        if cmd in ('FUNCTION', 'FCALL'):
+        if cmd in ("FUNCTION", "FCALL"):
             # FUNCTION LOAD -> OK; FCALL cy_channel_route -> [] (all pass in tests)
-            if cmd == 'FUNCTION':
-                return b'OK'
+            if cmd == "FUNCTION":
+                return b"OK"
             # FCALL cy_channel_route 1 routes_key message -> all keys in routes hash
             if len(args) >= 4:
                 routes_key = args[3]
-                return [k.encode() if isinstance(k, str) else k
-                        for k in self._hashes.get(routes_key, {}).keys()]
+                return [
+                    k.encode() if isinstance(k, str) else k
+                    for k in self._hashes.get(routes_key, {}).keys()
+                ]
             return []
 
         return None
@@ -181,6 +199,7 @@ def make_manager(maxlen=100):
     redis = MockRedisClient()
     # Patch out RedisPSubIterator so tests don't need a real connection
     from cy_redis.web.channels import CyChannelManager
+
     mgr = CyChannelManager(redis, stream_maxlen=maxlen)
     return mgr, redis
 
@@ -188,18 +207,20 @@ def make_manager(maxlen=100):
 async def start_manager_no_psub(mgr):
     """Start manager without spinning up the real PSUBSCRIBE task."""
     mgr._running = True
-    mgr._routing_loaded = True   # skip Lua load
+    mgr._routing_loaded = True  # skip Lua load
 
 
 # ---------------------------------------------------------------------------
 # CyChannelConnection tests
 # ---------------------------------------------------------------------------
 
+
 class TestCyChannelConnection:
 
     @pytest.mark.asyncio
     async def test_send_text(self):
         from cy_redis.web.channels import CyChannelConnection
+
         ws = MockWebSocket()
         conn = CyChannelConnection(ws, "c1")
         await conn.send("hello")
@@ -208,6 +229,7 @@ class TestCyChannelConnection:
     @pytest.mark.asyncio
     async def test_send_json(self):
         from cy_redis.web.channels import CyChannelConnection
+
         ws = MockWebSocket()
         conn = CyChannelConnection(ws, "c2")
         await conn.send_json({"k": "v"})
@@ -217,6 +239,7 @@ class TestCyChannelConnection:
     @pytest.mark.asyncio
     async def test_async_iter_from_client(self):
         from cy_redis.web.channels import CyChannelConnection
+
         ws = MockWebSocket()
         conn = CyChannelConnection(ws, "c3")
         await ws.inject("msg1")
@@ -226,6 +249,7 @@ class TestCyChannelConnection:
     @pytest.mark.asyncio
     async def test_closed_raises_stop(self):
         from cy_redis.web.channels import CyChannelConnection
+
         ws = MockWebSocket()
         conn = CyChannelConnection(ws, "c4")
         conn._closed = True
@@ -234,12 +258,14 @@ class TestCyChannelConnection:
 
     def test_get_channels_empty(self):
         from cy_redis.web.channels import CyChannelConnection
+
         ws = MockWebSocket()
         conn = CyChannelConnection(ws, "c5")
         assert conn.get_channels() == set()
 
     def test_repr(self):
         from cy_redis.web.channels import CyChannelConnection
+
         ws = MockWebSocket()
         conn = CyChannelConnection(ws, "my-id")
         assert "my-id" in repr(conn)
@@ -248,6 +274,7 @@ class TestCyChannelConnection:
 # ---------------------------------------------------------------------------
 # Key format tests
 # ---------------------------------------------------------------------------
+
 
 class TestKeyFormat:
 
@@ -269,10 +296,13 @@ class TestKeyFormat:
 
     def test_cursor_key(self):
         mgr, _ = make_manager()
-        assert mgr._sub_cursor_key("conn1", "stocks") == "cy:chan:sub:conn1:stocks:cursor"
+        assert (
+            mgr._sub_cursor_key("conn1", "stocks") == "cy:chan:sub:conn1:stocks:cursor"
+        )
 
     def test_custom_prefix(self):
         from cy_redis.web.channels import CyChannelManager
+
         redis = MockRedisClient()
         mgr = CyChannelManager(redis, key_prefix="myapp")
         assert mgr._pubsub_key("chat") == "myapp:chat:events"
@@ -281,6 +311,7 @@ class TestKeyFormat:
 # ---------------------------------------------------------------------------
 # Connect / subscribe / unsubscribe
 # ---------------------------------------------------------------------------
+
 
 class TestConnectSubscribe:
 
@@ -318,7 +349,7 @@ class TestConnectSubscribe:
         ws = MockWebSocket()
         conn = await mgr.connect(ws, "tickers", filter_expr={"symbol": "AAPL"})
         routes_key = mgr._routes_key("tickers")
-        stored_filter = redis._hashes.get(routes_key, {}).get(conn.conn_id, '')
+        stored_filter = redis._hashes.get(routes_key, {}).get(conn.conn_id, "")
         assert json.loads(stored_filter) == {"symbol": "AAPL"}
 
     @pytest.mark.asyncio
@@ -348,6 +379,7 @@ class TestConnectSubscribe:
 # Publish / deliver
 # ---------------------------------------------------------------------------
 
+
 class TestPublishDeliver:
 
     @pytest.mark.asyncio
@@ -373,11 +405,16 @@ class TestPublishDeliver:
         ws = MockWebSocket()
         conn = await mgr.connect(ws, "chat")
 
-        envelope = json.dumps({
-            "event": "message", "channel": "chat",
-            "sender": "other", "exclude_sender": False,
-            "data": {"text": "hello"}, "ts": "100-0",
-        })
+        envelope = json.dumps(
+            {
+                "event": "message",
+                "channel": "chat",
+                "sender": "other",
+                "exclude_sender": False,
+                "data": {"text": "hello"},
+                "ts": "100-0",
+            }
+        )
         await mgr._deliver_local("chat", envelope)
 
         msgs = await ws.drain()
@@ -393,16 +430,21 @@ class TestPublishDeliver:
         conn1 = await mgr.connect(ws1, "chat")
         conn2 = await mgr.connect(ws2, "chat")
 
-        envelope = json.dumps({
-            "event": "message", "channel": "chat",
-            "sender": conn1.conn_id, "exclude_sender": True,
-            "data": {"text": "from conn1"}, "ts": "200-0",
-        })
+        envelope = json.dumps(
+            {
+                "event": "message",
+                "channel": "chat",
+                "sender": conn1.conn_id,
+                "exclude_sender": True,
+                "data": {"text": "from conn1"},
+                "ts": "200-0",
+            }
+        )
         await mgr._deliver_local("chat", envelope)
 
         msgs1 = await ws1.drain()
         msgs2 = await ws2.drain()
-        assert len(msgs1) == 0          # sender excluded
+        assert len(msgs1) == 0  # sender excluded
         assert len(msgs2) == 1
 
     @pytest.mark.asyncio
@@ -413,11 +455,16 @@ class TestPublishDeliver:
         conn = await mgr.connect(ws, "chat")
         await mgr.unsubscribe(conn.conn_id, "chat")
 
-        envelope = json.dumps({
-            "event": "message", "channel": "chat",
-            "sender": "x", "exclude_sender": False,
-            "data": {"text": "nope"}, "ts": "300-0",
-        })
+        envelope = json.dumps(
+            {
+                "event": "message",
+                "channel": "chat",
+                "sender": "x",
+                "exclude_sender": False,
+                "data": {"text": "nope"},
+                "ts": "300-0",
+            }
+        )
         await mgr._deliver_local("chat", envelope)
         msgs = await ws.drain()
         assert len(msgs) == 0
@@ -437,6 +484,7 @@ class TestPublishDeliver:
 # ---------------------------------------------------------------------------
 # Stream history / rewind
 # ---------------------------------------------------------------------------
+
 
 class TestHistory:
 
@@ -498,6 +546,7 @@ class TestHistory:
 # Presence
 # ---------------------------------------------------------------------------
 
+
 class TestPresence:
 
     @pytest.mark.asyncio
@@ -535,6 +584,7 @@ class TestPresence:
 # Set-filter (live subscription swizzle)
 # ---------------------------------------------------------------------------
 
+
 class TestSetFilter:
 
     @pytest.mark.asyncio
@@ -545,7 +595,7 @@ class TestSetFilter:
         conn = await mgr.connect(ws, "tickers")
         await mgr.set_filter(conn.conn_id, "tickers", {"symbol": "TSLA"})
         routes_key = mgr._routes_key("tickers")
-        stored = redis._hashes.get(routes_key, {}).get(conn.conn_id, '')
+        stored = redis._hashes.get(routes_key, {}).get(conn.conn_id, "")
         assert json.loads(stored) == {"symbol": "TSLA"}
 
     @pytest.mark.asyncio
@@ -557,13 +607,14 @@ class TestSetFilter:
         # Clear the filter
         await mgr.set_filter(conn.conn_id, "tickers", None)
         routes_key = mgr._routes_key("tickers")
-        stored = redis._hashes.get(routes_key, {}).get(conn.conn_id, '')
-        assert stored == ''
+        stored = redis._hashes.get(routes_key, {}).get(conn.conn_id, "")
+        assert stored == ""
 
 
 # ---------------------------------------------------------------------------
 # Cursor persistence
 # ---------------------------------------------------------------------------
+
 
 class TestCursor:
 

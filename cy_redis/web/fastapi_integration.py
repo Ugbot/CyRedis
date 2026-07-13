@@ -39,6 +39,7 @@ def create_redis_lifespan(redis_client, channel_manager=None):
     On shutdown:
       - Calls ``channel_manager.stop()`` (if present)
     """
+
     @asynccontextmanager
     async def _lifespan(app):
         app.state.redis = redis_client
@@ -124,6 +125,7 @@ async def require_ws_auth(websocket, token: str):
     """
     try:
         from cy_redis.web.web_app_support import WebAppSupport
+
         support = WebAppSupport(websocket.app.state.redis)
         claims = support.verify_user_access(token)
         if claims is None:

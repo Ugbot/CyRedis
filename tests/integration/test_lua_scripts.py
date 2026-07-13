@@ -8,8 +8,9 @@ Tests Lua scripting functionality including:
 - Script atomicity
 """
 
-import pytest
 import time
+
+import pytest
 
 
 @pytest.mark.integration
@@ -21,7 +22,7 @@ class TestLuaScripts:
         script = "return 'hello'"
 
         result = redis_client.eval(script, 0)
-        assert result == b'hello' or result == 'hello'
+        assert result == b"hello" or result == "hello"
 
     def test_eval_with_keys(self, redis_client):
         """Test EVAL with key arguments."""
@@ -33,7 +34,7 @@ class TestLuaScripts:
 
         # Verify the key was set
         value = redis_client.get("test:lua:key1")
-        assert value == b'value1' or value == 'value1'
+        assert value == b"value1" or value == "value1"
 
         # Clean up
         redis_client.delete("test:lua:key1")
@@ -49,15 +50,17 @@ class TestLuaScripts:
         result = redis_client.eval(
             script,
             2,  # number of keys
-            "test:lua:key1", "test:lua:key2",  # keys
-            "value1", "value2"  # arguments
+            "test:lua:key1",
+            "test:lua:key2",  # keys
+            "value1",
+            "value2",  # arguments
         )
 
-        assert result == b'value1' or result == 'value1'
+        assert result == b"value1" or result == "value1"
 
         # Verify both keys were set
-        assert redis_client.get("test:lua:key1") in [b'value1', 'value1']
-        assert redis_client.get("test:lua:key2") in [b'value2', 'value2']
+        assert redis_client.get("test:lua:key1") in [b"value1", "value1"]
+        assert redis_client.get("test:lua:key2") in [b"value2", "value2"]
 
         # Clean up
         redis_client.delete("test:lua:key1", "test:lua:key2")
@@ -72,7 +75,7 @@ class TestLuaScripts:
 
             # Execute using SHA
             result = redis_client.evalsha(sha, 0, "test_value")
-            assert result == b'test_value' or result == 'test_value'
+            assert result == b"test_value" or result == "test_value"
 
         except (AttributeError, Exception) as e:
             pytest.skip(f"EVALSHA not available: {e}")
@@ -159,7 +162,7 @@ class TestLuaScripts:
 
         # Value should still be first_value
         value = redis_client.get(key)
-        assert value == b'first_value' or value == 'first_value'
+        assert value == b"first_value" or value == "first_value"
 
         # Clean up
         redis_client.delete(key)
@@ -249,19 +252,16 @@ class TestLuaScripts:
         for i in range(5):
             result = redis_client.eval(
                 script,
-                1, key,
+                1,
+                key,
                 "5",  # limit
                 "10",  # window in seconds
-                str(int(time.time()))
+                str(int(time.time())),
             )
             assert result == 1
 
         # 6th request should fail
-        result = redis_client.eval(
-            script,
-            1, key,
-            "5", "10", str(int(time.time()))
-        )
+        result = redis_client.eval(script, 1, key, "5", "10", str(int(time.time())))
         assert result == 0
 
         # Clean up
@@ -282,7 +282,7 @@ class TestLuaScripts:
 
         # Get and delete atomically
         result = redis_client.eval(script, 1, key)
-        assert result == b'test_value' or result == 'test_value'
+        assert result == b"test_value" or result == "test_value"
 
         # Key should be deleted
         assert redis_client.get(key) is None
@@ -307,8 +307,8 @@ class TestLuaScripts:
         # Both operations should complete atomically
         assert isinstance(result, list)
         assert len(result) == 2
-        assert result[0] == b'value1' or result[0] == 'value1'
-        assert result[1] == b'value2' or result[1] == 'value2'
+        assert result[0] == b"value1" or result[0] == "value1"
+        assert result[1] == b"value2" or result[1] == "value2"
 
         # Clean up
         redis_client.delete(key1, key2)
@@ -321,7 +321,7 @@ class TestLuaScripts:
 
         # Return string
         result = redis_client.eval("return 'hello'", 0)
-        assert result == b'hello' or result == 'hello'
+        assert result == b"hello" or result == "hello"
 
         # Return table/array
         result = redis_client.eval("return {1, 2, 3}", 0)
@@ -370,12 +370,7 @@ class TestLuaScripts:
         return redis.call('HGETALL', KEYS[1])
         """
 
-        result = redis_client.eval(
-            script,
-            1, key,
-            str(int(time.time())),
-            "5"
-        )
+        result = redis_client.eval(script, 1, key, str(int(time.time())), "5")
 
         # Should have 3 fields (timestamp, count, doubled)
         assert len(result) >= 6  # 3 fields * 2 (field + value)
@@ -433,11 +428,7 @@ class TestLuaScriptsAdvanced:
         return data
         """
 
-        result = redis_client.eval(
-            script,
-            1, key,
-            "John Doe", "30", "john@example.com"
-        )
+        result = redis_client.eval(script, 1, key, "John Doe", "30", "john@example.com")
 
         assert isinstance(result, list)
         assert len(result) >= 6

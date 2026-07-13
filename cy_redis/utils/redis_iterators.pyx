@@ -12,9 +12,10 @@ Provides async iterators for Redis streams, lists, and pub/sub.
 
 import asyncio
 import json
-from typing import Dict, List, Union, Optional, Any
+from typing import Any, Dict, List, Optional, Union
 
 # Import core Redis functionality
+
 from cy_redis.core.cy_redis_client cimport CyRedisClient
 
 
@@ -491,8 +492,8 @@ cdef class RedisPubSubIterator:
 
     async def _initialize_pubsub(self):
         """Open a dedicated connection, subscribe, and start a reader thread."""
-        import threading
         import queue as _queue
+        import threading
 
         loop = asyncio.get_running_loop()
 

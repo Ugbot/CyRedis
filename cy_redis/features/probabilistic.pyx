@@ -18,10 +18,12 @@ All backed by optimized C++ implementations for maximum performance.
 """
 
 import asyncio
-from typing import List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
-from libcpp.string cimport string
+from typing import List, Optional, Tuple
+
 from libcpp cimport bool as cpp_bool
+from libcpp.string cimport string
+
 
 # Import C++ classes
 cdef extern from "cy_redis/cpp/bloom_filter.hpp" namespace "cyredis":

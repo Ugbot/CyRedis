@@ -9,8 +9,9 @@ Tests Sentinel functionality including:
 - Sentinel monitoring
 """
 
-import pytest
 import time
+
+import pytest
 
 
 @pytest.mark.integration
@@ -160,10 +161,9 @@ class TestSentinelFailover:
             assert redis_sentinel_client.get(f"{base_key}:after:{i}") == f"value_{i}"
 
         # Cleanup
-        keys = (
-            [f"{base_key}:before:{i}" for i in range(10)] +
-            [f"{base_key}:after:{i}" for i in range(10)]
-        )
+        keys = [f"{base_key}:before:{i}" for i in range(10)] + [
+            f"{base_key}:after:{i}" for i in range(10)
+        ]
         redis_sentinel_client.delete(*keys)
 
 
@@ -328,8 +328,8 @@ class TestSentinelPubSub:
             pubsub.subscribe(channel)
 
             for message in pubsub.listen():
-                if message['type'] == 'message':
-                    messages.append(message['data'])
+                if message["type"] == "message":
+                    messages.append(message["data"])
                     if len(messages) == 3:
                         break
 

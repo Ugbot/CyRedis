@@ -6,35 +6,50 @@ Demonstrates the new cache functionality inspired by fastapi-cache.
 
 import asyncio
 import json
-import time
 import random
-from typing import Dict, Any, Optional, List
+import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 # Import our new web cache functionality
 from cy_redis import CyRedisClient
 from cy_redis.web.web_cache import (
-    WebCache, init_cache, get_cache,
-    cache, cached_endpoint, cached_json_response,
-    JsonCoder, PickleCoder, RequestKeyBuilder
+    JsonCoder,
+    PickleCoder,
+    RequestKeyBuilder,
+    WebCache,
+    cache,
+    cached_endpoint,
+    cached_json_response,
+    get_cache,
+    init_cache,
 )
 
 
 class MockRequest:
     """Mock request object for demonstration"""
-    def __init__(self, method: str = "GET", path: str = "/api/users",
-                 query_params: List[tuple] = None, headers: Dict[str, str] = None):
+
+    def __init__(
+        self,
+        method: str = "GET",
+        path: str = "/api/users",
+        query_params: List[tuple] = None,
+        headers: Dict[str, str] = None,
+    ):
         self.method = method
-        self.url = type('obj', (object,), {'path': path})()
-        self.query_params = type('obj', (object,), {
-            'items': lambda: query_params or []
-        })()
+        self.url = type("obj", (object,), {"path": path})()
+        self.query_params = type(
+            "obj", (object,), {"items": lambda: query_params or []}
+        )()
         self.headers = headers or {}
 
 
 class MockResponse:
     """Mock response object for demonstration"""
-    def __init__(self, data: Any = None, status_code: int = 200, headers: Dict[str, str] = None):
+
+    def __init__(
+        self, data: Any = None, status_code: int = 200, headers: Dict[str, str] = None
+    ):
         self.data = data
         self.status_code = status_code
         self.headers = headers or {}
@@ -53,7 +68,7 @@ class ExampleAPI:
             redis_client=self.redis_client,
             backend_type="redis",
             prefix="cyredis:api_cache",
-            default_ttl=300  # 5 minutes default
+            default_ttl=300,  # 5 minutes default
         )
 
         # Get cache instance for direct usage
@@ -63,13 +78,33 @@ class ExampleAPI:
         self.users_db = {
             "1": {"id": "1", "name": "Alice", "email": "alice@example.com", "age": 30},
             "2": {"id": "2", "name": "Bob", "email": "bob@example.com", "age": 25},
-            "3": {"id": "3", "name": "Charlie", "email": "charlie@example.com", "age": 35}
+            "3": {
+                "id": "3",
+                "name": "Charlie",
+                "email": "charlie@example.com",
+                "age": 35,
+            },
         }
 
         self.posts_db = {
-            "1": {"id": "1", "title": "Hello World", "content": "First post", "author_id": "1"},
-            "2": {"id": "2", "title": "Redis Caching", "content": "About caching", "author_id": "2"},
-            "3": {"id": "3", "title": "Python Tips", "content": "Programming tips", "author_id": "1"}
+            "1": {
+                "id": "1",
+                "title": "Hello World",
+                "content": "First post",
+                "author_id": "1",
+            },
+            "2": {
+                "id": "2",
+                "title": "Redis Caching",
+                "content": "About caching",
+                "author_id": "2",
+            },
+            "3": {
+                "id": "3",
+                "title": "Python Tips",
+                "content": "Programming tips",
+                "author_id": "1",
+            },
         }
 
     # ===== BASIC CACHING EXAMPLES =====
@@ -90,7 +125,7 @@ class ExampleAPI:
             "user": user,
             "computed_at": time.time(),
             "random_factor": random.randint(1, 100),
-            "cached": False  # Will be overridden by cache decorator
+            "cached": False,  # Will be overridden by cache decorator
         }
 
     @cache(ttl=60, namespace="expensive_data")
@@ -112,11 +147,7 @@ class ExampleAPI:
         if not user:
             return {"error": "User not found", "status_code": 404}
 
-        return {
-            "data": user,
-            "cached": False,
-            "timestamp": time.time()
-        }
+        return {"data": user, "cached": False, "timestamp": time.time()}
 
     @cached_json_response(ttl=180)
     async def get_users_list(self, request) -> Dict[str, Any]:
@@ -129,7 +160,7 @@ class ExampleAPI:
         return {
             "users": list(self.users_db.values()),
             "count": len(self.users_db),
-            "cached": False
+            "cached": False,
         }
 
     # ===== CONDITIONAL REQUESTS (ETags) =====
@@ -152,7 +183,7 @@ class ExampleAPI:
             "post": post,
             "author": author,
             "cached": False,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         return post_data
@@ -163,12 +194,7 @@ class ExampleAPI:
         """Create new user (invalidates user caches)"""
         user_id = str(len(self.users_db) + 1)
 
-        new_user = {
-            "id": user_id,
-            "name": name,
-            "email": email,
-            "age": age
-        }
+        new_user = {"id": user_id, "name": name, "email": email, "age": age}
 
         self.users_db[user_id] = new_user
 
@@ -201,8 +227,8 @@ class ExampleAPI:
             "redis_info": self.redis_client.info(),
             "demo_data": {
                 "users_count": len(self.users_db),
-                "posts_count": len(self.posts_db)
-            }
+                "posts_count": len(self.posts_db),
+            },
         }
 
     # ===== PERFORMANCE DEMONSTRATION =====
@@ -248,10 +274,7 @@ class ExampleAPI:
         print(f"   First request ETag: {etag}")
 
         # Second request - same ETag (should return 304)
-        request2 = MockRequest(
-            path="/api/posts/1",
-            headers={"If-None-Match": etag}
-        )
+        request2 = MockRequest(path="/api/posts/1", headers={"If-None-Match": etag})
         response2 = await self.get_post_with_etag(request2, "1")
 
         print(f"   Conditional request status: {response2.get('status_code', 200)}")
@@ -259,11 +282,13 @@ class ExampleAPI:
         return {
             "first_call_time": first_call_time,
             "second_call_time": second_call_time,
-            "speedup": first_call_time / second_call_time if second_call_time > 0 else 0,
+            "speedup": (
+                first_call_time / second_call_time if second_call_time > 0 else 0
+            ),
             "etag_demo": {
                 "first_response": response1,
-                "conditional_response": response2
-            }
+                "conditional_response": response2,
+            },
         }
 
     # ===== CACHE MANAGEMENT =====
@@ -275,7 +300,9 @@ class ExampleAPI:
 
         # Set some cache data
         print("\n📝 Setting cache data...")
-        self.cache.set("demo:key1", {"message": "Hello Cache", "timestamp": time.time()})
+        self.cache.set(
+            "demo:key1", {"message": "Hello Cache", "timestamp": time.time()}
+        )
         self.cache.set("demo:key2", {"data": [1, 2, 3, 4, 5]}, ttl=60)
 
         # Get cache data
@@ -313,12 +340,16 @@ class ExampleAPI:
         self.cache.set("namespace:test:key2", {"data": "value2"})
 
         print("   Before namespace invalidation:")
-        print(f"     namespace:test:key1 exists: {self.cache.exists('namespace:test:key1')}")
+        print(
+            f"     namespace:test:key1 exists: {self.cache.exists('namespace:test:key1')}"
+        )
 
         self.cache.invalidate_namespace("namespace:test")
 
         print("   After namespace invalidation:")
-        print(f"     namespace:test:key1 exists: {self.cache.exists('namespace:test:key1')}")
+        print(
+            f"     namespace:test:key1 exists: {self.cache.exists('namespace:test:key1')}"
+        )
 
     # ===== MULTIPLE BACKENDS DEMO =====
 
@@ -346,10 +377,7 @@ class ExampleAPI:
         print(f"   Exists: {memory_exists}")
         print(f"   Stats: {memory_cache.get_stats()}")
 
-        return {
-            "redis_stats": redis_stats,
-            "memory_data": memory_data
-        }
+        return {"redis_stats": redis_stats, "memory_data": memory_data}
 
 
 async def main():
@@ -407,6 +435,7 @@ async def main():
     except Exception as e:
         print(f"❌ Error during demonstration: {e}")
         import traceback
+
         traceback.print_exc()
 
 

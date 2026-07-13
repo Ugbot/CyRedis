@@ -16,11 +16,12 @@ Supports:
 """
 
 import numpy as np
-cimport numpy as cnp
-import asyncio
-from typing import Any, Dict, List, Optional, Union
-from concurrent.futures import ThreadPoolExecutor
 
+cimport numpy as cnp
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Union
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
 

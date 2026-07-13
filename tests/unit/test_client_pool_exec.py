@@ -1,10 +1,11 @@
 import asyncio
+
 import pytest
 
+from cy_redis.core.cy_redis_client import ConnectionError as CyConnectionError
 from cy_redis.core.cy_redis_client import (
     CyRedisClient,
     CyRedisConnectionPool,
-    ConnectionError as CyConnectionError,
 )
 
 
@@ -58,5 +59,3 @@ def test_pool_recovers_after_return():
     conn2 = pool.get_connection()
     assert conn2 is not None
     pool.return_connection(conn2)
-
-

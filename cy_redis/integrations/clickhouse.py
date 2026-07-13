@@ -251,7 +251,9 @@ class CyClickHouseBridge:
             # Fallback: run with LIMIT 1 to get column names from actual data
             sample = await self._ch.query(f"{source_query} LIMIT 1")
             if not sample:
-                raise RuntimeError("source_query returned no rows — cannot infer schema")
+                raise RuntimeError(
+                    "source_query returned no rows — cannot infer schema"
+                )
             col_names = list(sample[0].keys())
         else:
             col_names = [r["name"] for r in schema_rows]
@@ -437,9 +439,7 @@ class CyClickHouseBridge:
             if entries:
                 # Persist cursor — fire-and-forget (best-effort durability)
                 loop = asyncio.get_event_loop()
-                loop.create_task(
-                    self._redis.set_async(cursor_key, cursor)
-                )
+                loop.create_task(self._redis.set_async(cursor_key, cursor))
 
             await asyncio.sleep(poll_interval_sec)
 

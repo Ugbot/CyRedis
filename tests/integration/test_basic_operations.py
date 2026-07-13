@@ -11,8 +11,9 @@ Tests fundamental Redis commands end-to-end including:
 - Transaction operations
 """
 
-import pytest
 import time
+
+import pytest
 
 
 @pytest.mark.integration
@@ -132,11 +133,7 @@ class TestHashOperations:
     def test_hmset_hmget(self, redis_client, unique_key):
         """Test HMSET and HMGET operations."""
         key = f"{unique_key}:hash"
-        mapping = {
-            "field1": "value1",
-            "field2": "value2",
-            "field3": "value3"
-        }
+        mapping = {"field1": "value1", "field2": "value2", "field3": "value3"}
 
         # Multi-set
         redis_client.hset(key, mapping=mapping)

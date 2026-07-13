@@ -14,36 +14,41 @@ Run:
     pytest tests/integration/test_pgcache_module.py -v -m pgcache
 """
 
-import os
 import json
-import uuid
+import os
 import subprocess
+import uuid
+
 import pytest
 
 try:
     import redis as redis_py
+
     REDIS_PY_AVAILABLE = True
 except ImportError:
     REDIS_PY_AVAILABLE = False
 
 MODULE_REDIS_PORT = int(os.getenv("CY_GAME_REDIS_PORT", "6380"))
-PGCACHE_SO_PATH   = os.path.abspath("plugins/pgcache/src/pgcache.so")
+PGCACHE_SO_PATH = os.path.abspath("plugins/pgcache/src/pgcache.so")
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def module_redis():
     if not REDIS_PY_AVAILABLE:
         pytest.skip("redis-py not installed")
     try:
-        r = redis_py.Redis(host="127.0.0.1", port=MODULE_REDIS_PORT,
-                           decode_responses=True, socket_timeout=5)
+        r = redis_py.Redis(
+            host="127.0.0.1",
+            port=MODULE_REDIS_PORT,
+            decode_responses=True,
+            socket_timeout=5,
+        )
         r.ping()
         return r
     except Exception:
-        pytest.skip(
-            f"Redis not available on port {MODULE_REDIS_PORT}"
-        )
+        pytest.skip(f"Redis not available on port {MODULE_REDIS_PORT}")
 
 
 @pytest.fixture(scope="session")
@@ -67,13 +72,21 @@ def pgcache_loaded(module_redis):
         pg_user = os.getenv("PGUSER", os.popen("whoami").read().strip())
         try:
             module_redis.execute_command(
-                "MODULE", "LOAD", PGCACHE_SO_PATH,
-                "pg_host",   "localhost",
-                "pg_port",   "5432",
-                "pg_database", "postgres",
-                "pg_user",   pg_user,
-                "pg_password", "",
-                "default_ttl", "60",
+                "MODULE",
+                "LOAD",
+                PGCACHE_SO_PATH,
+                "pg_host",
+                "localhost",
+                "pg_port",
+                "5432",
+                "pg_database",
+                "postgres",
+                "pg_user",
+                pg_user,
+                "pg_password",
+                "",
+                "default_ttl",
+                "60",
             )
         except Exception as e:
             pytest.skip(f"Could not load pgcache module: {e}")
@@ -100,7 +113,8 @@ INSERT INTO pgcache_test_users (id, name, email, score) VALUES
 """
     result = subprocess.run(
         ["psql", "-U", pg_user, "-d", "postgres", "-c", ddl],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         pytest.skip(f"Could not create test table: {result.stderr}")
@@ -109,8 +123,15 @@ INSERT INTO pgcache_test_users (id, name, email, score) VALUES
 
     # Teardown
     subprocess.run(
-        ["psql", "-U", pg_user, "-d", "postgres",
-         "-c", "DROP TABLE IF EXISTS pgcache_test_users;"],
+        [
+            "psql",
+            "-U",
+            pg_user,
+            "-d",
+            "postgres",
+            "-c",
+            "DROP TABLE IF EXISTS pgcache_test_users;",
+        ],
         capture_output=True,
     )
 
@@ -129,6 +150,7 @@ def flush_cache_keys(pgcache_loaded, request):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def read(r, table, pk_dict, ttl=None):
     args = ["PGCACHE.READ", table, json.dumps(pk_dict, separators=(",", ":"))]
     if ttl is not None:
@@ -137,9 +159,12 @@ def read(r, table, pk_dict, ttl=None):
 
 
 def write(r, table, pk_dict, data_dict, ttl=None):
-    args = ["PGCACHE.WRITE", table,
-            json.dumps(pk_dict, separators=(",", ":")),
-            json.dumps(data_dict, separators=(",", ":"))]
+    args = [
+        "PGCACHE.WRITE",
+        table,
+        json.dumps(pk_dict, separators=(",", ":")),
+        json.dumps(data_dict, separators=(",", ":")),
+    ]
     if ttl is not None:
         args.append(str(ttl))
     return r.execute_command(*args)
@@ -147,14 +172,14 @@ def write(r, table, pk_dict, data_dict, ttl=None):
 
 def invalidate(r, table, pk_dict):
     return r.execute_command(
-        "PGCACHE.INVALIDATE", table,
+        "PGCACHE.INVALIDATE",
+        table,
         json.dumps(pk_dict, separators=(",", ":")),
     )
 
 
 def multiread(r, table, pk_list, ttl=None):
-    args = ["PGCACHE.MULTIREAD", table,
-            json.dumps(pk_list, separators=(",", ":"))]
+    args = ["PGCACHE.MULTIREAD", table, json.dumps(pk_list, separators=(",", ":"))]
     if ttl is not None:
         args.append(str(ttl))
     return r.execute_command(*args)
@@ -162,12 +187,17 @@ def multiread(r, table, pk_list, ttl=None):
 
 # ── Tests: WRITE and READ ─────────────────────────────────────────────────────
 
+
 @pytest.mark.pgcache
 class TestWriteRead:
     def test_write_returns_ok(self, pgcache_loaded):
         r = pgcache_loaded
-        result = write(r, "pgcache_test_users", {"id": "99"},
-                       {"id": "99", "name": "Test", "score": "0"})
+        result = write(
+            r,
+            "pgcache_test_users",
+            {"id": "99"},
+            {"id": "99", "name": "Test", "score": "0"},
+        )
         assert result == "OK"
 
     def test_read_cache_hit(self, pgcache_loaded):
@@ -183,17 +213,18 @@ class TestWriteRead:
 
     def test_read_custom_ttl(self, pgcache_loaded):
         r = pgcache_loaded
-        write(r, "pgcache_test_users", {"id": "43"},
-              {"id": "43", "name": "TTLUser"}, 5)
+        write(r, "pgcache_test_users", {"id": "43"}, {"id": "43", "name": "TTLUser"}, 5)
         result = read(r, "pgcache_test_users", {"id": "43"})
         assert result is not None
 
     def test_write_overwrites_existing(self, pgcache_loaded):
         r = pgcache_loaded
-        write(r, "pgcache_test_users", {"id": "10"},
-              {"id": "10", "name": "OldName"}, 120)
-        write(r, "pgcache_test_users", {"id": "10"},
-              {"id": "10", "name": "NewName"}, 120)
+        write(
+            r, "pgcache_test_users", {"id": "10"}, {"id": "10", "name": "OldName"}, 120
+        )
+        write(
+            r, "pgcache_test_users", {"id": "10"}, {"id": "10", "name": "NewName"}, 120
+        )
         result = read(r, "pgcache_test_users", {"id": "10"})
         row = json.loads(result)
         assert row["name"] == "NewName"
@@ -201,12 +232,14 @@ class TestWriteRead:
 
 # ── Tests: INVALIDATE ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.pgcache
 class TestInvalidate:
     def test_invalidate_removes_from_cache(self, pgcache_loaded):
         r = pgcache_loaded
-        write(r, "pgcache_test_users", {"id": "50"},
-              {"id": "50", "name": "ToDelete"}, 120)
+        write(
+            r, "pgcache_test_users", {"id": "50"}, {"id": "50", "name": "ToDelete"}, 120
+        )
         assert read(r, "pgcache_test_users", {"id": "50"}) is not None
         invalidate(r, "pgcache_test_users", {"id": "50"})
         # Without postgres having this row, cache miss returns None
@@ -221,6 +254,7 @@ class TestInvalidate:
 
 
 # ── Tests: READ from PostgreSQL (cache-miss path) ─────────────────────────────
+
 
 @pytest.mark.pgcache
 class TestReadFromPostgres:
@@ -245,7 +279,7 @@ class TestReadFromPostgres:
 
     def test_read_second_call_is_cache_hit(self, pgcache_loaded, pg_table):
         r = pgcache_loaded
-        first  = read(r, pg_table, {"id": "3"})
+        first = read(r, pg_table, {"id": "3"})
         second = read(r, pg_table, {"id": "3"})
         assert first == second
         row = json.loads(second)
@@ -265,16 +299,23 @@ class TestReadFromPostgres:
 
 # ── Tests: MULTIREAD ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.pgcache
 class TestMultiRead:
     def test_multiread_cache_hits(self, pgcache_loaded):
         r = pgcache_loaded
         for i in range(1, 4):
-            write(r, "pgcache_test_users", {"id": str(i)},
-                  {"id": str(i), "name": f"User{i}"}, 120)
+            write(
+                r,
+                "pgcache_test_users",
+                {"id": str(i)},
+                {"id": str(i), "name": f"User{i}"},
+                120,
+            )
 
-        results = multiread(r, "pgcache_test_users",
-                            [{"id": "1"}, {"id": "2"}, {"id": "3"}])
+        results = multiread(
+            r, "pgcache_test_users", [{"id": "1"}, {"id": "2"}, {"id": "3"}]
+        )
         assert len(results) == 3
         for res, expected_id in zip(results, ["1", "2", "3"]):
             assert res is not None
@@ -283,18 +324,16 @@ class TestMultiRead:
 
     def test_multiread_from_postgres(self, pgcache_loaded, pg_table):
         r = pgcache_loaded
-        results = multiread(r, pg_table,
-                            [{"id": "1"}, {"id": "2"}, {"id": "3"}])
+        results = multiread(r, pg_table, [{"id": "1"}, {"id": "2"}, {"id": "3"}])
         assert len(results) == 3
         names = [json.loads(r)["name"] for r in results if r is not None]
         assert "Alice" in names
-        assert "Bob"   in names
+        assert "Bob" in names
         assert "Carol" in names
 
     def test_multiread_missing_returns_none_slot(self, pgcache_loaded, pg_table):
         r = pgcache_loaded
-        results = multiread(r, pg_table,
-                            [{"id": "1"}, {"id": "9999"}])
+        results = multiread(r, pg_table, [{"id": "1"}, {"id": "9999"}])
         assert len(results) == 2
         assert results[0] is not None
         assert results[1] is None
@@ -302,12 +341,15 @@ class TestMultiRead:
     def test_multiread_mixed_cache_and_miss(self, pgcache_loaded, pg_table):
         r = pgcache_loaded
         # Pre-warm id=1
-        write(r, pg_table, {"id": "1"},
-              {"id": "1", "name": "Alice", "email": "alice@example.com",
-               "score": "100"}, 120)
+        write(
+            r,
+            pg_table,
+            {"id": "1"},
+            {"id": "1", "name": "Alice", "email": "alice@example.com", "score": "100"},
+            120,
+        )
         # id=2 stays cold
-        results = multiread(r, pg_table,
-                            [{"id": "1"}, {"id": "2"}])
+        results = multiread(r, pg_table, [{"id": "1"}, {"id": "2"}])
         assert len(results) == 2
         assert results[0] is not None
         assert results[1] is not None  # fetched from pg
@@ -316,15 +358,22 @@ class TestMultiRead:
     def test_multiread_custom_ttl(self, pgcache_loaded):
         r = pgcache_loaded
         for i in [20, 21]:
-            write(r, "pgcache_test_users", {"id": str(i)},
-                  {"id": str(i), "name": f"User{i}"}, 300)
-        results = multiread(r, "pgcache_test_users",
-                            [{"id": "20"}, {"id": "21"}], ttl=10)
+            write(
+                r,
+                "pgcache_test_users",
+                {"id": str(i)},
+                {"id": str(i), "name": f"User{i}"},
+                300,
+            )
+        results = multiread(
+            r, "pgcache_test_users", [{"id": "20"}, {"id": "21"}], ttl=10
+        )
         assert len(results) == 2
         assert all(res is not None for res in results)
 
 
 # ── Tests: cache key TTL ──────────────────────────────────────────────────────
+
 
 @pytest.mark.pgcache
 class TestTTL:
@@ -337,14 +386,16 @@ class TestTTL:
 
     def test_write_sets_custom_ttl(self, pgcache_loaded):
         r = pgcache_loaded
-        write(r, "pgcache_test_users", {"id": "60"},
-              {"id": "60", "name": "TTLTest"}, 300)
+        write(
+            r, "pgcache_test_users", {"id": "60"}, {"id": "60", "name": "TTLTest"}, 300
+        )
         pk_str = json.dumps({"id": "60"}, separators=(",", ":"))
         ttl = r.ttl(f"pg_cache:pgcache_test_users:{pk_str}")
         assert 290 <= ttl <= 300
 
 
 # ── Tests: event publishing ───────────────────────────────────────────────────
+
 
 @pytest.mark.pgcache
 class TestEvents:
@@ -354,8 +405,13 @@ class TestEvents:
         p.subscribe("pg_cache_events")
         p.get_message(timeout=0.1)  # subscription confirmation
 
-        write(r, "pgcache_test_users", {"id": "70"},
-              {"id": "70", "name": "EventUser"}, 120)
+        write(
+            r,
+            "pgcache_test_users",
+            {"id": "70"},
+            {"id": "70", "name": "EventUser"},
+            120,
+        )
 
         msg = p.get_message(timeout=2.0)
         p.unsubscribe()
@@ -366,8 +422,13 @@ class TestEvents:
 
     def test_invalidate_publishes_event(self, pgcache_loaded):
         r = pgcache_loaded
-        write(r, "pgcache_test_users", {"id": "71"},
-              {"id": "71", "name": "EventUser2"}, 120)
+        write(
+            r,
+            "pgcache_test_users",
+            {"id": "71"},
+            {"id": "71", "name": "EventUser2"},
+            120,
+        )
 
         p = r.pubsub()
         p.subscribe("pg_cache_events")
@@ -383,8 +444,9 @@ class TestEvents:
 
     def test_read_hit_publishes_event(self, pgcache_loaded):
         r = pgcache_loaded
-        write(r, "pgcache_test_users", {"id": "72"},
-              {"id": "72", "name": "HitEvent"}, 120)
+        write(
+            r, "pgcache_test_users", {"id": "72"}, {"id": "72", "name": "HitEvent"}, 120
+        )
 
         p = r.pubsub()
         p.subscribe("pg_cache_events")

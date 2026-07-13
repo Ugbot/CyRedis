@@ -1,13 +1,20 @@
 """
 Unit tests for functions.pyx - Redis Functions
 """
-import pytest
+
 import uuid
-from cy_redis.features.functions import (
-    CyRedisFunctionsManager, CyLocks, CyRateLimiter, CyQueue,
-    RedisFunctions, FUNCTION_LIBRARIES
-)
+
+import pytest
+
 from cy_redis.core.cy_redis_client import CyRedisClient
+from cy_redis.features.functions import (
+    FUNCTION_LIBRARIES,
+    CyLocks,
+    CyQueue,
+    CyRateLimiter,
+    CyRedisFunctionsManager,
+    RedisFunctions,
+)
 
 
 @pytest.fixture
@@ -54,7 +61,7 @@ class TestCyRedisFunctionsManager:
         """Test loading a function library"""
         try:
             result = functions_manager.load_library("cy:locks")
-            assert 'status' in result
+            assert "status" in result
             # May be 'loaded' or 'already_loaded'
         except Exception as e:
             # Redis may not support functions or server may be old version
@@ -94,9 +101,9 @@ class TestFunctionLibraries:
         """Test locks library definition"""
         assert "cy:locks" in FUNCTION_LIBRARIES
         lib = FUNCTION_LIBRARIES["cy:locks"]
-        assert 'version' in lib
-        assert 'description' in lib
-        assert 'functions' in lib
+        assert "version" in lib
+        assert "description" in lib
+        assert "functions" in lib
 
     def test_rate_library_defined(self):
         """Test rate limiting library definition"""
@@ -126,11 +133,11 @@ class TestCyLocks:
 
             result = cy_locks.acquire(lock_key, owner)
             assert isinstance(result, dict)
-            assert 'acquired' in result
-            assert 'fencing_token' in result
+            assert "acquired" in result
+            assert "fencing_token" in result
 
             # Release lock
-            if result['acquired']:
+            if result["acquired"]:
                 cy_locks.release(lock_key, owner)
         except Exception as e:
             pytest.skip(f"Redis Functions not supported: {e}")
@@ -143,7 +150,7 @@ class TestCyLocks:
         try:
             cy_locks.func_mgr.load_library("cy:locks")
             result = cy_locks.acquire(lock_key, owner)
-            if result['acquired']:
+            if result["acquired"]:
                 release_result = cy_locks.release(lock_key, owner)
                 assert isinstance(release_result, (bool, int))
         except Exception as e:
@@ -157,7 +164,7 @@ class TestCyLocks:
         try:
             cy_locks.func_mgr.load_library("cy:locks")
             result = cy_locks.acquire(lock_key, owner)
-            if result['acquired']:
+            if result["acquired"]:
                 refresh_result = cy_locks.refresh(lock_key, owner)
                 assert isinstance(refresh_result, (bool, int))
                 cy_locks.release(lock_key, owner)
@@ -181,15 +188,12 @@ class TestCyRateLimiter:
             cy_rate_limiter.func_mgr.load_library("cy:rate")
 
             result = cy_rate_limiter.token_bucket(
-                key,
-                capacity=10,
-                refill_rate_per_ms=1.0,
-                cost=1
+                key, capacity=10, refill_rate_per_ms=1.0, cost=1
             )
 
             assert isinstance(result, dict)
-            assert 'allowed' in result
-            assert 'remaining' in result
+            assert "allowed" in result
+            assert "remaining" in result
         except Exception as e:
             pytest.skip(f"Redis Functions not supported: {e}")
 
@@ -201,14 +205,12 @@ class TestCyRateLimiter:
             cy_rate_limiter.func_mgr.load_library("cy:rate")
 
             result = cy_rate_limiter.sliding_window(
-                key,
-                window_ms=1000,
-                max_requests=10
+                key, window_ms=1000, max_requests=10
             )
 
             assert isinstance(result, dict)
-            assert 'allowed' in result
-            assert 'remaining' in result
+            assert "allowed" in result
+            assert "remaining" in result
         except Exception as e:
             pytest.skip(f"Redis Functions not supported: {e}")
 
@@ -229,11 +231,7 @@ class TestCyQueue:
         try:
             cy_queue.func_mgr.load_library("cy:queue")
 
-            result = cy_queue.enqueue(
-                queue_name,
-                message_id,
-                "test_payload"
-            )
+            result = cy_queue.enqueue(queue_name, message_id, "test_payload")
 
             assert result in ["enqueued", "delayed", "duplicate"]
         except Exception as e:
@@ -302,5 +300,5 @@ class TestEdgeCases:
         pass
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

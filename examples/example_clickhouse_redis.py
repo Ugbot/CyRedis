@@ -61,6 +61,7 @@ CHANNEL_NAME = "tickers"
 # Seed ClickHouse with synthetic tick data
 # ---------------------------------------------------------------------------
 
+
 async def setup_clickhouse(ch: CyClickHouseClient) -> None:
     """Create ticks table and insert synthetic data if it doesn't exist."""
     print("[setup] Creating ticks table...")
@@ -97,7 +98,10 @@ async def setup_clickhouse(ch: CyClickHouseClient) -> None:
             f"{price}, {price - spread}, {price + spread}, {random.randint(1, 1000)})"
         )
 
-    values_sql = "INSERT INTO ticks (ts, symbol, price, bid, ask, volume) VALUES " + ",".join(rows)
+    values_sql = (
+        "INSERT INTO ticks (ts, symbol, price, bid, ask, volume) VALUES "
+        + ",".join(rows)
+    )
     await ch.execute(values_sql)
     print("[setup] Seed complete.")
 
@@ -105,6 +109,7 @@ async def setup_clickhouse(ch: CyClickHouseClient) -> None:
 # ---------------------------------------------------------------------------
 # Mode 1 — Live cache
 # ---------------------------------------------------------------------------
+
 
 async def demo_live_cache(bridge: CyClickHouseBridge) -> None:
     print("\n" + "=" * 60)
@@ -148,6 +153,7 @@ async def demo_live_cache(bridge: CyClickHouseBridge) -> None:
 # Mode 2 — Stream dump
 # ---------------------------------------------------------------------------
 
+
 async def demo_stream_dump(bridge: CyClickHouseBridge, redis: CyRedisClient) -> None:
     print("\n" + "=" * 60)
     print("MODE 2 — One-shot stream dump into Redis Stream")
@@ -163,7 +169,9 @@ async def demo_stream_dump(bridge: CyClickHouseBridge, redis: CyRedisClient) -> 
 
     print(f"  Dumping ticks from last hour to {STREAM_KEY!r}...")
     t0 = time.monotonic()
-    count = await bridge.dump_to_stream(query, STREAM_KEY, batch_size=200, maxlen=50_000)
+    count = await bridge.dump_to_stream(
+        query, STREAM_KEY, batch_size=200, maxlen=50_000
+    )
     elapsed = time.monotonic() - t0
     print(f"  Written {count} rows in {elapsed:.2f}s")
 
@@ -184,6 +192,7 @@ async def demo_stream_dump(bridge: CyClickHouseBridge, redis: CyRedisClient) -> 
 # Mode 3 — Watch stream (runs for a short burst then cancels)
 # ---------------------------------------------------------------------------
 
+
 async def demo_watch_stream(bridge: CyClickHouseBridge, ch: CyClickHouseClient) -> None:
     print("\n" + "=" * 60)
     print("MODE 3 — Incremental watch → Redis Stream (15-second demo)")
@@ -198,7 +207,9 @@ async def demo_watch_stream(bridge: CyClickHouseBridge, ch: CyClickHouseClient) 
         LIMIT 500
     """
 
-    initial_wm = (datetime.utcnow() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+    initial_wm = (datetime.utcnow() - timedelta(minutes=1)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
     print(f"  Watching for new ticks since {initial_wm!r}...")
     print(f"  Writing to Redis Stream: {watch_stream_key!r}")
 
@@ -233,7 +244,9 @@ async def demo_watch_stream(bridge: CyClickHouseBridge, ch: CyClickHouseClient) 
         ):
             poll_count += 1
             total_rows += batch_count
-            print(f"  Poll {poll_count:2d}: +{batch_count} rows  (total so far: {total_rows})")
+            print(
+                f"  Poll {poll_count:2d}: +{batch_count} rows  (total so far: {total_rows})"
+            )
             if poll_count >= 7:
                 break
 
@@ -245,6 +258,7 @@ async def demo_watch_stream(bridge: CyClickHouseBridge, ch: CyClickHouseClient) 
 # Mode 4 — Channel broadcast (WebSocket server, optional)
 # ---------------------------------------------------------------------------
 
+
 async def demo_channel_broadcast(
     bridge: CyClickHouseBridge,
     redis: CyRedisClient,
@@ -254,8 +268,8 @@ async def demo_channel_broadcast(
     print("=" * 60)
 
     try:
-        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
         import uvicorn
+        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
         from cy_redis.web import CyChannelManager, create_redis_lifespan, get_channels
     except ImportError:
@@ -274,6 +288,7 @@ async def demo_channel_broadcast(
     @app.websocket("/ws/tickers")
     async def ws_tickers(websocket: WebSocket):
         from cy_redis.web import get_channels as _gc
+
         ch = channel_manager
         conn = await ch.connect(websocket, CHANNEL_NAME, rewind=10)
         try:
@@ -296,12 +311,14 @@ async def demo_channel_broadcast(
         )
 
     print(f"  WebSocket server at ws://localhost:8766/ws/tickers")
-    print(f"  Connect with: python -c \"")
+    print(f'  Connect with: python -c "')
     print(f"    import asyncio, websockets, json")
     print(f"    async def r():")
-    print(f"        async with websockets.connect('ws://localhost:8766/ws/tickers') as ws:")
+    print(
+        f"        async with websockets.connect('ws://localhost:8766/ws/tickers') as ws:"
+    )
     print(f"            for _ in range(10): print(json.loads(await ws.recv()))")
-    print(f"    asyncio.run(r())\"")
+    print(f'    asyncio.run(r())"')
 
     broadcast = asyncio.create_task(broadcast_task())
 
@@ -324,6 +341,7 @@ async def demo_channel_broadcast(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 async def main() -> None:
     ch = CyClickHouseClient(host=CH_HOST, port=CH_PORT)

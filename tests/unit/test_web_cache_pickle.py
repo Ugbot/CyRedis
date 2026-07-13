@@ -2,11 +2,12 @@
 signature is verified before unpickling, so cache-poisoned/forged blobs are
 rejected.
 """
+
 import pickle
 
 import pytest
 
-from cy_redis.web.web_cache import PickleCoder, JsonCoder
+from cy_redis.web.web_cache import JsonCoder, PickleCoder
 
 
 def test_pickle_coder_requires_secret_or_explicit_optin():

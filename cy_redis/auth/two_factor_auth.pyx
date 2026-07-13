@@ -10,14 +10,15 @@ Two-Factor Authentication for CyRedis Web Application Support.
 Provides TOTP and backup code authentication.
 """
 
+import base64
 import hashlib
 import hmac
-import time
-import base64
 import secrets
-from typing import Dict, Any
+import time
+from typing import Any, Dict
 
 # Import core Redis functionality
+
 from cy_redis.core.cy_redis_client cimport CyRedisClient
 
 
@@ -140,10 +141,10 @@ cdef class TwoFactorAuth:
             return False
 
         # Simplified TOTP verification - in production use a proper library
-        import hmac
-        import hashlib
-        import time
         import base64
+        import hashlib
+        import hmac
+        import time
 
         # Check the current window and the two adjacent ones; this loop is
         # statically bounded to exactly three iterations. The bound is asserted

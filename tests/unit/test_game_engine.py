@@ -8,28 +8,30 @@ Tests cover:
 - Integration: spawn, tick, intent, event round-trip (requires Redis)
 - Cross-zone transfer round-trip (requires Redis)
 """
+
 import re
 import time
 import uuid
+
 import pytest
 
-from cyredis_game.game_engine import (
-    GameEngine,
-    CyZone,
-    CyGameWorld,
-    CyGameEngine,
-    GAME_ENGINE_FUNCTIONS,
-    serialize_game_data,
-    deserialize_game_data,
-    DEFAULT_TICK_MS,
-    MAX_INTENTS_PER_TICK,
-)
 from cy_redis.core.cy_redis_client import CyRedisClient
-
+from cyredis_game.game_engine import (
+    DEFAULT_TICK_MS,
+    GAME_ENGINE_FUNCTIONS,
+    MAX_INTENTS_PER_TICK,
+    CyGameEngine,
+    CyGameWorld,
+    CyZone,
+    GameEngine,
+    deserialize_game_data,
+    serialize_game_data,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def redis_available() -> bool:
@@ -69,6 +71,7 @@ def zone_id():
 # Serialization (no Redis required)
 # ---------------------------------------------------------------------------
 
+
 class TestSerialization:
     def test_roundtrip_dict(self):
         data = {"x": 1.5, "y": -3.0, "name": "hero", "hp": 100}
@@ -91,6 +94,7 @@ class TestSerialization:
 # Lua function source validation (no Redis required)
 # ---------------------------------------------------------------------------
 
+
 class TestLuaSource:
     REQUIRED_FUNCTIONS = [
         "tick_fetch_due",
@@ -104,23 +108,29 @@ class TestLuaSource:
     ]
 
     def test_has_shebang_header(self):
-        assert GAME_ENGINE_FUNCTIONS.startswith("#!lua name=cy_game"), \
-            "Lua source must start with '#!lua name=cy_game' for FUNCTION LOAD"
+        assert GAME_ENGINE_FUNCTIONS.startswith(
+            "#!lua name=cy_game"
+        ), "Lua source must start with '#!lua name=cy_game' for FUNCTION LOAD"
 
     def test_all_functions_registered(self):
         for fn in self.REQUIRED_FUNCTIONS:
-            assert f"'{fn}'" in GAME_ENGINE_FUNCTIONS or f'"{fn}"' in GAME_ENGINE_FUNCTIONS, \
-                f"redis.register_function('{fn}', ...) not found in Lua source"
+            assert (
+                f"'{fn}'" in GAME_ENGINE_FUNCTIONS or f'"{fn}"' in GAME_ENGINE_FUNCTIONS
+            ), f"redis.register_function('{fn}', ...) not found in Lua source"
 
     def test_xfer_blob_format_documented(self):
         # The blob format must include 'hp' so health is preserved across transfers
-        assert "'|'..hp" in GAME_ENGINE_FUNCTIONS or '"'+'|"..hp' in GAME_ENGINE_FUNCTIONS \
-               or "hp" in GAME_ENGINE_FUNCTIONS
+        assert (
+            "'|'..hp" in GAME_ENGINE_FUNCTIONS
+            or '"' + '|"..hp' in GAME_ENGINE_FUNCTIONS
+            or "hp" in GAME_ENGINE_FUNCTIONS
+        )
 
 
 # ---------------------------------------------------------------------------
 # Zone key generation (no Redis required)
 # ---------------------------------------------------------------------------
+
 
 class TestZoneKeys:
     """CyZone key generation — uses a mock redis-like object"""
@@ -129,9 +139,11 @@ class TestZoneKeys:
         class _FakeRedis:
             def execute_command(self, *a, **kw):
                 return None
+
         class _FakeFuncMgr:
             def call_function(self, *a, **kw):
                 return None
+
         return CyZone(world, zone, _FakeRedis(), _FakeFuncMgr())
 
     def test_entity_key_has_hash_tag(self):
@@ -166,6 +178,7 @@ class TestZoneKeys:
 # Engine construction (no Redis required)
 # ---------------------------------------------------------------------------
 
+
 class TestEngineConstruction:
     def test_game_engine_class_importable(self):
         assert GameEngine is not None
@@ -178,6 +191,7 @@ class TestEngineConstruction:
 # ---------------------------------------------------------------------------
 # Integration tests (require Redis)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.redis
 class TestEntityLifecycle:
@@ -259,7 +273,9 @@ class TestIntentAndTick:
 
         # Read position events
         events = zone.read_events("0", 50)
-        pos_events = [e for _, e in events if e.get("type") == "pos" and e.get("eid") == eid]
+        pos_events = [
+            e for _, e in events if e.get("type") == "pos" and e.get("eid") == eid
+        ]
         assert len(pos_events) > 0, "No position event emitted after move intent"
 
         # Position should have changed (vx=50, dt=1s → dx≈50)
@@ -318,7 +334,9 @@ class TestCrossZoneTransfer:
         # Entity should now appear in zone B's events
         zone_b = world.get_zone(zone_b_id)
         events = zone_b.read_events("0", 20)
-        spawn_events = [e for _, e in events if e.get("type") == "spawn" and e.get("eid") == eid]
+        spawn_events = [
+            e for _, e in events if e.get("type") == "spawn" and e.get("eid") == eid
+        ]
         assert len(spawn_events) >= 1, "Entity did not appear in zone B after transfer"
 
 

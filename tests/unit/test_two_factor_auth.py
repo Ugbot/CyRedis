@@ -3,6 +3,7 @@
 Requires the [auth] extra (pyotp is used here to compute the expected TOTP
 code from the enrolment secret, cross-checking our verifier).
 """
+
 import uuid
 
 import pytest

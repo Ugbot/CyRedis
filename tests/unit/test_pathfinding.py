@@ -15,14 +15,15 @@ Redis integration tests (require cy_game.so):
 
 import os
 import uuid
+
 import pytest
 
 from cy_redis.core.cy_redis_client import CyRedisClient
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def redis_client():
@@ -68,6 +69,7 @@ def cleanup_grid(redis_client, grid_key):
 # No-Redis: API surface
 # ---------------------------------------------------------------------------
 
+
 class TestCyPathfinderKeyFormat:
     def test_import(self):
         try:
@@ -107,6 +109,7 @@ class TestCyPathfinderKeyFormat:
 # Integration: CYPATH commands
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.redis
 class TestCyPathCommands:
     def test_clear_grid(self, redis_client, module_loaded, grid_key):
@@ -117,9 +120,16 @@ class TestCyPathCommands:
 
     def test_straight_path(self, redis_client, module_loaded, grid_key):
         # No obstacles: (0,0) → (4,0) should give 4 steps along x axis
-        raw = redis_client.execute_command([
-            "CYPATH.FIND", grid_key, "0", "0", "4", "0",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYPATH.FIND",
+                grid_key,
+                "0",
+                "0",
+                "4",
+                "0",
+            ]
+        )
         assert raw is not None
         # Expect pairs [x,y, ...] ending at (4,0)
         assert len(raw) >= 2
@@ -130,9 +140,16 @@ class TestCyPathCommands:
         # Block the direct x path at (2,0), (2,1) — force path to go around
         for y in range(0, 5):
             redis_client.execute_command(["CYPATH.SET", grid_key, "2", str(y), "1"])
-        raw = redis_client.execute_command([
-            "CYPATH.FIND", grid_key, "0", "2", "4", "2",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYPATH.FIND",
+                grid_key,
+                "0",
+                "2",
+                "4",
+                "2",
+            ]
+        )
         # Should find some path — not necessarily the same route each time
         # Just verify start/end are not in the blocked column
         if raw:
@@ -143,22 +160,44 @@ class TestCyPathCommands:
         # Build a solid wall sealing off the goal
         for y in range(-1, 3):
             redis_client.execute_command(["CYPATH.SET", grid_key, "2", str(y), "1"])
-        raw = redis_client.execute_command([
-            "CYPATH.FIND", grid_key, "0", "0", "5", "0",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYPATH.FIND",
+                grid_key,
+                "0",
+                "0",
+                "5",
+                "0",
+            ]
+        )
         assert raw == [] or raw is None
 
     def test_start_equals_goal(self, redis_client, module_loaded, grid_key):
-        raw = redis_client.execute_command([
-            "CYPATH.FIND", grid_key, "5", "5", "5", "5",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYPATH.FIND",
+                grid_key,
+                "5",
+                "5",
+                "5",
+                "5",
+            ]
+        )
         assert raw == [] or raw is None
 
     def test_max_steps_limits_search(self, redis_client, module_loaded, grid_key):
         # 1 max_step: impossible to reach (100,100) from (0,0) in 1 step
-        raw = redis_client.execute_command([
-            "CYPATH.FIND", grid_key, "0", "0", "100", "100", "1",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYPATH.FIND",
+                grid_key,
+                "0",
+                "0",
+                "100",
+                "100",
+                "1",
+            ]
+        )
         # Either empty (no path found within limit) or very short
         if raw:
             assert len(raw) <= 2  # at most one step returned

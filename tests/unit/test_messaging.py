@@ -1,10 +1,13 @@
 """
 Unit tests for messaging.pyx - Messaging primitives
 """
-import pytest
+
 import time
 import uuid
-from typing import Generator, Any
+from typing import Any, Generator
+
+import pytest
+
 from cy_redis.communication.messaging import CyReliableQueue, ReliableQueue
 from cy_redis.core.cy_redis_client import CyRedisClient
 
@@ -16,14 +19,13 @@ def redis_client() -> CyRedisClient:
 
 
 @pytest.fixture
-def reliable_queue(redis_client: CyRedisClient) -> Generator[CyReliableQueue, None, None]:
+def reliable_queue(
+    redis_client: CyRedisClient,
+) -> Generator[CyReliableQueue, None, None]:
     """Create a reliable queue for testing"""
     queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
     queue = CyReliableQueue(
-        redis_client,
-        queue_name,
-        visibility_timeout=30,
-        max_retries=3
+        redis_client, queue_name, visibility_timeout=30, max_retries=3
     )
     yield queue
     # Cleanup
@@ -42,10 +44,7 @@ class TestCyReliableQueue:
     def test_queue_creation(self, redis_client):
         """Test creating a reliable queue"""
         queue = CyReliableQueue(
-            redis_client,
-            "test_queue",
-            visibility_timeout=30,
-            max_retries=3
+            redis_client, "test_queue", visibility_timeout=30, max_retries=3
         )
         assert queue is not None
         assert queue.queue_name == "test_queue"
@@ -149,7 +148,7 @@ class TestCyReliableQueue:
         # Message should now be in dead letter queue
         stats = reliable_queue.get_stats()
         # Either in dead or failed
-        assert stats['dead'] > 0 or stats['failed'] > 0
+        assert stats["dead"] > 0 or stats["failed"] > 0
 
     def test_get_stats(self, reliable_queue):
         """Test getting queue statistics"""
@@ -158,12 +157,12 @@ class TestCyReliableQueue:
             reliable_queue.push(f"message_{i}")
 
         stats = reliable_queue.get_stats()
-        assert 'pending' in stats
-        assert 'processing' in stats
-        assert 'failed' in stats
-        assert 'dead' in stats
-        assert 'total' in stats
-        assert stats['pending'] > 0
+        assert "pending" in stats
+        assert "processing" in stats
+        assert "failed" in stats
+        assert "dead" in stats
+        assert "total" in stats
+        assert stats["pending"] > 0
 
 
 class TestReliableQueuePythonWrapper:
@@ -209,7 +208,7 @@ class TestQueueEdgeCases:
 
     def test_large_message(self, reliable_queue):
         """Test pushing large message"""
-        large_message = 'x' * 10000
+        large_message = "x" * 10000
         msg_id = reliable_queue.push(large_message)
         assert msg_id is not None
 
@@ -219,5 +218,5 @@ class TestQueueEdgeCases:
             reliable_queue.ack(messages[0][0])
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

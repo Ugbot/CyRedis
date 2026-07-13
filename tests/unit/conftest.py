@@ -3,10 +3,12 @@ Pytest configuration for unit tests
 
 This file contains shared fixtures and configuration for all unit tests.
 """
-import pytest
+
 import os
 import sys
 from typing import Any, List
+
+import pytest
 
 
 def pytest_configure(config: Any) -> None:
@@ -15,12 +17,8 @@ def pytest_configure(config: Any) -> None:
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
-    config.addinivalue_line(
-        "markers", "redis: marks tests that require Redis server"
-    )
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
+    config.addinivalue_line("markers", "redis: marks tests that require Redis server")
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
 
 
 @pytest.fixture(scope="session")
@@ -46,16 +44,16 @@ def redis_available() -> bool:
 @pytest.fixture(autouse=True)
 def check_redis(request: Any, redis_available: bool) -> None:
     """Automatically skip tests that require Redis if it's not available"""
-    if request.node.get_closest_marker('redis'):
+    if request.node.get_closest_marker("redis"):
         if not redis_available:
-            pytest.skip('Redis not available')
+            pytest.skip("Redis not available")
 
 
 def pytest_collection_modifyitems(config: Any, items: List[Any]) -> None:
     """Modify test collection"""
     for item in items:
         # Automatically mark tests that use redis_client fixture
-        if 'redis_client' in item.fixturenames:
+        if "redis_client" in item.fixturenames:
             item.add_marker(pytest.mark.redis)
 
 
@@ -64,10 +62,10 @@ def pytest_collection_modifyitems(config: Any, items: List[Any]) -> None:
 def setup_test_environment():
     """Setup test environment"""
     # Set test environment variables
-    os.environ['CYREDIS_TEST_MODE'] = '1'
+    os.environ["CYREDIS_TEST_MODE"] = "1"
 
     yield
 
     # Cleanup
-    if 'CYREDIS_TEST_MODE' in os.environ:
-        del os.environ['CYREDIS_TEST_MODE']
+    if "CYREDIS_TEST_MODE" in os.environ:
+        del os.environ["CYREDIS_TEST_MODE"]

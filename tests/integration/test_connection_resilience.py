@@ -10,10 +10,11 @@ Tests connection handling including:
 - Circuit breaker patterns
 """
 
-import pytest
-import time
 import threading
+import time
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.integration
@@ -38,33 +39,19 @@ class TestConnectionRetry:
         # Cleanup
         redis_client.delete(key)
 
-    def test_connection_timeout_handling(self, unique_key):
-        """Test handling of connection timeouts."""
-        import os
-        from redis import Redis
+    def test_connection_timeout_handling(self):
+        """A connect to a blackhole address fails within the timeout bound."""
+        from cy_redis.core.cy_redis_client import CyRedisConnection
 
-        # Create client with very short timeout
-        client = Redis(
-            host=os.getenv("REDIS_HOST", "localhost"),
-            port=int(os.getenv("REDIS_PORT", "6379")),
-            socket_timeout=0.001,  # Very short timeout
-            socket_connect_timeout=0.001,
-            decode_responses=True
-        )
-
-        key = f"{unique_key}:timeout"
-
-        # This might timeout or succeed depending on timing
-        try:
-            client.set(key, "value")
-            # If it succeeded, verify
-            assert client.get(key) == "value"
-            client.delete(key)
-        except Exception as e:
-            # Timeout is expected with such short timeout
-            assert "timeout" in str(e).lower() or "connection" in str(e).lower()
-
-        client.close()
+        # 10.255.255.1 is unroutable (RFC 1918 blackhole): the TCP connect
+        # can only end by timing out, so the test is deterministic.
+        conn = CyRedisConnection("10.255.255.1", 6379, timeout=0.3, connect_retries=0)
+        start = time.monotonic()
+        assert conn.connect() == -1
+        elapsed = time.monotonic() - start
+        # One attempt, no retries: bounded by the timeout plus slack.
+        assert elapsed < 3.0, f"timeout not honored, took {elapsed:.2f}s"
+        assert conn.connected is False
 
     def test_connection_pool_recovery(self, redis_client, unique_key):
         """Test connection pool recovery after errors."""
@@ -159,7 +146,9 @@ class TestConnectionPoolBehavior:
 
         # Get pool stats
         pool = redis_client.connection_pool
-        initial_created = len(pool._available_connections) + len(pool._in_use_connections)
+        initial_created = len(pool._available_connections) + len(
+            pool._in_use_connections
+        )
 
         # Make many sequential operations
         for i in range(50):
@@ -333,48 +322,35 @@ class TestCircuitBreaker:
         # Cleanup
         redis_client.delete(key)
 
-    def test_retry_with_backoff(self, unique_key):
-        """Test retry with exponential backoff."""
-        import os
-        from redis import Redis
-        from redis.exceptions import ConnectionError as RedisConnectionError
+    def test_retry_with_backoff(self, redis_client, unique_key):
+        """Native connect retry: backoff on a dead port, no delay on a live one."""
+        import socket
+
+        from cy_redis.core.cy_redis_client import CyRedisConnection
 
         key = f"{unique_key}:retry"
 
-        def operation_with_retry(client, max_retries=3):
-            for attempt in range(max_retries):
-                try:
-                    client.set(key, "value")
-                    return True
-                except (RedisConnectionError, Exception) as e:
-                    if attempt == max_retries - 1:
-                        raise
+        # Live server: succeeds immediately through the pooled client.
+        assert redis_client.set(key, "value") is True
+        assert redis_client.get(key) == "value"
+        redis_client.delete(key)
 
-                    # Exponential backoff
-                    wait_time = 0.1 * (2 ** attempt)
-                    time.sleep(wait_time)
-
-            return False
-
-        # Create client
-        client = Redis(
-            host=os.getenv("REDIS_HOST", "localhost"),
-            port=int(os.getenv("REDIS_PORT", "6379")),
-            decode_responses=True
+        # Dead port: the built-in retry sleeps 0.1 + 0.2 before giving up.
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        dead_port = probe.getsockname()[1]
+        probe.close()
+        conn = CyRedisConnection(
+            "127.0.0.1",
+            dead_port,
+            timeout=0.5,
+            connect_retries=2,
+            connect_backoff=0.1,
         )
-
-        try:
-            # Should succeed (Redis is available)
-            result = operation_with_retry(client)
-            assert result is True
-
-            # Verify
-            assert client.get(key) == "value"
-
-            # Cleanup
-            client.delete(key)
-        finally:
-            client.close()
+        start = time.monotonic()
+        assert conn.connect() == -1
+        elapsed = time.monotonic() - start
+        assert elapsed >= 0.3, f"expected backoff sleeps, took {elapsed:.3f}s"
 
 
 @pytest.mark.integration
@@ -399,9 +375,8 @@ class TestHealthChecks:
         pool = redis_client.connection_pool
 
         # Pool should have connections
-        total_connections = (
-            len(pool._available_connections) +
-            len(pool._in_use_connections)
+        total_connections = len(pool._available_connections) + len(
+            pool._in_use_connections
         )
 
         # Should have at least some capacity

@@ -11,15 +11,17 @@ All Redis operations go through hiredis for maximum performance.
 """
 
 import asyncio
+import json
 import threading
 import time
-import json
-from libc.stdlib cimport malloc, free, realloc
-from libc.string cimport memcpy, memset, strlen, strcpy, strdup
-from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, int32_t, int64_t
-from libc.errno cimport errno
-from cpython.ref cimport Py_INCREF, Py_DECREF, PyObject
+
 from cpython.exc cimport PyErr_CheckSignals
+from cpython.ref cimport Py_DECREF, Py_INCREF, PyObject
+from libc.errno cimport errno
+from libc.stdint cimport int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t
+from libc.stdlib cimport free, malloc, realloc
+from libc.string cimport memcpy, memset, strcpy, strdup, strlen
+
 
 # Hiredis includes
 cdef extern from "hiredis.h":

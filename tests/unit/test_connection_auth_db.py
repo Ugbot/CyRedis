@@ -5,6 +5,7 @@ password triggers AUTH and a non-zero db triggers SELECT, both before the
 connection is handed out as usable. The db-isolation tests run against the
 standard passwordless Redis on localhost:6379.
 """
+
 import uuid
 
 import pytest

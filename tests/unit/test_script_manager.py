@@ -1,13 +1,17 @@
 """
 Unit tests for script_manager.pyx - Lua script management
 """
-import pytest
+
 import hashlib
 import uuid
-from cy_redis.features.script_manager import (
-    CyLuaScriptManager, OptimizedLuaScriptManager
-)
+
+import pytest
+
 from cy_redis.core.cy_redis_client import CyRedisClient
+from cy_redis.features.script_manager import (
+    CyLuaScriptManager,
+    OptimizedLuaScriptManager,
+)
 
 
 @pytest.fixture
@@ -61,9 +65,7 @@ class TestCyLuaScriptManager:
     def test_register_script(self, script_manager):
         """Test registering a script"""
         sha = script_manager.register_script(
-            "test_script",
-            SIMPLE_SCRIPT,
-            version="1.0.0"
+            "test_script", SIMPLE_SCRIPT, version="1.0.0"
         )
         assert sha is not None
         assert isinstance(sha, str)
@@ -72,21 +74,18 @@ class TestCyLuaScriptManager:
     def test_register_script_with_metadata(self, script_manager):
         """Test registering script with metadata"""
         metadata = {
-            'author': 'test',
-            'description': 'Test script',
-            'tags': ['test', 'example']
+            "author": "test",
+            "description": "Test script",
+            "tags": ["test", "example"],
         }
         sha = script_manager.register_script(
-            "test_script",
-            SIMPLE_SCRIPT,
-            version="1.0.0",
-            metadata=metadata
+            "test_script", SIMPLE_SCRIPT, version="1.0.0", metadata=metadata
         )
         assert sha is not None
 
         # Verify metadata is stored
         info = script_manager.get_script_info("test_script")
-        assert info['metadata'] == metadata
+        assert info["metadata"] == metadata
 
     def test_execute_script(self, script_manager):
         """Test executing a registered script"""
@@ -104,11 +103,7 @@ class TestCyLuaScriptManager:
         redis_client.set(test_key, "10")
 
         # Execute script
-        result = script_manager.execute_script(
-            "increment",
-            keys=[test_key],
-            args=["5"]
-        )
+        result = script_manager.execute_script("increment", keys=[test_key], args=["5"])
         assert result == 15
 
         # Cleanup
@@ -119,11 +114,11 @@ class TestCyLuaScriptManager:
         script_manager.register_script("test", SIMPLE_SCRIPT, version="1.0.0")
 
         info = script_manager.get_script_info("test")
-        assert info['name'] == "test"
-        assert info['version'] == "1.0.0"
-        assert 'sha' in info
-        assert 'cached' in info
-        assert 'source_length' in info
+        assert info["name"] == "test"
+        assert info["version"] == "1.0.0"
+        assert "sha" in info
+        assert "cached" in info
+        assert "source_length" in info
 
     def test_list_scripts(self, script_manager):
         """Test listing all scripts"""
@@ -139,8 +134,8 @@ class TestCyLuaScriptManager:
     def test_validate_script(self, script_manager):
         """Test validating script syntax"""
         result = script_manager.validate_script(SIMPLE_SCRIPT)
-        assert result['valid'] is True
-        assert 'sha' in result
+        assert result["valid"] is True
+        assert "sha" in result
 
     def test_validate_invalid_script(self, script_manager):
         """Test validating invalid script"""
@@ -163,11 +158,11 @@ class TestCyLuaScriptManager:
 
         # Without confirmation
         result = script_manager.cleanup_scripts(confirm=False)
-        assert 'error' in result
+        assert "error" in result
 
         # With confirmation
         result = script_manager.cleanup_scripts(confirm=True)
-        assert result['status'] == 'cleanup_complete'
+        assert result["status"] == "cleanup_complete"
 
     def test_get_script_stats(self, script_manager):
         """Test getting script statistics"""
@@ -175,10 +170,10 @@ class TestCyLuaScriptManager:
         script_manager.register_script("test2", INCREMENT_SCRIPT)
 
         stats = script_manager.get_script_stats()
-        assert 'total_scripts' in stats
-        assert 'namespace' in stats
-        assert 'cache_info' in stats
-        assert stats['total_scripts'] >= 2
+        assert "total_scripts" in stats
+        assert "namespace" in stats
+        assert "cache_info" in stats
+        assert stats["total_scripts"] >= 2
 
 
 class TestAtomicOperations:
@@ -187,66 +182,56 @@ class TestAtomicOperations:
     def test_atomic_load_and_test(self, script_manager):
         """Test atomic load and test operation"""
         test_cases = {
-            'simple_test': {
-                'keys': [],
-                'args': [],
-                'expected': "Hello from Lua!"
-            }
+            "simple_test": {"keys": [], "args": [], "expected": "Hello from Lua!"}
         }
 
         result = script_manager.atomic_load_and_test(
-            "atomic_test",
-            SIMPLE_SCRIPT,
-            version="1.0.0",
-            test_cases=test_cases
+            "atomic_test", SIMPLE_SCRIPT, version="1.0.0", test_cases=test_cases
         )
 
-        assert result['success'] is True
-        assert len(result['tests_passed']) > 0
-        assert len(result['tests_failed']) == 0
-        assert 'functions' in result
+        assert result["success"] is True
+        assert len(result["tests_passed"]) > 0
+        assert len(result["tests_failed"]) == 0
+        assert "functions" in result
 
     def test_atomic_load_with_failed_tests(self, script_manager):
         """Test atomic load with failing tests"""
         test_cases = {
-            'fail_test': {
-                'keys': [],
-                'args': [],
-                'expected': "Wrong result"  # This will fail
+            "fail_test": {
+                "keys": [],
+                "args": [],
+                "expected": "Wrong result",  # This will fail
             }
         }
 
         result = script_manager.atomic_load_and_test(
-            "failing_test",
-            SIMPLE_SCRIPT,
-            version="1.0.0",
-            test_cases=test_cases
+            "failing_test", SIMPLE_SCRIPT, version="1.0.0", test_cases=test_cases
         )
 
-        assert result['success'] is False
-        assert len(result['tests_failed']) > 0
+        assert result["success"] is False
+        assert len(result["tests_failed"]) > 0
 
     def test_atomic_deploy_scripts(self, script_manager):
         """Test atomic deployment of multiple scripts"""
         scripts_config = {
-            'script1': {
-                'script': SIMPLE_SCRIPT,
-                'version': '1.0.0',
-                'test_cases': {},
-                'metadata': {'type': 'simple'}
+            "script1": {
+                "script": SIMPLE_SCRIPT,
+                "version": "1.0.0",
+                "test_cases": {},
+                "metadata": {"type": "simple"},
             },
-            'script2': {
-                'script': INCREMENT_SCRIPT,
-                'version': '1.0.0',
-                'test_cases': {},
-                'metadata': {'type': 'increment'}
-            }
+            "script2": {
+                "script": INCREMENT_SCRIPT,
+                "version": "1.0.0",
+                "test_cases": {},
+                "metadata": {"type": "increment"},
+            },
         }
 
         result = script_manager.atomic_deploy_scripts(scripts_config)
-        assert result['success'] is True or result['success'] is False
-        assert 'deployed_scripts' in result
-        assert 'failed_scripts' in result
+        assert result["success"] is True or result["success"] is False
+        assert "deployed_scripts" in result
+        assert "failed_scripts" in result
 
 
 class TestScriptVersioning:
@@ -318,8 +303,7 @@ class TestEdgeCases:
 
         def register():
             sha = script_manager.register_script(
-                f"concurrent_{uuid.uuid4().hex[:4]}",
-                SIMPLE_SCRIPT
+                f"concurrent_{uuid.uuid4().hex[:4]}", SIMPLE_SCRIPT
             )
             results.append(sha)
 
@@ -339,31 +323,28 @@ class TestScriptMetadata:
     def test_metadata_storage(self, script_manager):
         """Test that metadata is properly stored and retrieved"""
         metadata = {
-            'author': 'test_author',
-            'created': '2024-01-01',
-            'tags': ['test', 'example']
+            "author": "test_author",
+            "created": "2024-01-01",
+            "tags": ["test", "example"],
         }
 
         sha = script_manager.register_script(
-            "meta_test",
-            SIMPLE_SCRIPT,
-            version="1.0.0",
-            metadata=metadata
+            "meta_test", SIMPLE_SCRIPT, version="1.0.0", metadata=metadata
         )
 
         info = script_manager.get_script_info("meta_test")
-        assert info['metadata'] == metadata
+        assert info["metadata"] == metadata
 
     def test_update_metadata(self, script_manager):
         """Test updating script metadata"""
-        metadata1 = {'version': '1.0'}
+        metadata1 = {"version": "1.0"}
         script_manager.register_script("test", SIMPLE_SCRIPT, metadata=metadata1)
 
-        metadata2 = {'version': '2.0', 'updated': True}
+        metadata2 = {"version": "2.0", "updated": True}
         script_manager.register_script("test", SIMPLE_SCRIPT, metadata=metadata2)
 
         # Latest metadata should be stored
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

@@ -1,11 +1,18 @@
 """
 Unit tests for protocol.pyx - RESP protocol support
 """
-import pytest
+
 from typing import Any
+
+import pytest
+
 from cy_redis.core.protocol import (
-    RESPParser, ProtocolNegotiator, ConnectionState,
-    PushMessageHandler, RedisProtocol, RedisProtocolError
+    ConnectionState,
+    ProtocolNegotiator,
+    PushMessageHandler,
+    RedisProtocol,
+    RedisProtocolError,
+    RESPParser,
 )
 
 
@@ -71,15 +78,15 @@ class TestPushMessageHandler:
             messages.append(msg)
 
         handler.set_callback(callback)
-        handler.handle_push_message(['test', 'message'])
+        handler.handle_push_message(["test", "message"])
 
         assert len(messages) == 1
 
     def test_get_pending_messages(self):
         """Test getting pending push messages"""
         handler = PushMessageHandler()
-        handler.handle_push_message(['msg1'])
-        handler.handle_push_message(['msg2'])
+        handler.handle_push_message(["msg1"])
+        handler.handle_push_message(["msg2"])
 
         pending = handler.get_pending_messages()
         assert len(pending) == 2
@@ -111,11 +118,7 @@ class TestConnectionState:
 
     def test_update_from_hello(self, connection_state):
         """Test updating state from HELLO response"""
-        hello_response = {
-            'proto': 3,
-            'version': '7.0.0',
-            'id': 1
-        }
+        hello_response = {"proto": 3, "version": "7.0.0", "id": 1}
         connection_state.update_from_hello(hello_response)
 
         assert connection_state.protocol_version == 3
@@ -193,11 +196,13 @@ class TestProtocolConstants:
     def test_resp2_constant(self):
         """Test RESP2 constant"""
         from cy_redis.core.protocol import RESP2
+
         assert RESP2 == 2
 
     def test_resp3_constant(self):
         """Test RESP3 constant"""
         from cy_redis.core.protocol import RESP3
+
         assert RESP3 == 3
 
 
@@ -241,5 +246,5 @@ class TestRESP3Features:
         # Push messages would come from Redis server
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

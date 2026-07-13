@@ -8,9 +8,10 @@ Tests Redis Streams operations including:
 - Stream acknowledgments
 """
 
-import pytest
 import time
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+import pytest
 
 
 @pytest.mark.integration
@@ -22,7 +23,9 @@ class TestRedisStreams:
         stream_key = "test:stream:basic"
 
         # Add message to stream
-        message_id = redis_client.xadd(stream_key, {"field1": "value1", "field2": "value2"})
+        message_id = redis_client.xadd(
+            stream_key, {"field1": "value1", "field2": "value2"}
+        )
 
         assert message_id is not None
         assert isinstance(message_id, (str, bytes))
@@ -43,7 +46,9 @@ class TestRedisStreams:
         messages = redis_client.xread({stream_key: "0"})
 
         assert len(messages) >= 1
-        assert stream_key.encode() in [msg[0] for msg in messages] or stream_key in [msg[0] for msg in messages]
+        assert stream_key.encode() in [msg[0] for msg in messages] or stream_key in [
+            msg[0] for msg in messages
+        ]
 
         # Clean up
         redis_client.delete(stream_key)
@@ -55,7 +60,9 @@ class TestRedisStreams:
         # Add messages with timestamps
         ids = []
         for i in range(5):
-            msg_id = redis_client.xadd(stream_key, {"index": str(i), "data": f"message_{i}"})
+            msg_id = redis_client.xadd(
+                stream_key, {"index": str(i), "data": f"message_{i}"}
+            )
             ids.append(msg_id)
             time.sleep(0.01)  # Small delay to ensure different timestamps
 
@@ -110,10 +117,7 @@ class TestRedisStreams:
 
             # Read from group
             messages = redis_client.xreadgroup(
-                group_name,
-                consumer_name,
-                {stream_key: ">"},
-                count=2
+                group_name, consumer_name, {stream_key: ">"}, count=2
             )
 
             assert messages is not None
@@ -145,9 +149,7 @@ class TestRedisStreams:
 
             # Read message
             messages = redis_client.xreadgroup(
-                group_name,
-                consumer_name,
-                {stream_key: ">"}
+                group_name, consumer_name, {stream_key: ">"}
             )
 
             if messages:
@@ -223,9 +225,7 @@ class TestRedisStreams:
 
             # Read messages (but don't acknowledge)
             messages = redis_client.xreadgroup(
-                group_name,
-                consumer_name,
-                {stream_key: ">"}
+                group_name, consumer_name, {stream_key: ">"}
             )
 
             # Check pending messages
@@ -262,18 +262,12 @@ class TestRedisStreams:
 
             # Consumer 1 reads messages
             messages1 = redis_client.xreadgroup(
-                group_name,
-                "consumer1",
-                {stream_key: ">"},
-                count=3
+                group_name, "consumer1", {stream_key: ">"}, count=3
             )
 
             # Consumer 2 reads messages
             messages2 = redis_client.xreadgroup(
-                group_name,
-                "consumer2",
-                {stream_key: ">"},
-                count=3
+                group_name, "consumer2", {stream_key: ">"}, count=3
             )
 
             # Both should get different messages
@@ -321,9 +315,7 @@ class TestRedisStreams:
         # Blocking read with timeout
         try:
             messages = redis_client.xread(
-                {stream_key: "0"},
-                count=1,
-                block=100  # 100ms timeout
+                {stream_key: "0"}, count=1, block=100  # 100ms timeout
             )
 
             assert messages is not None
@@ -393,6 +385,7 @@ class TestStreamsAdvanced:
 
         # Custom ID (timestamp-based)
         import time
+
         custom_id = f"{int(time.time() * 1000)}-0"
         try:
             result_id = redis_client.xadd(stream_key, {"type": "custom"}, id=custom_id)

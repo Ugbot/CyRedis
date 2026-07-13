@@ -10,8 +10,9 @@ Tests cluster-specific functionality including:
 - MOVED and ASK redirections
 """
 
-import pytest
 import time
+
+import pytest
 
 
 @pytest.mark.integration
@@ -295,7 +296,7 @@ class TestClusterScaling:
         # Delete in batches to avoid cross-slot issues
         batch_size = 100
         for i in range(0, len(keys), batch_size):
-            batch = keys[i:i+batch_size]
+            batch = keys[i : i + batch_size]
             redis_cluster_client.delete(*batch)
 
     def test_concurrent_cluster_operations(self, redis_cluster_client, unique_key):

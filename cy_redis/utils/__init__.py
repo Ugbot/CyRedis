@@ -3,10 +3,10 @@ pub/sub (channel and pattern) subscriptions.
 """
 
 from cy_redis.utils.redis_iterators import (
-    RedisStreamIterator,
     RedisListIterator,
-    RedisPubSubIterator,
     RedisPSubIterator,
+    RedisPubSubIterator,
+    RedisStreamIterator,
 )
 
 __all__ = [

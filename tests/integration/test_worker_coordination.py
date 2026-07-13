@@ -3,26 +3,28 @@ Integration tests for CyRedis worker coordination and recovery features.
 Tests worker lifecycle management, graceful shutdown, and workload redistribution.
 """
 
-import pytest
-import time
 import json
-import threading
-import signal
 import os
+import signal
 import socket
-from typing import Dict, List, Any, Generator
+import threading
+import time
+from typing import Any, Dict, Generator, List
 from unittest.mock import Mock, patch
+
+import pytest
 
 try:
     from cy_redis.web_app_support import (
-        WebApplicationSupport,
+        ConcurrentSharedDict,
         LifecycleManager,
+        MultiSessionTracker,
+        SessionManager,
+        WebApplicationSupport,
         WorkerCoordinator,
         WorkerQueue,
-        SessionManager,
-        MultiSessionTracker,
-        ConcurrentSharedDict
     )
+
     CYREDIS_WEB_AVAILABLE = WebApplicationSupport is not None
 except Exception:
     CYREDIS_WEB_AVAILABLE = False
@@ -38,9 +40,7 @@ def web_app_support(hp_redis_client) -> Generator[WebApplicationSupport, None, N
         pytest.skip("CyRedis web app support not built")
 
     support = WebApplicationSupport(
-        redis_client=hp_redis_client,
-        host="localhost",
-        port=6379
+        redis_client=hp_redis_client, host="localhost", port=6379
     )
 
     yield support
@@ -82,10 +82,10 @@ def unique_worker_key() -> str:
 def test_session_data() -> Dict[str, Any]:
     """Provide test session data."""
     return {
-        'user_id': 'test_user_123',
-        'device_info': {'browser': 'Chrome', 'os': 'Linux'},
-        'created_at': time.time(),
-        'last_accessed': time.time()
+        "user_id": "test_user_123",
+        "device_info": {"browser": "Chrome", "os": "Linux"},
+        "created_at": time.time(),
+        "last_accessed": time.time(),
     }
 
 
@@ -95,54 +95,64 @@ class TestLifecycleManager:
     def test_worker_registration(self, lifecycle_manager, hp_redis_client):
         """Test that workers register themselves properly."""
         # Check that worker is registered
-        worker_info = hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        worker_info = hp_redis_client.hget(
+            "workers:status", lifecycle_manager.worker_id
+        )
         assert worker_info is not None
 
         worker_data = json.loads(worker_info)
-        assert worker_data['worker_id'] == lifecycle_manager.worker_id
-        assert worker_data['status'] == 'starting'
-        assert 'hostname' in worker_data
-        assert 'pid' in worker_data
+        assert worker_data["worker_id"] == lifecycle_manager.worker_id
+        assert worker_data["status"] == "starting"
+        assert "hostname" in worker_data
+        assert "pid" in worker_data
 
     def test_worker_heartbeat(self, lifecycle_manager, hp_redis_client):
         """Test worker heartbeat functionality."""
         # Get initial heartbeat
-        initial_info = json.loads(hp_redis_client.hget("workers:status", lifecycle_manager.worker_id))
-        initial_heartbeat = initial_info['last_heartbeat']
+        initial_info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        initial_heartbeat = initial_info["last_heartbeat"]
 
         # Wait a bit and update heartbeat
         time.sleep(0.1)
         lifecycle_manager._update_heartbeat()
 
         # Check that heartbeat was updated
-        updated_info = json.loads(hp_redis_client.hget("workers:status", lifecycle_manager.worker_id))
-        updated_heartbeat = updated_info['last_heartbeat']
+        updated_info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        updated_heartbeat = updated_info["last_heartbeat"]
 
         assert updated_heartbeat > initial_heartbeat
 
     def test_worker_status_updates(self, lifecycle_manager, hp_redis_client):
         """Test worker status update functionality."""
         # Update to running status
-        lifecycle_manager._update_worker_status('running')
+        lifecycle_manager._update_worker_status("running")
 
-        worker_info = json.loads(hp_redis_client.hget("workers:status", lifecycle_manager.worker_id))
-        assert worker_info['status'] == 'running'
+        worker_info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        assert worker_info["status"] == "running"
 
         # Update to shutting_down status
-        lifecycle_manager._update_worker_status('shutting_down')
+        lifecycle_manager._update_worker_status("shutting_down")
 
-        worker_info = json.loads(hp_redis_client.hget("workers:status", lifecycle_manager.worker_id))
-        assert worker_info['status'] == 'shutting_down'
+        worker_info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        assert worker_info["status"] == "shutting_down"
 
     def test_worker_stats(self, lifecycle_manager):
         """Test worker statistics retrieval."""
         stats = lifecycle_manager.get_worker_stats()
 
-        assert stats['worker_id'] == lifecycle_manager.worker_id
-        assert 'status' in stats
-        assert 'uptime_seconds' in stats
-        assert 'hostname' in stats
-        assert 'pid' in stats
+        assert stats["worker_id"] == lifecycle_manager.worker_id
+        assert "status" in stats
+        assert "uptime_seconds" in stats
+        assert "hostname" in stats
+        assert "pid" in stats
 
     def test_worker_health_check(self, lifecycle_manager, hp_redis_client):
         """Test worker health checking."""
@@ -153,7 +163,7 @@ class TestLifecycleManager:
         info = json.loads(
             hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
         )
-        info['last_heartbeat'] = time.time() - 120  # 2 minutes ago
+        info["last_heartbeat"] = time.time() - 120  # 2 minutes ago
         hp_redis_client.hset(
             "workers:status", lifecycle_manager.worker_id, json.dumps(info)
         )
@@ -195,7 +205,9 @@ class TestLifecycleManager:
         def simulate_work():
             time.sleep(2)
             # Mark worker as having work
-            hp_redis_client.sadd(f"sessions:worker:{lifecycle_manager.worker_id}", "test_session_1")
+            hp_redis_client.sadd(
+                f"sessions:worker:{lifecycle_manager.worker_id}", "test_session_1"
+            )
 
         work_thread = threading.Thread(target=simulate_work, daemon=True)
         work_thread.start()
@@ -207,8 +219,10 @@ class TestLifecycleManager:
         lifecycle_manager.shutdown(graceful=True)
 
         # Check that worker status was updated
-        worker_info = json.loads(hp_redis_client.hget("workers:status", lifecycle_manager.worker_id))
-        assert worker_info['status'] == 'stopped'
+        worker_info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        assert worker_info["status"] == "stopped"
 
     def test_immediate_shutdown(self, lifecycle_manager, hp_redis_client):
         """Test immediate shutdown process."""
@@ -219,8 +233,10 @@ class TestLifecycleManager:
         lifecycle_manager.shutdown(graceful=False)
 
         # Check that worker is marked as dead
-        worker_info = json.loads(hp_redis_client.hget("workers:status", lifecycle_manager.worker_id))
-        assert worker_info['status'] == 'dead'
+        worker_info = json.loads(
+            hp_redis_client.hget("workers:status", lifecycle_manager.worker_id)
+        )
+        assert worker_info["status"] == "dead"
 
 
 class TestWorkerCoordinator:
@@ -229,11 +245,7 @@ class TestWorkerCoordinator:
     def test_worker_registration(self, worker_coordinator, hp_redis_client):
         """Test worker registration through coordinator."""
         worker_id = "test_worker_123"
-        worker_info = {
-            'hostname': 'test_host',
-            'pid': 12345,
-            'status': 'running'
-        }
+        worker_info = {"hostname": "test_host", "pid": 12345, "status": "running"}
 
         worker_coordinator.register_worker(worker_id, worker_info)
 
@@ -242,14 +254,14 @@ class TestWorkerCoordinator:
         assert registered_info is not None
 
         registered_data = json.loads(registered_info)
-        assert registered_data['hostname'] == 'test_host'
-        assert registered_data['pid'] == 12345
-        assert registered_data['coordinator_id'] == worker_coordinator.coordinator_id
+        assert registered_data["hostname"] == "test_host"
+        assert registered_data["pid"] == 12345
+        assert registered_data["coordinator_id"] == worker_coordinator.coordinator_id
 
     def test_worker_unregistration(self, worker_coordinator, hp_redis_client):
         """Test worker unregistration."""
         worker_id = "test_worker_456"
-        worker_info = {'hostname': 'test_host', 'pid': 45678}
+        worker_info = {"hostname": "test_host", "pid": 45678}
 
         # Register worker
         worker_coordinator.register_worker(worker_id, worker_info)
@@ -266,9 +278,9 @@ class TestWorkerCoordinator:
         for i in range(3):
             worker_id = f"test_worker_{i}"
             worker_info = {
-                'hostname': f'host_{i}',
-                'pid': 1000 + i,
-                'status': 'running'
+                "hostname": f"host_{i}",
+                "pid": 1000 + i,
+                "status": "running",
             }
             worker_coordinator.register_worker(worker_id, worker_info)
             test_workers[worker_id] = worker_info
@@ -279,7 +291,7 @@ class TestWorkerCoordinator:
         # Should have at least our test workers
         for worker_id, worker_info in test_workers.items():
             assert worker_id in all_workers
-            assert all_workers[worker_id]['hostname'] == worker_info['hostname']
+            assert all_workers[worker_id]["hostname"] == worker_info["hostname"]
 
     def test_healthy_workers_filtering(self, worker_coordinator, hp_redis_client):
         """Test filtering of healthy workers."""
@@ -287,15 +299,14 @@ class TestWorkerCoordinator:
         healthy_worker = "healthy_worker"
         dead_worker = "dead_worker"
 
-        worker_coordinator.register_worker(healthy_worker, {
-            'status': 'running',
-            'last_heartbeat': time.time()
-        })
+        worker_coordinator.register_worker(
+            healthy_worker, {"status": "running", "last_heartbeat": time.time()}
+        )
 
-        worker_coordinator.register_worker(dead_worker, {
-            'status': 'running',
-            'last_heartbeat': time.time() - 120  # 2 minutes ago
-        })
+        worker_coordinator.register_worker(
+            dead_worker,
+            {"status": "running", "last_heartbeat": time.time() - 120},  # 2 minutes ago
+        )
 
         healthy_workers = worker_coordinator.get_healthy_workers()
         assert healthy_worker in healthy_workers
@@ -309,10 +320,15 @@ class TestWorkerCoordinator:
         alive_worker = "alive_worker"
 
         for worker_id in [dead_worker_1, dead_worker_2, alive_worker]:
-            worker_coordinator.register_worker(worker_id, {
-                'status': 'running',
-                'last_heartbeat': time.time() if worker_id == alive_worker else time.time() - 150
-            })
+            worker_coordinator.register_worker(
+                worker_id,
+                {
+                    "status": "running",
+                    "last_heartbeat": (
+                        time.time() if worker_id == alive_worker else time.time() - 150
+                    ),
+                },
+            )
 
         dead_workers = worker_coordinator.detect_dead_workers()
         assert dead_worker_1 in dead_workers
@@ -322,10 +338,7 @@ class TestWorkerCoordinator:
     def test_dead_worker_handling(self, worker_coordinator, hp_redis_client):
         """Test handling of dead workers."""
         worker_id = "dead_test_worker"
-        worker_info = {
-            'status': 'running',
-            'last_heartbeat': time.time() - 150
-        }
+        worker_info = {"status": "running", "last_heartbeat": time.time() - 150}
 
         worker_coordinator.register_worker(worker_id, worker_info)
 
@@ -337,15 +350,15 @@ class TestWorkerCoordinator:
 
         # Check that worker is marked as dead
         updated_info = json.loads(hp_redis_client.hget("workers:status", worker_id))
-        assert updated_info['status'] == 'dead'
+        assert updated_info["status"] == "dead"
 
     def test_cluster_statistics(self, worker_coordinator, hp_redis_client):
         """Test cluster-wide statistics."""
         # Register workers with different statuses
         workers_data = {
-            'running_worker': {'status': 'running', 'last_heartbeat': time.time()},
-            'dead_worker': {'status': 'running', 'last_heartbeat': time.time() - 150},
-            'stopped_worker': {'status': 'stopped', 'last_heartbeat': time.time()}
+            "running_worker": {"status": "running", "last_heartbeat": time.time()},
+            "dead_worker": {"status": "running", "last_heartbeat": time.time() - 150},
+            "stopped_worker": {"status": "stopped", "last_heartbeat": time.time()},
         }
 
         for worker_id, worker_info in workers_data.items():
@@ -353,14 +366,18 @@ class TestWorkerCoordinator:
 
         stats = worker_coordinator.get_cluster_stats()
 
-        assert stats['total_workers'] == 3
-        assert stats['healthy_workers'] == 1  # Only running_worker (running + recent heartbeat)
-        assert stats['dead_workers'] == 1     # dead_worker (running + old heartbeat)
-        assert 'workers_by_status' in stats
+        assert stats["total_workers"] == 3
+        assert (
+            stats["healthy_workers"] == 1
+        )  # Only running_worker (running + recent heartbeat)
+        assert stats["dead_workers"] == 1  # dead_worker (running + old heartbeat)
+        assert "workers_by_status" in stats
 
-        status_counts = stats['workers_by_status']
-        assert status_counts['running'] == 2  # running_worker and dead_worker (status still running)
-        assert status_counts['stopped'] == 1  # stopped_worker
+        status_counts = stats["workers_by_status"]
+        assert (
+            status_counts["running"] == 2
+        )  # running_worker and dead_worker (status still running)
+        assert status_counts["stopped"] == 1  # stopped_worker
 
 
 class TestWorkloadYielding:
@@ -369,15 +386,23 @@ class TestWorkloadYielding:
     def test_active_workload_detection(self, lifecycle_manager, hp_redis_client):
         """Test detection of active workload."""
         # Add some test sessions and tasks
-        hp_redis_client.sadd(f"sessions:worker:{lifecycle_manager.worker_id}", "session_1", "session_2")
-        hp_redis_client.lpush(f"tasks:worker:{lifecycle_manager.worker_id}", "task_1", "task_2")
-        hp_redis_client.hset(f"tasks:processing:{lifecycle_manager.worker_id}", "task_3", "processing_data")
+        hp_redis_client.sadd(
+            f"sessions:worker:{lifecycle_manager.worker_id}", "session_1", "session_2"
+        )
+        hp_redis_client.lpush(
+            f"tasks:worker:{lifecycle_manager.worker_id}", "task_1", "task_2"
+        )
+        hp_redis_client.hset(
+            f"tasks:processing:{lifecycle_manager.worker_id}",
+            "task_3",
+            "processing_data",
+        )
 
         workload = lifecycle_manager._get_active_workload()
 
-        assert len(workload['sessions']) == 2
-        assert workload['pending_tasks'] == 2
-        assert workload['processing_tasks'] == 1
+        assert len(workload["sessions"]) == 2
+        assert workload["pending_tasks"] == 2
+        assert workload["processing_tasks"] == 1
 
     def test_available_workers_discovery(self, lifecycle_manager, hp_redis_client):
         """Test discovery of available workers."""
@@ -386,19 +411,31 @@ class TestWorkloadYielding:
 
         # Add a healthy worker
         healthy_worker = "healthy_test_worker"
-        hp_redis_client.hset("workers:status", healthy_worker, json.dumps({
-            'worker_id': healthy_worker,
-            'status': 'running',
-            'last_heartbeat': time.time()
-        }))
+        hp_redis_client.hset(
+            "workers:status",
+            healthy_worker,
+            json.dumps(
+                {
+                    "worker_id": healthy_worker,
+                    "status": "running",
+                    "last_heartbeat": time.time(),
+                }
+            ),
+        )
 
         # Add an unhealthy worker
         unhealthy_worker = "unhealthy_test_worker"
-        hp_redis_client.hset("workers:status", unhealthy_worker, json.dumps({
-            'worker_id': unhealthy_worker,
-            'status': 'running',
-            'last_heartbeat': time.time() - 120
-        }))
+        hp_redis_client.hset(
+            "workers:status",
+            unhealthy_worker,
+            json.dumps(
+                {
+                    "worker_id": unhealthy_worker,
+                    "status": "running",
+                    "last_heartbeat": time.time() - 120,
+                }
+            ),
+        )
 
         available = lifecycle_manager._get_available_workers()
 
@@ -410,32 +447,46 @@ class TestWorkloadYielding:
         """Test workload distribution to other workers."""
         # Setup test data
         sessions = ["session_1", "session_2", "session_3", "session_4"]
-        hp_redis_client.sadd(f"sessions:worker:{lifecycle_manager.worker_id}", *sessions)
+        hp_redis_client.sadd(
+            f"sessions:worker:{lifecycle_manager.worker_id}", *sessions
+        )
 
         # Add available workers
         available_workers = ["worker_1", "worker_2"]
         for worker_id in available_workers:
-            hp_redis_client.hset("workers:status", worker_id, json.dumps({
-                'worker_id': worker_id,
-                'status': 'running',
-                'last_heartbeat': time.time()
-            }))
+            hp_redis_client.hset(
+                "workers:status",
+                worker_id,
+                json.dumps(
+                    {
+                        "worker_id": worker_id,
+                        "status": "running",
+                        "last_heartbeat": time.time(),
+                    }
+                ),
+            )
 
         # Distribute workload
-        workload = {'sessions': sessions}
+        workload = {"sessions": sessions}
         lifecycle_manager._distribute_workload(workload, available_workers)
 
         # Check that sessions were transferred
         for worker_id in available_workers:
-            transferred_sessions = hp_redis_client.smembers(f"session:session_1:worker_id")
+            transferred_sessions = hp_redis_client.smembers(
+                f"session:session_1:worker_id"
+            )
             # Sessions should have been transferred (implementation dependent)
             pass  # The actual transfer logic depends on session structure
 
     def test_task_completion_waiting(self, lifecycle_manager, hp_redis_client):
         """Test waiting for tasks to complete during shutdown."""
         # Add some active work
-        hp_redis_client.sadd(f"sessions:worker:{lifecycle_manager.worker_id}", "session_1")
-        hp_redis_client.hset(f"tasks:processing:{lifecycle_manager.worker_id}", "task_1", "data")
+        hp_redis_client.sadd(
+            f"sessions:worker:{lifecycle_manager.worker_id}", "session_1"
+        )
+        hp_redis_client.hset(
+            f"tasks:processing:{lifecycle_manager.worker_id}", "task_1", "data"
+        )
 
         # Start waiting (with short timeout for testing)
         start_time = time.time()
@@ -465,14 +516,14 @@ class TestIntegrationScenarios:
 
         # Get initial worker info
         initial_worker_info = web_app_support.get_worker_info()
-        assert initial_worker_info['status'] == 'running'
+        assert initial_worker_info["status"] == "running"
 
         # Simulate graceful shutdown
         web_app_support.shutdown_graceful()
 
         # Check final state
         final_worker_info = web_app_support.get_worker_info()
-        assert final_worker_info['status'] == 'stopped'
+        assert final_worker_info["status"] == "stopped"
 
     def test_dead_worker_recovery_scenario(self, web_app_support, hp_redis_client):
         """Test dead worker detection and recovery."""
@@ -484,7 +535,7 @@ class TestIntegrationScenarios:
         # Simulate worker death by aging the last_heartbeat in the status entry
         # that detect_dead_workers() reads.
         worker_info = json.loads(hp_redis_client.hget("workers:status", worker_id))
-        worker_info['last_heartbeat'] = time.time() - 150  # 2.5 minutes ago
+        worker_info["last_heartbeat"] = time.time() - 150  # 2.5 minutes ago
         hp_redis_client.hset("workers:status", worker_id, json.dumps(worker_info))
 
         # Run worker monitoring (simulate what happens in background thread)
@@ -496,7 +547,7 @@ class TestIntegrationScenarios:
 
         # Check that worker was marked as dead
         worker_info = json.loads(hp_redis_client.hget("workers:status", worker_id))
-        assert worker_info['status'] == 'dead'
+        assert worker_info["status"] == "dead"
 
     def test_cluster_monitoring_scenario(self, web_app_support, hp_redis_client):
         """Test cluster monitoring capabilities."""
@@ -505,19 +556,24 @@ class TestIntegrationScenarios:
         # Register multiple workers
         for i in range(3):
             worker_id = f"test_worker_{i}"
-            web_app_support.worker_coordinator.register_worker(worker_id, {
-                'hostname': f'host_{i}',
-                'pid': 1000 + i,
-                'status': 'running',
-                'last_heartbeat': time.time()
-            })
+            web_app_support.worker_coordinator.register_worker(
+                worker_id,
+                {
+                    "hostname": f"host_{i}",
+                    "pid": 1000 + i,
+                    "status": "running",
+                    "last_heartbeat": time.time(),
+                },
+            )
 
         # Get cluster statistics
         cluster_info = web_app_support.get_cluster_info()
 
-        assert cluster_info['total_workers'] >= 4  # Including our worker
-        assert cluster_info['healthy_workers'] >= 2  # Most should be healthy (our worker + some of the test workers)
-        assert 'workers_by_status' in cluster_info
+        assert cluster_info["total_workers"] >= 4  # Including our worker
+        assert (
+            cluster_info["healthy_workers"] >= 2
+        )  # Most should be healthy (our worker + some of the test workers)
+        assert "workers_by_status" in cluster_info
 
     def test_signal_handling_scenario(self, web_app_support, hp_redis_client):
         """Test signal handling for graceful shutdown."""
@@ -533,9 +589,13 @@ class TestIntegrationScenarios:
         # Get the signal handler that was registered
         signal_handler = None
         for sig in [signal.SIGTERM, signal.SIGINT]:
-            if hasattr(signal, 'getsignal'):
+            if hasattr(signal, "getsignal"):
                 handler = signal.getsignal(sig)
-                if handler and hasattr(handler, '__name__') and 'signal_handler' in str(handler):
+                if (
+                    handler
+                    and hasattr(handler, "__name__")
+                    and "signal_handler" in str(handler)
+                ):
                     signal_handler = handler
                     break
 
@@ -581,8 +641,8 @@ class TestConcurrentSharedDict:
 
         # Test statistics
         stats = shared_dict.get_stats()
-        assert stats['name'] == "test_operations"
-        assert stats['key_count'] == 4  # key1, key2, key3, counter
+        assert stats["name"] == "test_operations"
+        assert stats["key_count"] == 4  # key1, key2, key3, counter
 
     def test_shared_dict_concurrency(self, web_app_support):
         """Test concurrent access to shared dictionaries."""
@@ -626,7 +686,9 @@ class TestErrorHandling:
             # If no exception, test passes
         except Exception as e:
             # Should handle gracefully
-            assert "nonexistent_worker" in str(e) or True  # Either handles gracefully or provides informative error
+            assert (
+                "nonexistent_worker" in str(e) or True
+            )  # Either handles gracefully or provides informative error
 
     def test_redis_connection_loss(self, hp_redis_client):
         """Test behavior when Redis connection is lost."""
@@ -677,9 +739,9 @@ class TestPerformance:
         for i in range(100):
             worker_id = f"perf_worker_{i}"
             worker_info = {
-                'hostname': f'host_{i}',
-                'pid': 1000 + i,
-                'status': 'running'
+                "hostname": f"host_{i}",
+                "pid": 1000 + i,
+                "status": "running",
             }
 
             coordinator = WorkerCoordinator(hp_redis_client)
@@ -707,14 +769,20 @@ class TestPerformance:
         # Add available workers
         available_workers = [f"available_worker_{i}" for i in range(10)]
         for worker_id in available_workers:
-            hp_redis_client.hset("workers:status", worker_id, json.dumps({
-                'worker_id': worker_id,
-                'status': 'running',
-                'last_heartbeat': time.time()
-            }))
+            hp_redis_client.hset(
+                "workers:status",
+                worker_id,
+                json.dumps(
+                    {
+                        "worker_id": worker_id,
+                        "status": "running",
+                        "last_heartbeat": time.time(),
+                    }
+                ),
+            )
 
         start_time = time.time()
-        manager._distribute_workload({'sessions': sessions}, available_workers)
+        manager._distribute_workload({"sessions": sessions}, available_workers)
         end_time = time.time()
 
         elapsed = end_time - start_time

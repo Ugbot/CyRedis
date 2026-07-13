@@ -3,11 +3,11 @@ Compatibility shim to expose CyRedisClient at the top-level path expected by tes
 """
 
 from cy_redis.core.cy_redis_client import (
+    ConnectionError,
     CyRedisClient,
     CyRedisConnection,
     CyRedisConnectionPool,
     RedisError,
-    ConnectionError,
 )
 
 __all__ = [
@@ -17,4 +17,3 @@ __all__ = [
     "RedisError",
     "ConnectionError",
 ]
-

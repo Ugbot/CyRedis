@@ -1,12 +1,17 @@
 """
 Unit tests for async_core.pyx - Async Redis operations
 """
-import pytest
+
 import asyncio
 import time
+
+import pytest
+
 from cy_redis.core.async_core import (
-    AsyncRedisConnection, AsyncRedisClient, AsyncMessageQueue,
-    AsyncRedisWrapper
+    AsyncMessageQueue,
+    AsyncRedisClient,
+    AsyncRedisConnection,
+    AsyncRedisWrapper,
 )
 
 
@@ -63,20 +68,20 @@ class TestAsyncRedisWrapper:
     @pytest.mark.asyncio
     async def test_async_set_get(self, async_client):
         """Test async SET and GET operations"""
-        result = await async_client.set('test_async_key', 'test_value')
+        result = await async_client.set("test_async_key", "test_value")
         assert result is not None
 
-        value = await async_client.get('test_async_key')
+        value = await async_client.get("test_async_key")
         assert value is not None
 
         # Cleanup
-        await async_client.delete('test_async_key')
+        await async_client.delete("test_async_key")
 
     @pytest.mark.asyncio
     async def test_async_delete(self, async_client):
         """Test async DELETE operation"""
-        await async_client.set('test_async_key', 'test_value')
-        result = await async_client.delete('test_async_key')
+        await async_client.set("test_async_key", "test_value")
+        result = await async_client.delete("test_async_key")
         assert result is not None
 
 
@@ -105,13 +110,10 @@ class TestAsyncConcurrency:
     @pytest.mark.asyncio
     async def test_concurrent_operations(self, async_client):
         """Test multiple concurrent async operations"""
-        keys = [f'async_key_{i}' for i in range(10)]
+        keys = [f"async_key_{i}" for i in range(10)]
 
         # Set values concurrently
-        set_tasks = [
-            async_client.set(key, f'value_{i}')
-            for i, key in enumerate(keys)
-        ]
+        set_tasks = [async_client.set(key, f"value_{i}") for i, key in enumerate(keys)]
         await asyncio.gather(*set_tasks)
 
         # Get values concurrently
@@ -132,7 +134,7 @@ class TestAsyncEdgeCases:
     @pytest.mark.asyncio
     async def test_async_nonexistent_key(self, async_client):
         """Test async get of nonexistent key"""
-        value = await async_client.get('nonexistent_async_key')
+        value = await async_client.get("nonexistent_async_key")
         # Value may be None or an error indicator
 
     @pytest.mark.asyncio
@@ -143,12 +145,11 @@ class TestAsyncEdgeCases:
         # Test with reasonable timeout
         try:
             result = await asyncio.wait_for(
-                client.set('test_key', 'value'),
-                timeout=5.0
+                client.set("test_key", "value"), timeout=5.0
             )
         except asyncio.TimeoutError:
             pytest.fail("Operation timed out")
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

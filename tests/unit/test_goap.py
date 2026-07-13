@@ -15,14 +15,15 @@ Redis integration tests (require cy_game.so):
 
 import os
 import uuid
+
 import pytest
 
 from cy_redis.core.cy_redis_client import CyRedisClient
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def redis_client():
@@ -74,6 +75,7 @@ def cleanup(redis_client, ws_key, actions_key):
 # No-Redis: API surface
 # ---------------------------------------------------------------------------
 
+
 class TestCyGOAPAPI:
     def test_import(self):
         try:
@@ -100,37 +102,56 @@ class TestCyGOAPAPI:
 # Integration: CYGOAP commands
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.redis
 class TestCyGOAPSetState:
     def test_setstate_single(self, redis_client, module_loaded, ws_key, actions_key):
-        redis_client.execute_command([
-            "CYGOAP.SETSTATE", ws_key, "has_sword", "1",
-        ])
+        redis_client.execute_command(
+            [
+                "CYGOAP.SETSTATE",
+                ws_key,
+                "has_sword",
+                "1",
+            ]
+        )
         val = redis_client.execute_command(["HGET", ws_key, "has_sword"])
         assert val == "1"
 
     def test_setstate_multi(self, redis_client, module_loaded, ws_key, actions_key):
-        redis_client.execute_command([
-            "CYGOAP.SETSTATE", ws_key,
-            "has_key", "1", "door_open", "0", "enemy_dead", "0",
-        ])
-        assert redis_client.execute_command(["HGET", ws_key, "has_key"])    == "1"
-        assert redis_client.execute_command(["HGET", ws_key, "door_open"])  == "0"
+        redis_client.execute_command(
+            [
+                "CYGOAP.SETSTATE",
+                ws_key,
+                "has_key",
+                "1",
+                "door_open",
+                "0",
+                "enemy_dead",
+                "0",
+            ]
+        )
+        assert redis_client.execute_command(["HGET", ws_key, "has_key"]) == "1"
+        assert redis_client.execute_command(["HGET", ws_key, "door_open"]) == "0"
         assert redis_client.execute_command(["HGET", ws_key, "enemy_dead"]) == "0"
 
 
 @pytest.mark.redis
 class TestCyGOAPDefAction:
     def test_defaction_stored(self, redis_client, module_loaded, ws_key, actions_key):
-        redis_client.execute_command([
-            "CYGOAP.DEFACTION", actions_key, "pickup_key",
-            '{"near_key": true}',  # pre
-            '{"has_key": true}',   # eff
-            "1",                   # cost
-        ])
+        redis_client.execute_command(
+            [
+                "CYGOAP.DEFACTION",
+                actions_key,
+                "pickup_key",
+                '{"near_key": true}',  # pre
+                '{"has_key": true}',  # eff
+                "1",  # cost
+            ]
+        )
         raw = redis_client.execute_command(["HGET", actions_key, "pickup_key"])
         assert raw is not None
         import json
+
         data = json.loads(raw)
         assert "pre" in data
         assert "eff" in data
@@ -141,52 +162,106 @@ class TestCyGOAPPlan:
     def _setup_scenario(self, redis_client, ws_key, actions_key):
         """Classic 'unlock door' GOAP scenario."""
         # Initial state: key not held, door closed
-        redis_client.execute_command([
-            "CYGOAP.SETSTATE", ws_key,
-            "near_key", "1",
-            "has_key",  "0",
-            "door_open", "0",
-        ])
+        redis_client.execute_command(
+            [
+                "CYGOAP.SETSTATE",
+                ws_key,
+                "near_key",
+                "1",
+                "has_key",
+                "0",
+                "door_open",
+                "0",
+            ]
+        )
         # Action 1: pickup key (pre: near_key=true, eff: has_key=true)
-        redis_client.execute_command([
-            "CYGOAP.DEFACTION", actions_key, "pickup_key",
-            '{"near_key": true}', '{"has_key": true}', "1",
-        ])
+        redis_client.execute_command(
+            [
+                "CYGOAP.DEFACTION",
+                actions_key,
+                "pickup_key",
+                '{"near_key": true}',
+                '{"has_key": true}',
+                "1",
+            ]
+        )
         # Action 2: open door (pre: has_key=true, eff: door_open=true)
-        redis_client.execute_command([
-            "CYGOAP.DEFACTION", actions_key, "open_door",
-            '{"has_key": true}', '{"door_open": true}', "1",
-        ])
+        redis_client.execute_command(
+            [
+                "CYGOAP.DEFACTION",
+                actions_key,
+                "open_door",
+                '{"has_key": true}',
+                '{"door_open": true}',
+                "1",
+            ]
+        )
 
-    def test_plan_finds_sequence(self, redis_client, module_loaded, ws_key, actions_key):
+    def test_plan_finds_sequence(
+        self, redis_client, module_loaded, ws_key, actions_key
+    ):
         self._setup_scenario(redis_client, ws_key, actions_key)
-        raw = redis_client.execute_command([
-            "CYGOAP.PLAN", ws_key, actions_key, "door_open", "1",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYGOAP.PLAN",
+                ws_key,
+                actions_key,
+                "door_open",
+                "1",
+            ]
+        )
         assert raw is not None
         plan = [str(a) for a in raw]
         assert len(plan) == 2
         assert plan[0] == "pickup_key"
         assert plan[1] == "open_door"
 
-    def test_plan_impossible_goal(self, redis_client, module_loaded, ws_key, actions_key):
-        redis_client.execute_command([
-            "CYGOAP.SETSTATE", ws_key, "alive", "1",
-        ])
-        redis_client.execute_command([
-            "CYGOAP.DEFACTION", actions_key, "noop",
-            '{"alive": true}', '{"alive": true}', "1",
-        ])
-        raw = redis_client.execute_command([
-            "CYGOAP.PLAN", ws_key, actions_key, "has_jetpack", "1",
-        ])
+    def test_plan_impossible_goal(
+        self, redis_client, module_loaded, ws_key, actions_key
+    ):
+        redis_client.execute_command(
+            [
+                "CYGOAP.SETSTATE",
+                ws_key,
+                "alive",
+                "1",
+            ]
+        )
+        redis_client.execute_command(
+            [
+                "CYGOAP.DEFACTION",
+                actions_key,
+                "noop",
+                '{"alive": true}',
+                '{"alive": true}',
+                "1",
+            ]
+        )
+        raw = redis_client.execute_command(
+            [
+                "CYGOAP.PLAN",
+                ws_key,
+                actions_key,
+                "has_jetpack",
+                "1",
+            ]
+        )
         assert raw == [] or raw is None
 
-    def test_plan_max_depth_1_truncates(self, redis_client, module_loaded, ws_key, actions_key):
+    def test_plan_max_depth_1_truncates(
+        self, redis_client, module_loaded, ws_key, actions_key
+    ):
         self._setup_scenario(redis_client, ws_key, actions_key)
-        raw = redis_client.execute_command([
-            "CYGOAP.PLAN", ws_key, actions_key, "door_open", "1", "1",
-        ])
+        raw = redis_client.execute_command(
+            [
+                "CYGOAP.PLAN",
+                ws_key,
+                actions_key,
+                "door_open",
+                "1",
+                "1",
+            ]
+        )
         # Depth 1 can only do 1 action; door_open needs 2 → no plan
         assert raw == [] or raw is None
 
@@ -194,36 +269,76 @@ class TestCyGOAPPlan:
 @pytest.mark.redis
 class TestCyGOAPApply:
     def test_apply_success(self, redis_client, module_loaded, ws_key, actions_key):
-        redis_client.execute_command([
-            "CYGOAP.SETSTATE", ws_key, "near_key", "1", "has_key", "0",
-        ])
-        redis_client.execute_command([
-            "CYGOAP.DEFACTION", actions_key, "pickup_key",
-            '{"near_key": true}', '{"has_key": true}', "1",
-        ])
-        raw = redis_client.execute_command([
-            "CYGOAP.APPLY", ws_key, actions_key, "pickup_key",
-        ])
+        redis_client.execute_command(
+            [
+                "CYGOAP.SETSTATE",
+                ws_key,
+                "near_key",
+                "1",
+                "has_key",
+                "0",
+            ]
+        )
+        redis_client.execute_command(
+            [
+                "CYGOAP.DEFACTION",
+                actions_key,
+                "pickup_key",
+                '{"near_key": true}',
+                '{"has_key": true}',
+                "1",
+            ]
+        )
+        raw = redis_client.execute_command(
+            [
+                "CYGOAP.APPLY",
+                ws_key,
+                actions_key,
+                "pickup_key",
+            ]
+        )
         assert str(raw[0]) == "applied"
         assert redis_client.execute_command(["HGET", ws_key, "has_key"]) == "1"
 
-    def test_apply_precondition_fails(self, redis_client, module_loaded, ws_key, actions_key):
-        redis_client.execute_command([
-            "CYGOAP.SETSTATE", ws_key, "near_key", "0", "has_key", "0",
-        ])
-        redis_client.execute_command([
-            "CYGOAP.DEFACTION", actions_key, "pickup_key",
-            '{"near_key": true}', '{"has_key": true}', "1",
-        ])
-        raw = redis_client.execute_command([
-            "CYGOAP.APPLY", ws_key, actions_key, "pickup_key",
-        ])
+    def test_apply_precondition_fails(
+        self, redis_client, module_loaded, ws_key, actions_key
+    ):
+        redis_client.execute_command(
+            [
+                "CYGOAP.SETSTATE",
+                ws_key,
+                "near_key",
+                "0",
+                "has_key",
+                "0",
+            ]
+        )
+        redis_client.execute_command(
+            [
+                "CYGOAP.DEFACTION",
+                actions_key,
+                "pickup_key",
+                '{"near_key": true}',
+                '{"has_key": true}',
+                "1",
+            ]
+        )
+        raw = redis_client.execute_command(
+            [
+                "CYGOAP.APPLY",
+                ws_key,
+                actions_key,
+                "pickup_key",
+            ]
+        )
         assert str(raw[0]) == "failed"
 
 
 @pytest.mark.redis
 class TestCyGOAPWrapper:
-    def test_wrapper_plan_roundtrip(self, redis_client, module_loaded, ws_key, actions_key):
+    def test_wrapper_plan_roundtrip(
+        self, redis_client, module_loaded, ws_key, actions_key
+    ):
         try:
             from cyredis_game.goap import CyGOAP
         except ImportError:
@@ -231,12 +346,12 @@ class TestCyGOAPWrapper:
 
         goap = CyGOAP(redis_client, ws_key, actions_key)
         goap.set_state({"near_item": True, "has_item": False, "used_item": False})
-        goap.define_action("pick_up",  {"near_item": True},  {"has_item": True},  1)
-        goap.define_action("use_item", {"has_item": True},   {"used_item": True}, 1)
+        goap.define_action("pick_up", {"near_item": True}, {"has_item": True}, 1)
+        goap.define_action("use_item", {"has_item": True}, {"used_item": True}, 1)
 
         plan = goap.plan("used_item", "1")
         assert plan == ["pick_up", "use_item"]
 
         state = goap.get_state()
         assert state.get("near_item") is True
-        assert state.get("has_item")  is False
+        assert state.get("has_item") is False

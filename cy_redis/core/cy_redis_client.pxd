@@ -7,6 +7,7 @@ Header declarations for CyRedisClient - High-performance Cython Redis client
 
 from libc.stdint cimport uint64_t
 
+
 # System time struct
 cdef extern from "sys/time.h":
     cdef struct timeval:

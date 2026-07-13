@@ -28,7 +28,6 @@ from typing import Any, Dict, List, Optional
 
 from cy_redis.core.cy_redis_client cimport CyRedisClient
 
-
 # Fail-safe ceiling on how many historical stream entries a single rewind /
 # resume request may pull back. Even an unbounded "(since" XRANGE is capped at
 # this many entries so a replay can never fan out without limit.

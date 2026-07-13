@@ -2,16 +2,18 @@
 Pytest fixtures for CyRedis integration tests.
 """
 
-import pytest
-import time
 import os
+import time
 from typing import Generator
+
+import pytest
 
 try:
     import redis as redis_py
     from redis import Redis
     from redis.cluster import RedisCluster
     from redis.sentinel import Sentinel
+
     REDIS_PY_AVAILABLE = True
 except ImportError:
     redis_py = None
@@ -22,8 +24,10 @@ except ImportError:
 
 # Import CyRedis components
 try:
-    from cy_redis import CyRedisClient, CyDistributedLock as DistributedLock
+    from cy_redis import CyDistributedLock as DistributedLock
+    from cy_redis import CyRedisClient
     from cy_redis.reliable_queue import ReliableQueue, WorkerQueue
+
     try:
         from cy_redis.high_performance_redis import HighPerformanceRedis
     except ImportError:
@@ -46,8 +50,11 @@ def _make_cyredis_client():
     """Build a CyRedisClient on the configured test DB."""
     return CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
+
 # Cluster configuration
-REDIS_CLUSTER_NODES = os.getenv("REDIS_CLUSTER_NODES", "localhost:7000,localhost:7001,localhost:7002")
+REDIS_CLUSTER_NODES = os.getenv(
+    "REDIS_CLUSTER_NODES", "localhost:7000,localhost:7001,localhost:7002"
+)
 
 # Sentinel configuration
 REDIS_SENTINEL_HOSTS = os.getenv("REDIS_SENTINEL_HOSTS", "localhost:26379")
@@ -141,9 +148,7 @@ def redis_cluster_client(redis_available):
 
     try:
         client = RedisCluster(
-            startup_nodes=nodes,
-            decode_responses=True,
-            skip_full_coverage_check=True
+            startup_nodes=nodes, decode_responses=True, skip_full_coverage_check=True
         )
         client.ping()
     except Exception:
@@ -178,10 +183,7 @@ def redis_sentinel_client(redis_available):
 
     try:
         sentinel = Sentinel(sentinels, socket_timeout=2)
-        client = sentinel.master_for(
-            REDIS_SENTINEL_MASTER,
-            decode_responses=True
-        )
+        client = sentinel.master_for(REDIS_SENTINEL_MASTER, decode_responses=True)
         client.ping()
     except Exception:
         pytest.skip("Redis Sentinel not available")
@@ -245,21 +247,16 @@ def worker_queue(hp_redis_client, unique_key):
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test"
-    )
-    config.addinivalue_line(
-        "markers", "cluster: mark test as requiring Redis Cluster"
-    )
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "cluster: mark test as requiring Redis Cluster")
     config.addinivalue_line(
         "markers", "sentinel: mark test as requiring Redis Sentinel"
     )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line(
         "markers", "performance: mark test as performance benchmark"
     )
     config.addinivalue_line(
-        "markers", "game_module: mark test as requiring cy_game Redis module on port 6380"
+        "markers",
+        "game_module: mark test as requiring cy_game Redis module on port 6380",
     )

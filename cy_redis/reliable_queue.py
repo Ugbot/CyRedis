@@ -7,7 +7,13 @@ from cy_redis.communication.messaging import CyReliableQueue
 
 
 class ReliableQueue:
-    def __init__(self, redis_client, queue_name: str, visibility_timeout: int = 30, max_retries: int = 3):
+    def __init__(
+        self,
+        redis_client,
+        queue_name: str,
+        visibility_timeout: int = 30,
+        max_retries: int = 3,
+    ):
         self._queue = CyReliableQueue(
             redis_client,
             queue_name,
@@ -42,7 +48,5 @@ class ReliableQueue:
 
 class WorkerQueue(ReliableQueue):
     """For test compatibility; same behavior as ReliableQueue."""
+
     pass
-
-
-

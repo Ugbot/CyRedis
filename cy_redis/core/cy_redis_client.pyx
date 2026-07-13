@@ -14,13 +14,15 @@ import asyncio
 import builtins
 import threading
 import time
-from typing import Dict, List, Optional, Any, Union, Callable, Tuple
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 # Import C declarations
-from libc.stdlib cimport malloc, free
+
 from libc.stdint cimport uint64_t
+from libc.stdlib cimport free, malloc
 from libc.string cimport strlen
+
 
 # Extern declarations for hiredis (must be in .pyx file to be accessible)
 cdef extern from "hiredis.h":
@@ -74,6 +76,7 @@ cdef extern from "hiredis.h":
     int redisGetReply(redisContext *c, void **reply) nogil
 
 from cy_redis.core.protocol import ProtocolNegotiator
+
 
 # Error classes
 class RedisError(Exception):

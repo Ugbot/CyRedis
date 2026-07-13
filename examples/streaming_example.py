@@ -8,11 +8,12 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Dict, Any, List, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, List
 
 # Import our web application support (fallback for demo)
 print("Note: Using Python fallback implementation for demo")
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
 
 class WebApplicationSupport:
     """Fallback Python implementation for demo purposes"""
@@ -34,13 +35,17 @@ class WebApplicationSupport:
     def shutdown(self):
         print("WebApplicationSupport shutdown (Python fallback)")
 
-    def create_user_session(self, user_id: str, device_info: Dict[str, Any] = None) -> str:
+    def create_user_session(
+        self, user_id: str, device_info: Dict[str, Any] = None
+    ) -> str:
         import uuid
+
         session_id = str(uuid.uuid4())
         return session_id
 
     def authenticate_user(self, user_id: str, password: str) -> Dict[str, Any]:
         import secrets
+
         # Create regular access token
         access_token = self.token_manager.create_access_token(user_id)
 
@@ -48,60 +53,76 @@ class WebApplicationSupport:
         websocket_token = self.token_manager.create_websocket_token(user_id)
 
         # Create API token for programmatic access
-        api_token = self.token_manager.create_api_token(user_id, scopes=['read', 'write'])
+        api_token = self.token_manager.create_api_token(
+            user_id, scopes=["read", "write"]
+        )
 
         return {
-            'access_token': access_token,
-            'websocket_token': websocket_token,
-            'api_token': api_token,
-            'refresh_token': secrets.token_urlsafe(32),
-            'token_type': 'bearer'
+            "access_token": access_token,
+            "websocket_token": websocket_token,
+            "api_token": api_token,
+            "refresh_token": secrets.token_urlsafe(32),
+            "token_type": "bearer",
         }
 
-    def verify_user_access(self, token: str, required_claims: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-        return {'user_id': 'demo_user', 'type': 'access'}
+    def verify_user_access(
+        self, token: str, required_claims: Dict[str, Any] = None
+    ) -> Optional[Dict[str, Any]]:
+        return {"user_id": "demo_user", "type": "access"}
 
-    def create_websocket_token(self, user_id: str, session_id: str = None,
-                              permissions: List[str] = None, expiry: int = None) -> str:
+    def create_websocket_token(
+        self,
+        user_id: str,
+        session_id: str = None,
+        permissions: List[str] = None,
+        expiry: int = None,
+    ) -> str:
         import secrets
+
         return f"ws_token_{secrets.token_urlsafe(32)}"
 
-    def create_api_token(self, user_id: str, scopes: List[str] = None,
-                        expiry: int = None) -> str:
+    def create_api_token(
+        self, user_id: str, scopes: List[str] = None, expiry: int = None
+    ) -> str:
         import secrets
+
         return f"api_token_{secrets.token_urlsafe(32)}"
 
-    def jwt_middleware(self, token: str, required_permissions: List[str] = None,
-                      required_scopes: List[str] = None) -> Optional[Dict[str, Any]]:
+    def jwt_middleware(
+        self,
+        token: str,
+        required_permissions: List[str] = None,
+        required_scopes: List[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Mock JWT middleware for demo."""
         if not token:
             return None
 
         # Simple mock validation
-        if token.startswith('ws_token_'):
+        if token.startswith("ws_token_"):
             return {
-                'user_id': 'demo_user',
-                'type': 'websocket',
-                'permissions': ['stream_access', 'realtime_access'],
-                'stream_access': True,
-                'realtime_access': True
+                "user_id": "demo_user",
+                "type": "websocket",
+                "permissions": ["stream_access", "realtime_access"],
+                "stream_access": True,
+                "realtime_access": True,
             }
-        elif token.startswith('api_token_'):
+        elif token.startswith("api_token_"):
             return {
-                'user_id': 'demo_user',
-                'type': 'api',
-                'scopes': ['read', 'write'],
-                'api_access': True
+                "user_id": "demo_user",
+                "type": "api",
+                "scopes": ["read", "write"],
+                "api_access": True,
             }
         else:
-            return {'user_id': 'demo_user', 'type': 'access'}
+            return {"user_id": "demo_user", "type": "access"}
 
     def require_auth(self, token: str, user_id: str = None) -> bool:
         """Mock auth requirement check."""
         payload = self.jwt_middleware(token)
         if not payload:
             return False
-        if user_id and payload.get('user_id') != user_id:
+        if user_id and payload.get("user_id") != user_id:
             return False
         return True
 
@@ -110,7 +131,7 @@ class WebApplicationSupport:
         payload = self.jwt_middleware(token)
         if not payload:
             return False
-        token_permissions = payload.get('permissions', [])
+        token_permissions = payload.get("permissions", [])
         return all(perm in token_permissions for perm in permissions)
 
     def require_scopes(self, token: str, scopes: List[str]) -> bool:
@@ -118,12 +139,13 @@ class WebApplicationSupport:
         payload = self.jwt_middleware(token)
         if not payload:
             return False
-        token_scopes = payload.get('scopes', [])
+        token_scopes = payload.get("scopes", [])
         return all(scope in token_scopes for scope in scopes)
 
     def refresh_access_token(self, refresh_token: str) -> Optional[str]:
         """Mock token refresh."""
         import secrets
+
         return secrets.token_urlsafe(32) if refresh_token else None
 
     def revoke_token(self, token: str):
@@ -132,23 +154,27 @@ class WebApplicationSupport:
 
     def enable_2fa(self, user_id: str) -> Dict[str, Any]:
         import secrets
+
         return {
-            'totp_secret': secrets.token_urlsafe(32),
-            'backup_codes': ['DEMO' + str(i) for i in range(10)],
-            'qr_code_url': 'otpauth://totp/CyRedisApp:demo?secret=demo&issuer=CyRedisApp'
+            "totp_secret": secrets.token_urlsafe(32),
+            "backup_codes": ["DEMO" + str(i) for i in range(10)],
+            "qr_code_url": "otpauth://totp/CyRedisApp:demo?secret=demo&issuer=CyRedisApp",
         }
 
     def verify_totp(self, user_id: str, token: str) -> bool:
-        return token == '123456'
+        return token == "123456"
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        return {'id': session_id, 'user_id': 'demo_user'}
+        return {"id": session_id, "user_id": "demo_user"}
 
     def destroy_session(self, session_id: str):
         pass
 
-    def create_user_session(self, user_id: str, device_info: Dict[str, Any] = None) -> str:
+    def create_user_session(
+        self, user_id: str, device_info: Dict[str, Any] = None
+    ) -> str:
         import uuid
+
         session_id = str(uuid.uuid4())
         return session_id
 
@@ -163,31 +189,39 @@ class WebApplicationSupport:
 
     def enqueue_task(self, task_data: Dict[str, Any], delay: int = 0) -> str:
         import uuid
+
         task_id = str(uuid.uuid4())
         return task_id
 
     def get_queue_stats(self) -> Dict[str, Any]:
-        return {'queue_length': 0, 'processing_count': 0, 'completed_count': 0, 'failed_count': 0}
+        return {
+            "queue_length": 0,
+            "processing_count": 0,
+            "completed_count": 0,
+            "failed_count": 0,
+        }
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        return {'id': session_id, 'user_id': 'demo_user'}
+        return {"id": session_id, "user_id": "demo_user"}
 
     def destroy_session(self, session_id: str):
         pass
 
     def enable_2fa(self, user_id: str) -> Dict[str, Any]:
         import secrets
+
         return {
-            'totp_secret': secrets.token_urlsafe(32),
-            'backup_codes': ['DEMO' + str(i) for i in range(10)],
-            'qr_code_url': 'otpauth://totp/CyRedisApp:demo?secret=demo&issuer=CyRedisApp'
+            "totp_secret": secrets.token_urlsafe(32),
+            "backup_codes": ["DEMO" + str(i) for i in range(10)],
+            "qr_code_url": "otpauth://totp/CyRedisApp:demo?secret=demo&issuer=CyRedisApp",
         }
 
     def verify_totp(self, user_id: str, token: str) -> bool:
-        return token == '123456'
+        return token == "123456"
 
     def refresh_access_token(self, refresh_token: str) -> Optional[str]:
         import secrets
+
         return secrets.token_urlsafe(32)
 
     def revoke_token(self, token: str):
@@ -213,24 +247,28 @@ class WebApplicationSupport:
 
             def get_stats(self):
                 return {
-                    'name': self.dict_name,
-                    'key_count': len(self),
-                    'total_size_bytes': 0,
-                    'cache_age_seconds': 0,
-                    'cache_ttl_seconds': 30
+                    "name": self.dict_name,
+                    "key_count": len(self),
+                    "total_size_bytes": 0,
+                    "cache_age_seconds": 0,
+                    "cache_ttl_seconds": 30,
                 }
 
         return SimpleSharedDict(name, initial_data or {})
 
     # Mock streaming iterators for demo
-    def stream_iterator(self, stream_key: str, consumer_group: str = None,
-                       consumer_name: str = None, batch_size: int = 10,
-                       block_ms: int = 1000):
+    def stream_iterator(
+        self,
+        stream_key: str,
+        consumer_group: str = None,
+        consumer_name: str = None,
+        batch_size: int = 10,
+        block_ms: int = 1000,
+    ):
         """Create a mock async iterator for Redis streams."""
         return MockStreamIterator(stream_key, batch_size, block_ms)
 
-    def list_iterator(self, list_key: str, batch_size: int = 10,
-                     block_ms: int = 1000):
+    def list_iterator(self, list_key: str, batch_size: int = 10, block_ms: int = 1000):
         """Create a mock async iterator for Redis lists."""
         return MockListIterator(list_key, batch_size, block_ms)
 
@@ -262,15 +300,17 @@ class MockStreamIterator:
         messages = []
         for i in range(self.batch_size):
             self.message_counter += 1
-            messages.append({
-                'id': f'{self.stream_key}:{self.message_counter}',
-                'stream': self.stream_key,
-                'data': {
-                    'timestamp': time.time(),
-                    'message': f'Message {self.message_counter}',
-                    'user_id': f'user_{self.message_counter % 10}'
+            messages.append(
+                {
+                    "id": f"{self.stream_key}:{self.message_counter}",
+                    "stream": self.stream_key,
+                    "data": {
+                        "timestamp": time.time(),
+                        "message": f"Message {self.message_counter}",
+                        "user_id": f"user_{self.message_counter % 10}",
+                    },
                 }
-            })
+            )
 
         # Simulate blocking read
         await asyncio.sleep(0.1)
@@ -313,7 +353,7 @@ class MockListIterator:
         items = []
         for i in range(self.batch_size):
             self.item_counter += 1
-            items.append(f'Item {self.item_counter} from {self.list_key}')
+            items.append(f"Item {self.item_counter} from {self.list_key}")
 
         # Simulate blocking read
         await asyncio.sleep(0.1)
@@ -359,9 +399,9 @@ class MockPubSubIterator:
         await asyncio.sleep(0.1)
 
         return {
-            'type': 'message',
-            'channel': channel,
-            'data': f'Message {self.message_counter} on channel {channel}'
+            "type": "message",
+            "channel": channel,
+            "data": f"Message {self.message_counter} on channel {channel}",
         }
 
     def close(self):
@@ -394,7 +434,9 @@ class WebApplication:
         # Initialize application settings
         self._initialize_app_settings()
 
-    async def register_user(self, username: str, email: str, password: str) -> Dict[str, Any]:
+    async def register_user(
+        self, username: str, email: str, password: str
+    ) -> Dict[str, Any]:
         """Register a new user"""
         # Check if user already exists
         if self.user_profiles.get(f"user:{username}"):
@@ -403,42 +445,47 @@ class WebApplication:
         # Create user profile
         user_id = str(uuid.uuid4())
         user_profile = {
-            'id': user_id,
-            'username': username,
-            'email': email,
-            'password_hash': self._hash_password(password),  # In production, use proper hashing
-            'created_at': time.time(),
-            'is_active': True,
-            'is_verified': False,
-            'login_attempts': 0,
-            'last_login': None,
-            '2fa_enabled': False,
-            'roles': ['user'],
-            'preferences': {
-                'theme': 'light',
-                'notifications': True
-            }
+            "id": user_id,
+            "username": username,
+            "email": email,
+            "password_hash": self._hash_password(
+                password
+            ),  # In production, use proper hashing
+            "created_at": time.time(),
+            "is_active": True,
+            "is_verified": False,
+            "login_attempts": 0,
+            "last_login": None,
+            "2fa_enabled": False,
+            "roles": ["user"],
+            "preferences": {"theme": "light", "notifications": True},
         }
 
         # Store user profile
         self.user_profiles[f"user:{username}"] = user_profile
         self.user_profiles[f"user_id:{user_id}"] = username
 
-        return {"success": True, "user_id": user_id, "message": "User registered successfully"}
+        return {
+            "success": True,
+            "user_id": user_id,
+            "message": "User registered successfully",
+        }
 
     def _initialize_app_settings(self):
         """Initialize default application settings"""
         if not self.application_settings:
-            self.application_settings.update({
-                'app_name': 'CyRedis Streaming App',
-                'version': '1.0.0',
-                'streaming_features': {
-                    'sse_enabled': True,
-                    'websockets_enabled': True,
-                    'stream_processing': True,
-                    'pubsub_broadcasting': True
+            self.application_settings.update(
+                {
+                    "app_name": "CyRedis Streaming App",
+                    "version": "1.0.0",
+                    "streaming_features": {
+                        "sse_enabled": True,
+                        "websockets_enabled": True,
+                        "stream_processing": True,
+                        "pubsub_broadcasting": True,
+                    },
                 }
-            })
+            )
 
     # ===== SERVER-SENT EVENTS (SSE) EXAMPLE =====
 
@@ -460,18 +507,18 @@ class WebApplication:
                 consumer_group=consumer_group,
                 consumer_name=consumer_name,
                 batch_size=5,
-                block_ms=5000  # 5 second timeout
+                block_ms=5000,  # 5 second timeout
             )
 
             async for messages in stream_iter:
                 for message in messages:
                     # Format as SSE event
                     sse_data = {
-                        'type': 'chat_message',
-                        'id': message['id'],
-                        'timestamp': message['data'].get('timestamp'),
-                        'user': message['data'].get('user_id'),
-                        'message': message['data'].get('message')
+                        "type": "chat_message",
+                        "id": message["id"],
+                        "timestamp": message["data"].get("timestamp"),
+                        "user": message["data"].get("user_id"),
+                        "message": message["data"].get("message"),
                     }
 
                     # Yield SSE formatted data
@@ -480,7 +527,7 @@ class WebApplication:
         except Exception as e:
             print(f"SSE stream error: {e}")
             # Send error event
-            error_data = {'type': 'error', 'message': str(e)}
+            error_data = {"type": "error", "message": str(e)}
             yield f"data: {json.dumps(error_data)}\n\n"
 
     # ===== WEBSOCKET STREAM EXAMPLE =====
@@ -501,17 +548,17 @@ class WebApplication:
                 consumer_group=consumer_group,
                 consumer_name=consumer_name,
                 batch_size=1,
-                block_ms=1000  # 1 second timeout for responsive WS
+                block_ms=1000,  # 1 second timeout for responsive WS
             ) as stream_iter:
                 async for messages in stream_iter:
                     for message in messages:
                         # Send message to websocket
                         ws_message = {
-                            'type': 'chat_message',
-                            'id': message['id'],
-                            'timestamp': message['data'].get('timestamp'),
-                            'user': message['data'].get('user_id'),
-                            'message': message['data'].get('message')
+                            "type": "chat_message",
+                            "id": message["id"],
+                            "timestamp": message["data"].get("timestamp"),
+                            "user": message["data"].get("user_id"),
+                            "message": message["data"].get("message"),
                         }
 
                         await websocket.send_json(ws_message)
@@ -519,7 +566,7 @@ class WebApplication:
         except Exception as e:
             print(f"WebSocket error: {e}")
             # Send error message
-            error_message = {'type': 'error', 'message': str(e)}
+            error_message = {"type": "error", "message": str(e)}
             await websocket.send_json(error_message)
 
     # ===== LIST-BASED NOTIFICATIONS =====
@@ -535,27 +582,25 @@ class WebApplication:
         try:
             # Get the iterator directly (not using async context manager for demo)
             list_iter = self.app_support.list_iterator(
-                list_key,
-                batch_size=5,
-                block_ms=3000  # 3 second timeout
+                list_key, batch_size=5, block_ms=3000  # 3 second timeout
             )
 
             async for items in list_iter:
                 for item in items:
                     # Format as SSE event
                     notification_data = {
-                        'type': 'notification',
-                        'id': str(uuid.uuid4()),
-                        'timestamp': time.time(),
-                        'message': item,
-                        'user_id': user_id
+                        "type": "notification",
+                        "id": str(uuid.uuid4()),
+                        "timestamp": time.time(),
+                        "message": item,
+                        "user_id": user_id,
                     }
 
                     yield f"data: {json.dumps(notification_data)}\n\n"
 
         except Exception as e:
             print(f"Notification stream error: {e}")
-            error_data = {'type': 'error', 'message': str(e)}
+            error_data = {"type": "error", "message": str(e)}
             yield f"data: {json.dumps(error_data)}\n\n"
 
     # ===== PUB/SUB BROADCASTING =====
@@ -586,25 +631,24 @@ class WebApplication:
         try:
             # Get the iterator directly (not using async context manager for demo)
             pubsub_iter = self.app_support.pubsub_iterator(
-                channels,
-                timeout_ms=5000  # 5 second timeout
+                channels, timeout_ms=5000  # 5 second timeout
             )
 
             async for message in pubsub_iter:
                 # Format as SSE event
                 sse_data = {
-                    'type': 'broadcast',
-                    'id': str(uuid.uuid4()),
-                    'timestamp': time.time(),
-                    'channel': message['channel'],
-                    'message': message['data']
+                    "type": "broadcast",
+                    "id": str(uuid.uuid4()),
+                    "timestamp": time.time(),
+                    "channel": message["channel"],
+                    "message": message["data"],
                 }
 
                 yield f"data: {json.dumps(sse_data)}\n\n"
 
         except Exception as e:
             print(f"Pub/sub listener error: {e}")
-            error_data = {'type': 'error', 'message': str(e)}
+            error_data = {"type": "error", "message": str(e)}
             yield f"data: {json.dumps(error_data)}\n\n"
 
     # ===== UTILITY METHODS =====
@@ -628,19 +672,24 @@ class WebApplication:
     def get_system_stats(self) -> Dict[str, Any]:
         """Get system-wide statistics."""
         return {
-            'streaming_features': self.application_settings.get('streaming_features', {}),
-            'connected_users': len([k for k in self.user_profiles.keys() if k.startswith('user:')]),
-            'active_streams': 0,  # Would track active stream iterators
-            'active_pubsub_listeners': 0,  # Would track active pub/sub listeners
-            'jwt_tokens': {
-                'access_tokens': 0,  # Would track active access tokens
-                'websocket_tokens': 0,  # Would track active websocket tokens
-                'api_tokens': 0,  # Would track active API tokens
-            }
+            "streaming_features": self.application_settings.get(
+                "streaming_features", {}
+            ),
+            "connected_users": len(
+                [k for k in self.user_profiles.keys() if k.startswith("user:")]
+            ),
+            "active_streams": 0,  # Would track active stream iterators
+            "active_pubsub_listeners": 0,  # Would track active pub/sub listeners
+            "jwt_tokens": {
+                "access_tokens": 0,  # Would track active access tokens
+                "websocket_tokens": 0,  # Would track active websocket tokens
+                "api_tokens": 0,  # Would track active API tokens
+            },
         }
 
 
 # ===== EXAMPLE USAGE =====
+
 
 async def example_streaming_usage():
     """Example usage of Redis streaming iterators."""
@@ -653,16 +702,18 @@ async def example_streaming_usage():
     try:
         # 1. Register and authenticate a user
         print("\n🔐 Registering and authenticating user...")
-        reg_result = await app.register_user("user_1", "user1@example.com", "password123")
+        reg_result = await app.register_user(
+            "user_1", "user1@example.com", "password123"
+        )
         print(f"Registration: {reg_result}")
 
         auth_result = await app.authenticate_user("user_1", "password123")
         print(f"Authentication: {auth_result}")
 
-        user_id = auth_result['user_id']
-        access_token = auth_result['tokens']['access_token']
-        websocket_token = auth_result['tokens']['websocket_token']
-        api_token = auth_result['tokens']['api_token']
+        user_id = auth_result["user_id"]
+        access_token = auth_result["tokens"]["access_token"]
+        websocket_token = auth_result["tokens"]["websocket_token"]
+        api_token = auth_result["tokens"]["api_token"]
 
         # 2. Test JWT token validation
         print("\n🔑 Testing JWT token validation...")
@@ -672,17 +723,21 @@ async def example_streaming_usage():
         print(f"Access token valid: {payload is not None}")
 
         # Test websocket token
-        ws_payload = app.app_support.jwt_middleware(websocket_token, required_permissions=['stream_access'])
+        ws_payload = app.app_support.jwt_middleware(
+            websocket_token, required_permissions=["stream_access"]
+        )
         print(f"Websocket token valid: {ws_payload is not None}")
 
         # Test API token
-        api_payload = app.app_support.jwt_middleware(api_token, required_scopes=['read'])
+        api_payload = app.app_support.jwt_middleware(
+            api_token, required_scopes=["read"]
+        )
         print(f"API token valid: {api_payload is not None}")
 
         # 3. Send some chat messages (requires authentication)
         print("\n💬 Sending authenticated chat messages...")
         # In real implementation, this would require the API token
-        if app.app_support.require_scopes(api_token, ['write']):
+        if app.app_support.require_scopes(api_token, ["write"]):
             app.send_chat_message("user_1", "Hello everyone! (authenticated)")
             app.send_chat_message("user_2", "Hey there! (authenticated)")
             app.send_chat_message("user_1", "How is everyone doing? (authenticated)")
@@ -691,7 +746,7 @@ async def example_streaming_usage():
 
         # 4. Add notifications (requires authentication)
         print("\n🔔 Adding authenticated notifications...")
-        if app.app_support.require_scopes(api_token, ['write']):
+        if app.app_support.require_scopes(api_token, ["write"]):
             app.add_notification("user_1", "Welcome to the authenticated app!")
             app.add_notification("user_2", "You have a new authenticated message")
         else:
@@ -708,7 +763,7 @@ async def example_streaming_usage():
 
             message_count = 0
             # In real implementation, this would check the websocket token
-            if app.app_support.require_permissions(websocket_token, ['stream_access']):
+            if app.app_support.require_permissions(websocket_token, ["stream_access"]):
                 # Simulate reading from authenticated SSE stream
                 print("SSE access granted: Streaming authenticated chat messages")
                 message_count += 1
@@ -728,8 +783,12 @@ async def example_streaming_usage():
 
             notification_count = 0
             # In real implementation, this would check permissions
-            if app.app_support.require_permissions(websocket_token, ['realtime_access']):
-                print("Notification access granted: Streaming authenticated notifications")
+            if app.app_support.require_permissions(
+                websocket_token, ["realtime_access"]
+            ):
+                print(
+                    "Notification access granted: Streaming authenticated notifications"
+                )
                 notification_count += 1
             else:
                 print("Notification access denied: Missing realtime permissions")
@@ -747,7 +806,9 @@ async def example_streaming_usage():
 
             message_count = 0
             # In real implementation, this would check permissions
-            if app.app_support.require_permissions(websocket_token, ['realtime_access']):
+            if app.app_support.require_permissions(
+                websocket_token, ["realtime_access"]
+            ):
                 print("Pub/sub access granted: Streaming authenticated broadcasts")
                 message_count += 1
             else:
@@ -762,7 +823,9 @@ async def example_streaming_usage():
 
         # 9. Demonstrate JWT token refresh
         print("\n🔄 Demonstrating JWT token refresh...")
-        new_token = app.app_support.refresh_access_token(auth_result['tokens']['refresh_token'])
+        new_token = app.app_support.refresh_access_token(
+            auth_result["tokens"]["refresh_token"]
+        )
         print(f"Token refreshed: {new_token is not None}")
 
         # 10. Demonstrate token revocation
@@ -774,6 +837,7 @@ async def example_streaming_usage():
     except Exception as e:
         print(f"❌ Error in example: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:

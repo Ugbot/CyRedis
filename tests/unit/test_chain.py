@@ -14,15 +14,16 @@ Redis integration tests (require Lua functions loaded):
 """
 
 import uuid
+
 import pytest
 
 from cy_redis.core.cy_redis_client import CyRedisClient
 from cyredis_game.game_engine import GameEngine
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def redis_client():
@@ -49,13 +50,14 @@ def prefix():
 @pytest.fixture(autouse=True)
 def cleanup(redis_client, prefix):
     yield
-    for k in (redis_client.execute_command(["KEYS", f"{prefix}:*"]) or []):
+    for k in redis_client.execute_command(["KEYS", f"{prefix}:*"]) or []:
         redis_client.execute_command(["DEL", k])
 
 
 # ---------------------------------------------------------------------------
 # No-Redis: API surface + protocol assembly
 # ---------------------------------------------------------------------------
+
 
 class TestCyFunctionChainAPI:
     def test_import(self):
@@ -149,6 +151,7 @@ class TestCyFunctionChainAPI:
 # Integration
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.redis
 class TestCyFunctionChainIntegration:
     def test_two_step_chain_set_and_zadd(self, redis_client, game_engine, prefix):
@@ -157,9 +160,9 @@ class TestCyFunctionChainIntegration:
         except ImportError:
             pytest.skip("CyFunctionChain Cython extension not built")
 
-        set_key  = f"{prefix}:kv"
+        set_key = f"{prefix}:kv"
         zset_key = f"{prefix}:zset"
-        member   = f"m_{uuid.uuid4().hex[:6]}"
+        member = f"m_{uuid.uuid4().hex[:6]}"
 
         chain = CyFunctionChain(redis_client, game_engine._engine.func_mgr)
         chain.add_command(["SET", set_key, "hello"])

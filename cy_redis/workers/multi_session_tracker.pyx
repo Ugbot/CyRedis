@@ -12,10 +12,12 @@ Tracks and manages multiple user sessions across different devices/browsers.
 
 import json
 import time
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 # Import dependencies
+
 from cy_redis.core.cy_redis_client cimport CyRedisClient
+
 from cy_redis.auth.session_manager import SessionManager
 
 

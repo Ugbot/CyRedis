@@ -11,8 +11,9 @@ Supports Redis protocol versions 2 and 3 with auto-negotiation
 """
 
 import time
-from typing import List, Dict, Any, Optional, Union, Tuple
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 
 # Import hiredis types
 cdef extern from "hiredis.h":

@@ -6,14 +6,14 @@ including standalone, cluster, sentinel configurations, async support,
 performance measurements, and Docker service management.
 """
 
+import asyncio
+import logging
 import os
 import sys
 import time
-import asyncio
-import logging
-from typing import Generator, Optional, Dict, Any, List
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Dict, Generator, List, Optional
 
 import pytest
 
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # Path and Environment Setup
 # ============================================================================
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_python_path():
@@ -48,6 +49,7 @@ def project_root() -> Path:
 # ============================================================================
 # Redis Connection Configuration
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def redis_host() -> str:
@@ -76,7 +78,9 @@ def redis_password() -> Optional[str]:
 @pytest.fixture(scope="session")
 def redis_cluster_nodes() -> List[Dict[str, Any]]:
     """Redis cluster node configuration."""
-    nodes_str = os.getenv("REDIS_CLUSTER_NODES", "localhost:7000,localhost:7001,localhost:7002")
+    nodes_str = os.getenv(
+        "REDIS_CLUSTER_NODES", "localhost:7000,localhost:7001,localhost:7002"
+    )
     nodes = []
     for node in nodes_str.split(","):
         host, port = node.strip().split(":")
@@ -87,7 +91,9 @@ def redis_cluster_nodes() -> List[Dict[str, Any]]:
 @pytest.fixture(scope="session")
 def redis_sentinel_nodes() -> List[Dict[str, Any]]:
     """Redis sentinel node configuration."""
-    nodes_str = os.getenv("REDIS_SENTINEL_NODES", "localhost:26379,localhost:26380,localhost:26381")
+    nodes_str = os.getenv(
+        "REDIS_SENTINEL_NODES", "localhost:26379,localhost:26380,localhost:26381"
+    )
     nodes = []
     for node in nodes_str.split(","):
         host, port = node.strip().split(":")
@@ -105,10 +111,12 @@ def redis_sentinel_master() -> str:
 # Service Availability Checks
 # ============================================================================
 
+
 def check_redis_available(host: str, port: int, password: Optional[str] = None) -> bool:
     """Check if Redis is available at the given host and port."""
     try:
         import socket
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1)
         result = sock.connect_ex((host, port))
@@ -123,11 +131,8 @@ def check_docker_available() -> bool:
     """Check if Docker is available."""
     try:
         import subprocess
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=5
-        )
+
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
         return result.returncode == 0
     except Exception as e:
         logger.warning(f"Docker availability check failed: {e}")
@@ -150,6 +155,7 @@ def docker_available() -> bool:
 # Skip Markers Based on Service Availability
 # ============================================================================
 
+
 def skip_if_no_redis(redis_available: bool):
     """Skip test if Redis is not available."""
     if not redis_available:
@@ -166,6 +172,7 @@ def skip_if_no_docker(docker_available: bool):
 # Redis Client Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def redis_client(redis_host, redis_port, redis_db, redis_password, redis_available):
     """
@@ -177,22 +184,21 @@ def redis_client(redis_host, redis_port, redis_db, redis_password, redis_availab
     try:
         # Try to import CyRedis client
         from cy_redis.cy_redis_client import CyRedisClient
+
         client = CyRedisClient(
-            host=redis_host,
-            port=redis_port,
-            db=redis_db,
-            password=redis_password
+            host=redis_host, port=redis_port, db=redis_db, password=redis_password
         )
     except ImportError:
         # Fallback to redis-py if CyRedis not built
         try:
             import redis
+
             client = redis.Redis(
                 host=redis_host,
                 port=redis_port,
                 db=redis_db,
                 password=redis_password,
-                decode_responses=True
+                decode_responses=True,
             )
         except ImportError:
             pytest.skip("Neither CyRedis nor redis-py available")
@@ -217,16 +223,18 @@ def redis_client(redis_host, redis_port, redis_db, redis_password, redis_availab
 
     # Close connection
     try:
-        if hasattr(client, 'close'):
+        if hasattr(client, "close"):
             client.close()
-        elif hasattr(client, 'connection_pool'):
+        elif hasattr(client, "connection_pool"):
             client.connection_pool.disconnect()
     except Exception:
         pass
 
 
 @pytest.fixture
-async def async_redis_client(redis_host, redis_port, redis_db, redis_password, redis_available):
+async def async_redis_client(
+    redis_host, redis_port, redis_db, redis_password, redis_available
+):
     """
     Provide an async Redis client instance for testing.
     Automatically cleans up test keys after use.
@@ -236,21 +244,20 @@ async def async_redis_client(redis_host, redis_port, redis_db, redis_password, r
     try:
         # Try to import async CyRedis client
         from cy_redis.async_core import AsyncRedisClient
+
         client = AsyncRedisClient(
-            host=redis_host,
-            port=redis_port,
-            db=redis_db,
-            password=redis_password
+            host=redis_host, port=redis_port, db=redis_db, password=redis_password
         )
         await client.connect()
     except ImportError:
         # Fallback to redis-py async
         try:
             import redis.asyncio as aioredis
+
             client = await aioredis.from_url(
                 f"redis://{redis_host}:{redis_port}/{redis_db}",
                 password=redis_password,
-                decode_responses=True
+                decode_responses=True,
             )
         except ImportError:
             pytest.skip("Neither async CyRedis nor redis-py available")
@@ -275,9 +282,9 @@ async def async_redis_client(redis_host, redis_port, redis_db, redis_password, r
 
     # Close connection
     try:
-        if hasattr(client, 'close'):
+        if hasattr(client, "close"):
             await client.close()
-        elif hasattr(client, 'aclose'):
+        elif hasattr(client, "aclose"):
             await client.aclose()
     except Exception:
         pass
@@ -290,10 +297,12 @@ def redis_cluster_client(redis_cluster_nodes, redis_available):
 
     try:
         from cy_redis.distributed import RedisCluster
+
         client = RedisCluster(nodes=redis_cluster_nodes)
     except ImportError:
         try:
             from redis.cluster import RedisCluster
+
             client = RedisCluster(startup_nodes=redis_cluster_nodes)
         except ImportError:
             pytest.skip("Redis cluster client not available")
@@ -302,7 +311,7 @@ def redis_cluster_client(redis_cluster_nodes, redis_available):
 
     # Cleanup
     try:
-        if hasattr(client, 'close'):
+        if hasattr(client, "close"):
             client.close()
     except Exception:
         pass
@@ -312,15 +321,17 @@ def redis_cluster_client(redis_cluster_nodes, redis_available):
 # Test Data Generators
 # ============================================================================
 
+
 @pytest.fixture
 def random_key() -> Generator[callable, None, None]:
     """Generate random test keys with cleanup."""
     import random
     import string
+
     created_keys = []
 
     def _generate(prefix: str = "test") -> str:
-        suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
         key = f"{prefix}:{suffix}:{int(time.time())}"
         created_keys.append(key)
         return key
@@ -340,13 +351,7 @@ def sample_data() -> Dict[str, Any]:
         "float": 3.14159,
         "list": [1, 2, 3, 4, 5],
         "dict": {"key1": "value1", "key2": "value2"},
-        "nested": {
-            "level1": {
-                "level2": {
-                    "data": "nested_value"
-                }
-            }
-        },
+        "nested": {"level1": {"level2": {"data": "nested_value"}}},
         "bytes": b"binary_data",
         "unicode": "测试数据",
     }
@@ -355,10 +360,10 @@ def sample_data() -> Dict[str, Any]:
 @pytest.fixture
 def bulk_test_data(sample_data) -> Generator[callable, None, None]:
     """Generate bulk test data."""
+
     def _generate(count: int = 100) -> List[Dict[str, Any]]:
         return [
-            {**sample_data, "id": i, "timestamp": time.time()}
-            for i in range(count)
+            {**sample_data, "id": i, "timestamp": time.time()} for i in range(count)
         ]
 
     yield _generate
@@ -367,6 +372,7 @@ def bulk_test_data(sample_data) -> Generator[callable, None, None]:
 # ============================================================================
 # Performance Measurement Utilities
 # ============================================================================
+
 
 class PerformanceTimer:
     """Context manager for measuring execution time."""
@@ -422,6 +428,7 @@ def benchmark_results():
 # Docker Service Fixtures
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def docker_compose_file(project_root) -> Path:
     """Return path to docker-compose file if it exists."""
@@ -450,7 +457,7 @@ def docker_services(docker_available, docker_compose_file):
         subprocess.run(
             ["docker", "compose", "-f", str(docker_compose_file), "up", "-d"],
             check=True,
-            capture_output=True
+            capture_output=True,
         )
         # Wait for services to be ready
         time.sleep(5)
@@ -461,7 +468,7 @@ def docker_services(docker_available, docker_compose_file):
         subprocess.run(
             ["docker", "compose", "-f", str(docker_compose_file), "down"],
             check=True,
-            capture_output=True
+            capture_output=True,
         )
     except subprocess.CalledProcessError as e:
         logger.error(f"Docker compose failed: {e}")
@@ -472,12 +479,12 @@ def docker_services(docker_available, docker_compose_file):
 # PostgreSQL Fixtures (for pgcache tests)
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def postgres_dsn() -> str:
     """PostgreSQL DSN for testing."""
     return os.getenv(
-        "POSTGRES_TEST_DSN",
-        "postgresql://postgres:postgres@localhost:5432/test_db"
+        "POSTGRES_TEST_DSN", "postgresql://postgres:postgres@localhost:5432/test_db"
     )
 
 
@@ -486,6 +493,7 @@ def postgres_connection(postgres_dsn):
     """Provide PostgreSQL connection for testing."""
     try:
         import psycopg2
+
         conn = psycopg2.connect(postgres_dsn)
         yield conn
         conn.close()
@@ -499,11 +507,13 @@ def postgres_connection(postgres_dsn):
 # Async Event Loop Fixtures
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create event loop for async tests."""
     try:
         import uvloop
+
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         logger.info("Using uvloop for async tests")
     except ImportError:
@@ -517,6 +527,7 @@ def event_loop():
 # ============================================================================
 # Cleanup Utilities
 # ============================================================================
+
 
 @pytest.fixture(autouse=True)
 def cleanup_temp_files():
@@ -548,6 +559,7 @@ def test_namespace(random_key) -> str:
 # Test Configuration Helpers
 # ============================================================================
 
+
 @pytest.fixture
 def test_config() -> Dict[str, Any]:
     """Provide test configuration."""
@@ -563,16 +575,11 @@ def test_config() -> Dict[str, Any]:
 # Pytest Hooks
 # ============================================================================
 
+
 def pytest_configure(config):
     """Configure pytest with custom settings."""
-    config.addinivalue_line(
-        "markers",
-        "unit: mark test as a unit test"
-    )
-    config.addinivalue_line(
-        "markers",
-        "integration: mark test as an integration test"
-    )
+    config.addinivalue_line("markers", "unit: mark test as a unit test")
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
 
 
 def pytest_collection_modifyitems(config, items):

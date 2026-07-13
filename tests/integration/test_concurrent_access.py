@@ -9,11 +9,12 @@ Tests thread safety and concurrent access patterns including:
 - Connection pool behavior
 """
 
-import pytest
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
+
+import pytest
 
 
 @pytest.mark.integration

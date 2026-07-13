@@ -8,10 +8,10 @@ High-performance JSON operations for Redis/Valkey
 Supports RedisJSON module commands with optimized parsing
 """
 
-import json
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+import json
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Union
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
 

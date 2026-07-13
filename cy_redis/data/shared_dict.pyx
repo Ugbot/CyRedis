@@ -12,12 +12,13 @@ Shared Dictionary - Replicated dictionary via Redis with concurrency control
 import json
 import time
 import uuid
-from typing import Dict, Any, Optional, Union, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, Iterator, Optional, Union
 
 # Import our optimized components
 from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock
+
 
 # Shared dictionary with Redis replication and concurrency control
 cdef class CySharedDict:

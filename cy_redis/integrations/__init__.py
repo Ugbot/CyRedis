@@ -1,3 +1,3 @@
-from cy_redis.integrations.clickhouse import CyClickHouseClient, CyClickHouseBridge
+from cy_redis.integrations.clickhouse import CyClickHouseBridge, CyClickHouseClient
 
 __all__ = ["CyClickHouseClient", "CyClickHouseBridge"]

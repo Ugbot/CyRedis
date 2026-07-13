@@ -10,21 +10,23 @@ Tests asynchronous operations with real Redis including:
 - Async connection pooling
 """
 
-import pytest
 import asyncio
 import time
 from typing import List
 
+import pytest
 
 # Check for async Redis support
 try:
     from redis.asyncio import Redis as AsyncRedis
+
     ASYNC_REDIS_AVAILABLE = True
 except ImportError:
     ASYNC_REDIS_AVAILABLE = False
 
 try:
     import uvloop
+
     UVLOOP_AVAILABLE = True
 except ImportError:
     UVLOOP_AVAILABLE = False
@@ -39,11 +41,12 @@ async def async_redis_client(redis_available):
         pytest.skip("Async Redis not available")
 
     import os
+
     client = AsyncRedis(
         host=os.getenv("REDIS_HOST", "localhost"),
         port=int(os.getenv("REDIS_PORT", "6379")),
         db=int(os.getenv("REDIS_DB", "0")),
-        decode_responses=True
+        decode_responses=True,
     )
 
     yield client
@@ -376,7 +379,7 @@ class TestUvloopIntegration:
             host=os.getenv("REDIS_HOST", "localhost"),
             port=int(os.getenv("REDIS_PORT", "6379")),
             db=int(os.getenv("REDIS_DB", "0")),
-            decode_responses=True
+            decode_responses=True,
         )
 
         try:
@@ -403,7 +406,7 @@ class TestUvloopIntegration:
             host=os.getenv("REDIS_HOST", "localhost"),
             port=int(os.getenv("REDIS_PORT", "6379")),
             db=int(os.getenv("REDIS_DB", "0")),
-            decode_responses=True
+            decode_responses=True,
         )
 
         try:

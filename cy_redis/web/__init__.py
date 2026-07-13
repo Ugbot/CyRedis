@@ -10,38 +10,38 @@ This module provides:
 
 __all__ = [
     # Channel manager (WebSocket + pub/sub + stream rewind)
-    'CyChannelManager',
-    'CyChannelConnection',
+    "CyChannelManager",
+    "CyChannelConnection",
     # FastAPI glue
-    'create_redis_lifespan',
-    'CyRedisMiddleware',
-    'get_redis',
-    'get_channels',
+    "create_redis_lifespan",
+    "CyRedisMiddleware",
+    "get_redis",
+    "get_channels",
     # Caching
-    'WebCache',
-    'CacheManager',
+    "WebCache",
+    "CacheManager",
     # Auth / session
-    'WebAppSupport',
+    "WebAppSupport",
 ]
 
 try:
     from cy_redis.web.fastapi_integration import (
-        create_redis_lifespan,
         CyRedisMiddleware,
-        get_redis,
+        create_redis_lifespan,
         get_channels,
+        get_redis,
     )
 except ImportError:  # optional 'web' extra (fastapi) not installed
     create_redis_lifespan = CyRedisMiddleware = get_redis = get_channels = None
 
 try:
-    from cy_redis.web.channels import CyChannelManager, CyChannelConnection
+    from cy_redis.web.channels import CyChannelConnection, CyChannelManager
 except ImportError:
     CyChannelManager = None
     CyChannelConnection = None
 
 try:
-    from cy_redis.web.web_cache import WebCache, CacheManager
+    from cy_redis.web.web_cache import CacheManager, WebCache
 except ImportError:
     WebCache = None
     CacheManager = None

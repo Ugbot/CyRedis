@@ -15,14 +15,15 @@ Redis integration tests (require cy_game.so to be built and loaded):
 
 import os
 import uuid
+
 import pytest
 
 from cy_redis.core.cy_redis_client import CyRedisClient
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def redis_client():
@@ -77,6 +78,7 @@ def init_world(redis_client, module_loaded, world_id):
 # No-Redis: API surface
 # ---------------------------------------------------------------------------
 
+
 class TestCyGameModuleAPI:
     """CyGameModule exposes correct Python API without a Redis connection."""
 
@@ -104,6 +106,7 @@ class TestCyGameModuleAPI:
 # Integration: FLECS world lifecycle
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.redis
 class TestFlecsWorldLifecycle:
     def test_init_world(self, redis_client, module_loaded, world_id):
@@ -130,72 +133,167 @@ class TestFlecsWorldLifecycle:
 class TestFlecsEntityLifecycle:
     def test_spawn_entity(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        r = redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "player",
-            "10.0", "20.0", "1.0", "0.5", "100",
-        ])
+        r = redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "player",
+                "10.0",
+                "20.0",
+                "1.0",
+                "0.5",
+                "100",
+            ]
+        )
         assert r == 1
 
     def test_spawn_duplicate_rejected(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "player", "0", "0",
-        ])
-        r2 = redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "player", "5", "5",
-        ])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "player",
+                "0",
+                "0",
+            ]
+        )
+        r2 = redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "player",
+                "5",
+                "5",
+            ]
+        )
         assert r2 == 0
 
     def test_getcomp_position(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "npc", "3.5", "7.25",
-        ])
-        raw = redis_client.execute_command(["FLECS.GETCOMP", init_world, eid, "Position"])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "npc",
+                "3.5",
+                "7.25",
+            ]
+        )
+        raw = redis_client.execute_command(
+            ["FLECS.GETCOMP", init_world, eid, "Position"]
+        )
         comp = {raw[i]: raw[i + 1] for i in range(0, len(raw) - 1, 2)}
-        assert abs(float(comp["x"]) - 3.5)  < 0.001
+        assert abs(float(comp["x"]) - 3.5) < 0.001
         assert abs(float(comp["y"]) - 7.25) < 0.001
 
     def test_getcomp_health(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "npc", "0", "0", "0", "0", "80",
-        ])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "npc",
+                "0",
+                "0",
+                "0",
+                "0",
+                "80",
+            ]
+        )
         raw = redis_client.execute_command(["FLECS.GETCOMP", init_world, eid, "Health"])
         comp = {raw[i]: raw[i + 1] for i in range(0, len(raw) - 1, 2)}
         assert int(comp["hp"]) == 80
 
     def test_setcomp_position(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "npc", "0", "0",
-        ])
-        redis_client.execute_command([
-            "FLECS.SETCOMP", init_world, eid, "Position", "x", "42.0", "y", "99.5",
-        ])
-        raw = redis_client.execute_command(["FLECS.GETCOMP", init_world, eid, "Position"])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "npc",
+                "0",
+                "0",
+            ]
+        )
+        redis_client.execute_command(
+            [
+                "FLECS.SETCOMP",
+                init_world,
+                eid,
+                "Position",
+                "x",
+                "42.0",
+                "y",
+                "99.5",
+            ]
+        )
+        raw = redis_client.execute_command(
+            ["FLECS.GETCOMP", init_world, eid, "Position"]
+        )
         comp = {raw[i]: raw[i + 1] for i in range(0, len(raw) - 1, 2)}
         assert abs(float(comp["x"]) - 42.0) < 0.001
         assert abs(float(comp["y"]) - 99.5) < 0.001
 
     def test_has_component(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "npc", "0", "0",
-        ])
-        assert redis_client.execute_command(["FLECS.HAS", init_world, eid, "Position"])  == 1
-        assert redis_client.execute_command(["FLECS.HAS", init_world, eid, "Health"])    == 1
-        assert redis_client.execute_command(["FLECS.HAS", init_world, "nonexistent_eid", "Position"]) == 0
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "npc",
+                "0",
+                "0",
+            ]
+        )
+        assert (
+            redis_client.execute_command(["FLECS.HAS", init_world, eid, "Position"])
+            == 1
+        )
+        assert (
+            redis_client.execute_command(["FLECS.HAS", init_world, eid, "Health"]) == 1
+        )
+        assert (
+            redis_client.execute_command(
+                ["FLECS.HAS", init_world, "nonexistent_eid", "Position"]
+            )
+            == 0
+        )
 
     def test_delete_entity(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "npc", "0", "0",
-        ])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "npc",
+                "0",
+                "0",
+            ]
+        )
         r = redis_client.execute_command(["FLECS.DELETE", init_world, eid])
         assert r == 1
         # Deleted entity no longer exists
-        assert redis_client.execute_command(["FLECS.HAS", init_world, eid, "Position"]) == 0
+        assert (
+            redis_client.execute_command(["FLECS.HAS", init_world, eid, "Position"])
+            == 0
+        )
 
 
 @pytest.mark.redis
@@ -208,15 +306,25 @@ class TestFlecsTickMovement:
 
     def test_tick_moves_entities(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "player",
-            "0.0", "0.0",   # start at origin
-            "10.0", "0.0",  # vx=10, vy=0
-            "100",
-        ])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "player",
+                "0.0",
+                "0.0",  # start at origin
+                "10.0",
+                "0.0",  # vx=10, vy=0
+                "100",
+            ]
+        )
         # Tick 1 second (1000 ms) → x should advance by 10 units
         redis_client.execute_command(["FLECS.TICK", init_world, zone_id, "1000"])
-        raw = redis_client.execute_command(["FLECS.GETCOMP", init_world, eid, "Position"])
+        raw = redis_client.execute_command(
+            ["FLECS.GETCOMP", init_world, eid, "Position"]
+        )
         comp = {raw[i]: raw[i + 1] for i in range(0, len(raw) - 1, 2)}
         assert abs(float(comp["x"]) - 10.0) < 0.1
         assert abs(float(comp["y"])) < 0.01
@@ -226,22 +334,47 @@ class TestFlecsTickMovement:
 class TestFlecsQuery:
     def test_query_returns_spawned_entity(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "player", "0", "0",
-        ])
-        results = redis_client.execute_command([
-            "FLECS.QUERY", init_world, "Position, Health", zone_id,
-        ])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "player",
+                "0",
+                "0",
+            ]
+        )
+        results = redis_client.execute_command(
+            [
+                "FLECS.QUERY",
+                init_world,
+                "Position, Health",
+                zone_id,
+            ]
+        )
         assert eid in [str(r) for r in (results or [])]
 
     def test_query_no_zone_filter(self, redis_client, init_world, zone_id):
         eid = f"p_{uuid.uuid4().hex[:6]}"
-        redis_client.execute_command([
-            "FLECS.SPAWN", init_world, zone_id, eid, "npc", "5", "5",
-        ])
-        results = redis_client.execute_command([
-            "FLECS.QUERY", init_world, "Position",
-        ])
+        redis_client.execute_command(
+            [
+                "FLECS.SPAWN",
+                init_world,
+                zone_id,
+                eid,
+                "npc",
+                "5",
+                "5",
+            ]
+        )
+        results = redis_client.execute_command(
+            [
+                "FLECS.QUERY",
+                init_world,
+                "Position",
+            ]
+        )
         assert eid in [str(r) for r in (results or [])]
 
 
@@ -249,29 +382,39 @@ class TestFlecsQuery:
 class TestFlecsRestore:
     def test_restore_world_reloads_entities(self, redis_client, module_loaded):
         world_id = f"rw_{uuid.uuid4().hex[:8]}"
-        zone_id  = f"rz_{uuid.uuid4().hex[:6]}"
-        eid      = f"p_{uuid.uuid4().hex[:6]}"
+        zone_id = f"rz_{uuid.uuid4().hex[:6]}"
+        eid = f"p_{uuid.uuid4().hex[:6]}"
 
         try:
             redis_client.execute_command(["FLECS.INIT", world_id])
-            redis_client.execute_command([
-                "FLECS.SPAWN", world_id, zone_id, eid, "hero", "5.0", "5.0",
-            ])
+            redis_client.execute_command(
+                [
+                    "FLECS.SPAWN",
+                    world_id,
+                    zone_id,
+                    eid,
+                    "hero",
+                    "5.0",
+                    "5.0",
+                ]
+            )
             # Destroy the in-memory world
             redis_client.execute_command(["FLECS.FINI", world_id])
             # Verify entity is gone from FLECS
-            assert redis_client.execute_command(
-                ["FLECS.HAS", world_id, eid, "Position"]
-            ) == 0
+            assert (
+                redis_client.execute_command(["FLECS.HAS", world_id, eid, "Position"])
+                == 0
+            )
 
             # Restore from Redis persisted data
             n = redis_client.execute_command(["FLECS.RESTORE", world_id])
             assert int(n) >= 1
 
             # Entity should be back
-            assert redis_client.execute_command(
-                ["FLECS.HAS", world_id, eid, "Position"]
-            ) == 1
+            assert (
+                redis_client.execute_command(["FLECS.HAS", world_id, eid, "Position"])
+                == 1
+            )
 
             raw = redis_client.execute_command(
                 ["FLECS.GETCOMP", world_id, eid, "Position"]
@@ -284,7 +427,10 @@ class TestFlecsRestore:
             except Exception:
                 pass
             # Clean up Redis persistence
-            for key in (redis_client.execute_command([
-                "KEYS", f"cy:ent:{{{world_id}:{zone_id}}}:*"
-            ]) or []):
+            for key in (
+                redis_client.execute_command(
+                    ["KEYS", f"cy:ent:{{{world_id}:{zone_id}}}:*"]
+                )
+                or []
+            ):
                 redis_client.execute_command(["DEL", key])

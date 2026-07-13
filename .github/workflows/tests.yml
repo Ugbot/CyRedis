@@ -84,7 +84,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libpq-dev
+          sudo apt-get install -y build-essential libpq-dev libssl-dev
 
       - name: Build vendored hiredis
         run: |
@@ -104,12 +104,12 @@ jobs:
 
       - name: Run fast tests
         run: |
-          uv run pytest -v -m "not slow and not cluster" tests/
+          python -m pytest -v -m "not slow and not cluster" tests/
 
       - name: Run all tests with coverage
         if: matrix.python-version == '3.11'
         run: |
-          uv run pytest -v --cov=cy_redis --cov-report=xml --cov-report=term-missing tests/
+          python -m pytest -v --cov=cy_redis --cov-report=xml --cov-report=term-missing tests/
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.11'
@@ -150,12 +150,13 @@ jobs:
       - name: Install system dependencies
         run: |
           brew install postgresql
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
 
       - name: Build vendored hiredis
         run: |
           cd hiredis
           make clean || true
-          make static USE_SSL=1
+          OPENSSL_PREFIX=$(brew --prefix openssl@3) make static USE_SSL=1
           cd ..
 
       - name: Install build dependencies
@@ -169,7 +170,7 @@ jobs:
 
       - name: Run fast tests
         run: |
-          uv run pytest -v -m "not slow and not cluster" tests/ || echo "Tests may fail without Redis/Postgres services on macOS"
+          python -m pytest -v -m "not slow and not cluster" tests/ || echo "Tests may fail without Redis/Postgres services on macOS"
 
   lint:
     name: Lint and Format Check
@@ -194,7 +195,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential
+          sudo apt-get install -y build-essential libssl-dev
 
       - name: Build vendored hiredis
         run: |
@@ -213,16 +214,16 @@ jobs:
 
       - name: Run flake8
         run: |
-          uv run flake8 cy_redis/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          uv run flake8 cy_redis/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          python -m flake8 cy_redis/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          python -m flake8 cy_redis/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Check black formatting
         run: |
-          uv run black --check cy_redis/ tests/ examples/
+          python -m black --check cy_redis/ tests/ examples/
 
       - name: Check isort imports
         run: |
-          uv run isort --check-only cy_redis/ tests/ examples/
+          python -m isort --check-only cy_redis/ tests/ examples/
 
   integration:
     name: Integration Tests
@@ -283,7 +284,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libpq-dev
+          sudo apt-get install -y build-essential libpq-dev libssl-dev
 
       - name: Build vendored hiredis
         run: |
@@ -302,7 +303,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          uv run pytest -v -m "integration" tests/
+          python -m pytest -v -m "integration" tests/
 
   build:
     name: Build Distribution
@@ -328,7 +329,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential
+          sudo apt-get install -y build-essential libssl-dev
 
       - name: Build vendored hiredis
         run: |

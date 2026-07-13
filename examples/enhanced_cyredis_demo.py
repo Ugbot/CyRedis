@@ -10,10 +10,11 @@ full-text search, geospatial operations, time series, and advanced operations.
 import asyncio
 import json
 import time
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 # Import the enhanced CyRedis client
 from cy_redis import CyRedisClient, CyRedisClientAsync
+
 
 def demo_bitmap_operations():
     """Demonstrate bitmap operations"""
@@ -56,6 +57,7 @@ def demo_bitmap_operations():
         premium_active_count = client.bitcount(active_premium)
         print(f"Active premium users: {premium_active_count}")
 
+
 def demo_bloom_filters():
     """Demonstrate Bloom filter operations"""
     print("\n🌸 Bloom Filter Operations Demo")
@@ -73,7 +75,7 @@ def demo_bloom_filters():
             "user1@example.com",
             "user2@example.com",
             "user3@example.com",
-            "admin@company.com"
+            "admin@company.com",
         ]
 
         for email in emails:
@@ -83,7 +85,7 @@ def demo_bloom_filters():
         test_emails = [
             "user1@example.com",  # Should exist
             "user4@example.com",  # Should not exist
-            "admin@company.com"   # Should exist
+            "admin@company.com",  # Should exist
         ]
 
         for email in test_emails:
@@ -94,6 +96,7 @@ def demo_bloom_filters():
         # Get filter information
         info = client.bf_info(email_filter)
         print(f"Bloom filter info: {info}")
+
 
 def demo_json_operations():
     """Demonstrate JSON operations"""
@@ -106,13 +109,9 @@ def demo_json_operations():
             "id": 12345,
             "name": "Alice Johnson",
             "email": "alice@example.com",
-            "preferences": {
-                "theme": "dark",
-                "notifications": True,
-                "language": "en"
-            },
+            "preferences": {"theme": "dark", "notifications": True, "language": "en"},
             "tags": ["premium", "verified", "active"],
-            "last_login": time.time()
+            "last_login": time.time(),
         }
 
         # Set the entire JSON document
@@ -136,14 +135,15 @@ def demo_json_operations():
         print(f"Updated tags: {updated_tags}")
 
         # Get multiple users' data
-        client.json_set("user:67890", ".", {
-            "id": 67890,
-            "name": "Bob Smith",
-            "email": "bob@example.com"
-        })
+        client.json_set(
+            "user:67890",
+            ".",
+            {"id": 67890, "name": "Bob Smith", "email": "bob@example.com"},
+        )
 
         users_data = client.json_mget(["user:12345", "user:67890"], ".name")
         print(f"User names: {users_data}")
+
 
 def demo_geospatial_operations():
     """Demonstrate geospatial operations"""
@@ -154,10 +154,10 @@ def demo_geospatial_operations():
         # Add some locations (longitude, latitude, member)
         locations = [
             (-122.4194, 37.7749, "San Francisco"),  # San Francisco, CA
-            (-118.2437, 34.0522, "Los Angeles"),    # Los Angeles, CA
-            (-74.0060, 40.7128, "New York"),       # New York, NY
-            (-87.6298, 41.8781, "Chicago"),        # Chicago, IL
-            (-71.0589, 42.3601, "Boston")          # Boston, MA
+            (-118.2437, 34.0522, "Los Angeles"),  # Los Angeles, CA
+            (-74.0060, 40.7128, "New York"),  # New York, NY
+            (-87.6298, 41.8781, "Chicago"),  # Chicago, IL
+            (-71.0589, 42.3601, "Boston"),  # Boston, MA
         ]
 
         for lon, lat, city in locations:
@@ -171,12 +171,15 @@ def demo_geospatial_operations():
         print(f"Distance LA to SF: {la_sf_distance:.2f} miles")
 
         # Find cities within 1000km of Chicago
-        nearby_cities = client.georadius("cities", -87.6298, 41.8781, 1000, "km", count=5)
+        nearby_cities = client.georadius(
+            "cities", -87.6298, 41.8781, 1000, "km", count=5
+        )
         print(f"Cities within 1000km of Chicago: {nearby_cities}")
 
         # Get geohash for cities
         geohashes = client.geohash("cities", "San Francisco", "New York")
         print(f"Geohashes: {geohashes}")
+
 
 def demo_time_series_operations():
     """Demonstrate time series operations"""
@@ -188,11 +191,11 @@ def demo_time_series_operations():
         temp_series = "sensor:temperature"
 
         # Create the time series with retention and labels
-        client.ts_create(temp_series, retention=86400, labels={
-            "sensor_id": "temp_001",
-            "location": "office",
-            "unit": "celsius"
-        })
+        client.ts_create(
+            temp_series,
+            retention=86400,
+            labels={"sensor_id": "temp_001", "location": "office", "unit": "celsius"},
+        )
 
         # Add some temperature readings
         current_time = int(time.time() * 1000)  # Milliseconds
@@ -201,8 +204,8 @@ def demo_time_series_operations():
             (current_time - 240000, 23.1),  # 4 minutes ago
             (current_time - 180000, 22.8),  # 3 minutes ago
             (current_time - 120000, 23.5),  # 2 minutes ago
-            (current_time - 60000, 24.2),   # 1 minute ago
-            (current_time, 23.9)            # Now
+            (current_time - 60000, 24.2),  # 1 minute ago
+            (current_time, 23.9),  # Now
         ]
 
         for timestamp, temp in temperatures:
@@ -221,6 +224,7 @@ def demo_time_series_operations():
         info = client.ts_info(temp_series)
         print(f"Time series info: {info}")
 
+
 def demo_full_text_search():
     """Demonstrate full-text search operations"""
     print("\n🔍 Full-Text Search Demo")
@@ -236,14 +240,13 @@ def demo_full_text_search():
             {"field": "content", "type": "TEXT"},
             {"field": "author", "type": "TEXT"},
             {"field": "category", "type": "TAG"},
-            {"field": "published_date", "type": "NUMERIC"}
+            {"field": "published_date", "type": "NUMERIC"},
         ]
 
         # Create the search index
-        client.ft_create(index_name, schema, {
-            "prefix": ["article:"],
-            "default_score": 1.0
-        })
+        client.ft_create(
+            index_name, schema, {"prefix": ["article:"], "default_score": 1.0}
+        )
 
         # Add some articles
         articles = [
@@ -252,22 +255,22 @@ def demo_full_text_search():
                 "content": "Learn how to optimize Redis for maximum performance in production environments.",
                 "author": "John Doe",
                 "category": "database",
-                "published_date": 20231201
+                "published_date": 20231201,
             },
             {
                 "title": "Python Async Best Practices",
                 "content": "Essential patterns for writing efficient asynchronous Python applications.",
                 "author": "Jane Smith",
                 "category": "programming",
-                "published_date": 20231202
+                "published_date": 20231202,
             },
             {
                 "title": "Database Indexing Strategies",
                 "content": "Comprehensive guide to creating effective database indexes for optimal query performance.",
                 "author": "Bob Johnson",
                 "category": "database",
-                "published_date": 20231203
-            }
+                "published_date": 20231203,
+            },
         ]
 
         for i, article in enumerate(articles):
@@ -286,6 +289,7 @@ def demo_full_text_search():
         index_info = client.ft_info(index_name)
         print(f"Index info: {index_info}")
 
+
 async def demo_async_operations():
     """Demonstrate async operations"""
     print("\n⚡ Async Operations Demo")
@@ -293,11 +297,7 @@ async def demo_async_operations():
 
     async with CyRedisClientAsync() as client:
         # Demonstrate async JSON operations
-        user_data = {
-            "id": 999,
-            "name": "Async User",
-            "preferences": {"theme": "async"}
-        }
+        user_data = {"id": 999, "name": "Async User", "preferences": {"theme": "async"}}
 
         await client.json_set_async("async_user", ".", user_data)
 
@@ -307,8 +307,11 @@ async def demo_async_operations():
         # Demonstrate async geospatial operations
         await client.geoadd_async("async_cities", -122.4194, 37.7749, "Async SF")
 
-        distance = await client.geodist_async("async_cities", "Async SF", "San Francisco")
+        distance = await client.geodist_async(
+            "async_cities", "Async SF", "San Francisco"
+        )
         print(f"Async distance: {distance}")
+
 
 def demo_advanced_hash_operations():
     """Demonstrate advanced hash operations"""
@@ -339,6 +342,7 @@ def demo_advanced_hash_operations():
         # Get random fields
         random_fields = client.hrandfield("user:456", 2, withvalues=True)
         print(f"Random fields: {random_fields}")
+
 
 def main():
     """Run all demonstrations"""
@@ -375,6 +379,7 @@ def main():
         return 1
 
     return 0
+
 
 if __name__ == "__main__":
     exit(main())

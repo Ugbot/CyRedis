@@ -5,6 +5,7 @@ If the GIL were held across redisCommandArgv/redisGetReply, N threads each
 issuing a 1-second blocking BLPOP would take ~N seconds; with the GIL released
 they overlap to ~1 second.
 """
+
 import threading
 import time
 import uuid
@@ -34,6 +35,6 @@ def test_blocking_commands_run_concurrently():
 
     # Overlapped should be ~1s. Allow generous headroom for scheduling, but it
     # must be far below the ~n seconds a GIL-serialized run would take.
-    assert elapsed < (n * 0.5), (
-        f"{n} concurrent 1s BLPOPs took {elapsed:.2f}s — looks GIL-serialized"
-    )
+    assert elapsed < (
+        n * 0.5
+    ), f"{n} concurrent 1s BLPOPs took {elapsed:.2f}s — looks GIL-serialized"

@@ -7,12 +7,22 @@ from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 class HighPerformanceRedis:
-    def __init__(self, host: str = "localhost", port: int = 6379,
-                 max_connections: int = 10, max_workers: int = 4,
-                 password: str = None, db: int = 0):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6379,
+        max_connections: int = 10,
+        max_workers: int = 4,
+        password: str = None,
+        db: int = 0,
+    ):
         self.client = CyRedisClient(
-            host=host, port=port, max_connections=max_connections,
-            max_workers=max_workers, password=password, db=db,
+            host=host,
+            port=port,
+            max_connections=max_connections,
+            max_workers=max_workers,
+            password=password,
+            db=db,
         )
 
     def keys(self, pattern: str = "*"):
@@ -32,4 +42,3 @@ class HighPerformanceRedis:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
-
