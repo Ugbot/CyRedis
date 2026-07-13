@@ -261,7 +261,10 @@ cdef class CyChannelManager:
                       rewind=None,
                       since=None,
                       token=None,
-                      filter_expr=None) -> 'CyChannelConnection':
+                      filter_expr=None):
+        # NOTE: no cdef-class return annotation here — Cython would type the
+        # coroutine's C return slot as CyChannelConnection while an async def
+        # must return a coroutine object (fails to compile under GCC 14).
         """
         Accept *websocket*, register it as a subscriber of *channel*, and
         return a :class:`CyChannelConnection`.
@@ -306,7 +309,7 @@ cdef class CyChannelManager:
 
         return conn
 
-    async def disconnect(self, conn: 'CyChannelConnection'):
+    async def disconnect(self, CyChannelConnection conn):
         """Unsubscribe *conn* from all channels and remove from local state."""
         for channel in list(conn.get_channels()):
             await self._unsubscribe_internal(conn.conn_id, channel)
@@ -620,8 +623,8 @@ cdef class CyChannelManager:
         except Exception:
             pass
 
-    async def _replay_history(self, conn: 'CyChannelConnection',
-                               str channel, rewind, since):
+    async def _replay_history(self, CyChannelConnection conn,
+                              str channel, rewind, since):
         assert conn is not None, "replay target connection must exist"
         entries = await self.history(channel, count=rewind, since=since)
         # history() caps its result at _MAX_HISTORY_ENTRIES, so this delivery
