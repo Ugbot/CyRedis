@@ -191,9 +191,12 @@ class TestCyRateLimiter:
         assert result["remaining"] == 1
 
         # The bucket drains and then refuses, since refill is a minute away.
-        assert cy_rate_limiter.token_bucket(
-            key, capacity=2, refill_interval_ms=60_000, cost=1
-        )["allowed"] is True
+        assert (
+            cy_rate_limiter.token_bucket(
+                key, capacity=2, refill_interval_ms=60_000, cost=1
+            )["allowed"]
+            is True
+        )
         exhausted = cy_rate_limiter.token_bucket(
             key, capacity=2, refill_interval_ms=60_000, cost=1
         )
@@ -210,12 +213,18 @@ class TestCyRateLimiter:
         assert result["allowed"] is True
         assert result["remaining"] == 1
 
-        assert cy_rate_limiter.sliding_window(
-            key, window_ms=60_000, max_requests=2
-        )["allowed"] is True
-        assert cy_rate_limiter.sliding_window(
-            key, window_ms=60_000, max_requests=2
-        )["allowed"] is False
+        assert (
+            cy_rate_limiter.sliding_window(key, window_ms=60_000, max_requests=2)[
+                "allowed"
+            ]
+            is True
+        )
+        assert (
+            cy_rate_limiter.sliding_window(key, window_ms=60_000, max_requests=2)[
+                "allowed"
+            ]
+            is False
+        )
 
     def test_leaky_bucket(self, cy_rate_limiter):
         """Test leaky bucket rate limiting"""
@@ -225,9 +234,10 @@ class TestCyRateLimiter:
 
         result = cy_rate_limiter.leaky_bucket(key, rate_per_ms=0.000001, burst=1)
         assert result["allowed"] is True
-        assert cy_rate_limiter.leaky_bucket(
-            key, rate_per_ms=0.000001, burst=1
-        )["allowed"] is False
+        assert (
+            cy_rate_limiter.leaky_bucket(key, rate_per_ms=0.000001, burst=1)["allowed"]
+            is False
+        )
 
 
 class TestCyQueue:

@@ -50,6 +50,16 @@ except ImportError as exc:
     _unavailable(exc, "CyRedisClient")
 
 try:
+    from cy_redis.core.cluster import CyRedisCluster
+except ImportError as exc:
+    _unavailable(exc, "CyRedisCluster")
+
+try:
+    from cy_redis.core.sentinel import CySentinel
+except ImportError as exc:
+    _unavailable(exc, "CySentinel")
+
+try:
     from cy_redis.features.distributed import CyDistributedLock
 except ImportError as exc:
     _unavailable(exc, "CyDistributedLock")
@@ -170,6 +180,9 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     # Core client
     "CyRedisClient",
+    # Cluster and sentinel deployments
+    "CyRedisCluster",
+    "CySentinel",
     # Distributed primitives
     "CyDistributedLock",
     "RedisFunctions",

@@ -8,20 +8,6 @@ from typing import Generator
 
 import pytest
 
-try:
-    import redis as redis_py
-    from redis import Redis
-    from redis.cluster import RedisCluster
-    from redis.sentinel import Sentinel
-
-    REDIS_PY_AVAILABLE = True
-except ImportError:
-    redis_py = None
-    Redis = None
-    RedisCluster = None
-    Sentinel = None
-    REDIS_PY_AVAILABLE = False
-
 # Import CyRedis components
 try:
     from cy_redis import CyDistributedLock as DistributedLock
@@ -133,70 +119,55 @@ def benchmark_config():
 
 
 @pytest.fixture
-def redis_cluster_client(redis_available):
-    """Provide a Redis Cluster client for testing."""
-    if not redis_available:
-        pytest.skip("Redis not available")
-    if not REDIS_PY_AVAILABLE:
-        pytest.skip("redis-py not available")
+def redis_cluster_client():
+    """A CyRedis cluster client, skipped when no cluster is running.
 
-    # Parse cluster nodes
-    nodes = []
-    for node_str in REDIS_CLUSTER_NODES.split(","):
-        host, port = node_str.strip().split(":")
-        nodes.append({"host": host, "port": int(port)})
+    The cluster is a separate deployment from the single server the rest of
+    the suite uses, so `redis_available` says nothing about it.
+    """
+    from cy_redis.core.cluster import CyRedisCluster
 
+    nodes = [node.strip() for node in REDIS_CLUSTER_NODES.split(",") if node.strip()]
     try:
-        client = RedisCluster(
-            startup_nodes=nodes, decode_responses=True, skip_full_coverage_check=True
-        )
+        client = CyRedisCluster(nodes=nodes)
         client.ping()
-    except Exception:
-        pytest.skip("Redis Cluster not available")
+    except Exception as exc:
+        pytest.skip(f"No Redis Cluster at {REDIS_CLUSTER_NODES}: {exc}")
 
     yield client
 
-    # Cleanup
     try:
         test_keys = client.keys("test:*")
         if test_keys:
             client.delete(*test_keys)
-    except Exception:
-        pass
     finally:
         client.close()
 
 
 @pytest.fixture
-def redis_sentinel_client(redis_available):
-    """Provide a Redis Sentinel client for testing."""
-    if not redis_available:
-        pytest.skip("Redis not available")
-    if not REDIS_PY_AVAILABLE:
-        pytest.skip("redis-py not available")
+def redis_sentinel_client():
+    """A CyRedis client for the sentinel-monitored master."""
+    from cy_redis.core.sentinel import CySentinel
 
-    # Parse sentinel hosts
-    sentinels = []
-    for host_str in REDIS_SENTINEL_HOSTS.split(","):
-        host, port = host_str.strip().split(":")
-        sentinels.append((host, int(port)))
-
+    sentinels = [
+        host.strip() for host in REDIS_SENTINEL_HOSTS.split(",") if host.strip()
+    ]
     try:
-        sentinel = Sentinel(sentinels, socket_timeout=2)
-        client = sentinel.master_for(REDIS_SENTINEL_MASTER, decode_responses=True)
+        sentinel = CySentinel(sentinels, socket_timeout=2)
+        client = sentinel.master_for(REDIS_SENTINEL_MASTER)
         client.ping()
-    except Exception:
-        pytest.skip("Redis Sentinel not available")
+    except Exception as exc:
+        pytest.skip(f"No Redis Sentinel at {REDIS_SENTINEL_HOSTS}: {exc}")
 
     yield client
 
-    # Cleanup
     try:
         test_keys = client.keys("test:*")
         if test_keys:
             client.delete(*test_keys)
-    except Exception:
-        pass
+    finally:
+        client.close()
+        sentinel.close()
 
 
 @pytest.fixture

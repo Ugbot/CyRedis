@@ -153,6 +153,18 @@ include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
 [[tool.setuptools.ext-modules]]
+name = "cy_redis.core.cluster"
+sources = ["cy_redis/core/cluster.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.sentinel"
+sources = ["cy_redis/core/sentinel.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
 name = "cy_redis.core.async_core"
 sources = ["cy_redis/core/async_core.pyx"]
 include-dirs = [".", "hiredis"]

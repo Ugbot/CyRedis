@@ -265,17 +265,12 @@ def redis_cluster_client(redis_cluster_nodes, redis_available):
     """Provide a Redis cluster client instance."""
     skip_if_no_redis(redis_available)
 
+    from cy_redis.core.cluster import CyRedisCluster
+
     try:
-        from cy_redis.distributed import RedisCluster
-
-        client = RedisCluster(nodes=redis_cluster_nodes)
-    except ImportError:
-        try:
-            from redis.cluster import RedisCluster
-
-            client = RedisCluster(startup_nodes=redis_cluster_nodes)
-        except ImportError:
-            pytest.skip("Redis cluster client not available")
+        client = CyRedisCluster(nodes=redis_cluster_nodes)
+    except Exception as exc:
+        pytest.skip(f"No Redis Cluster at {redis_cluster_nodes}: {exc}")
 
     yield client
 

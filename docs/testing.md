@@ -178,13 +178,41 @@ PGCACHE_REDIS_PORT=6386 PGPORT=5433 PGUSER=pgcache PGPASSWORD=pgcache \
 
 ## Cluster and Sentinel
 
-`tests/integration/test_cluster_operations.py` and `test_sentinel_failover.py`
-skip unconditionally: they describe a cluster client and a Sentinel client that
-CyRedis does not have. The client exposes the `CLUSTER *` commands, but no slot
-map, no MOVED/ASK redirection, and no master discovery, so a single-node client
-cannot serve those tests. The configs under `tests/docker/` exist for when
-those clients are built; until then the tests document the gap rather than
-cover it.
+`tests/integration/test_cluster_operations.py` runs against `CyRedisCluster`
+and `test_sentinel_failover.py` against `CySentinel`; both skip only when no
+such deployment is reachable. Cluster and sentinel nodes gossip the addresses
+they are configured with, so the containers need the host network — a bridged
+port mapping advertises addresses the client cannot dial.
+
+```bash
+for port in 7000 7001 7002 7003 7004 7005; do
+    docker run -d --name "cluster-$port" --network host redis:7 \
+        redis-server --port "$port" --cluster-enabled yes \
+        --cluster-config-file "/data/$port.conf" \
+        --cluster-node-timeout 5000 --appendonly no
+done
+docker run --rm --network host redis:7 redis-cli --cluster create \
+    127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 \
+    127.0.0.1:7003 127.0.0.1:7004 127.0.0.1:7005 --cluster-replicas 1 --cluster-yes
+uv run pytest tests/integration/test_cluster_operations.py
+```
+
+For Sentinel, one master, one replica and a quorum of sentinels:
+
+```bash
+docker run -d --name sentinel-master --network host redis:7 \
+    redis-server --port 7100 --appendonly no
+docker run -d --name sentinel-replica --network host redis:7 \
+    redis-server --port 7101 --appendonly no --replicaof 127.0.0.1 7100
+# then one `redis-sentinel` per port in 26379..26381 monitoring
+# `mymaster` at 127.0.0.1:7100 with a quorum of 2 — see the
+# cluster-and-sentinel job in .github/workflows/tests.yml
+REDIS_SENTINEL_HOSTS=127.0.0.1:26379,127.0.0.1:26380,127.0.0.1:26381 \
+    uv run pytest tests/integration/test_sentinel_failover.py
+```
+
+`REDIS_CLUSTER_NODES`, `REDIS_SENTINEL_HOSTS` and `REDIS_SENTINEL_MASTER`
+point the fixtures at an existing deployment.
 
 ## Adding tests
 
