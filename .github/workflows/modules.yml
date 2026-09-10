@@ -1,0 +1,124 @@
+name: Native modules
+
+# The cy_game and pgcache tests need a Redis that already has the module
+# loaded, which a `services:` container cannot be: the .so does not exist
+# until this job builds it. So the servers are started as plain containers
+# with the build output bind-mounted in.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: modules-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  modules:
+    name: cy_game and pgcache
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pgcache
+          POSTGRES_PASSWORD: pgcache
+          POSTGRES_DB: pgcache
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgcache"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libpq-dev \
+            libjansson-dev postgresql-client
+
+      - name: Install package
+        run: uv pip install --system -e ".[dev,test]"
+
+      - name: Build the cy_game module
+        # The flecs and redismodule headers are vendored, so no fetch step.
+        run: make module
+
+      - name: Build the pgcache module
+        run: make -C plugins/pgcache/src
+
+      # redis:7 rather than redis:7-alpine: both modules link against glibc and
+      # fail to relocate into musl ("Error relocating cy_game.so: __snprintf_chk").
+      - name: Start a Redis with cy_game loaded
+        run: |
+          docker run -d --name cy-game-redis -p 6385:6379 \
+            -v "$PWD/cyredis_game/module:/mod:ro" \
+            redis:7 redis-server --loadmodule /mod/cy_game.so
+          timeout 60 sh -c 'until docker exec cy-game-redis redis-cli ping; do sleep 1; done'
+
+      # --network host: the module opens its own libpq connection, so the
+      # server has to reach the postgres service the same way the tests do.
+      - name: Start a Redis with pgcache loaded
+        run: |
+          docker build -t cyredis-pgcache tests/docker/pgcache
+          docker run -d --name pgcache-redis --network host \
+            -v "$PWD/plugins/pgcache/src:/mod:ro" \
+            cyredis-pgcache redis-server --port 6386 \
+            --loadmodule /mod/pgcache.so \
+            pg_host 127.0.0.1 pg_port 5432 pg_database pgcache \
+            pg_user pgcache pg_password pgcache default_ttl 60
+          timeout 60 sh -c 'until docker exec pgcache-redis redis-cli -p 6386 ping; do sleep 1; done'
+
+      - name: Run the cy_game tests
+        env:
+          CY_GAME_REDIS_PORT: 6385
+        run: |
+          python -m pytest -v tests/unit/test_physics.py tests/unit/test_goap.py \
+            tests/unit/test_pathfinding.py tests/unit/test_flecs_module.py \
+            tests/integration/test_cy_game_module.py
+
+      - name: Run the pgcache tests
+        env:
+          PGCACHE_REDIS_PORT: 6386
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: pgcache
+          PGPASSWORD: pgcache
+          PGDATABASE: pgcache
+        run: python -m pytest -v tests/integration/test_pgcache_module.py
+
+      - name: Show module server logs on failure
+        if: failure()
+        run: |
+          docker logs cy-game-redis || true
+          docker logs pgcache-redis || true
