@@ -20,13 +20,13 @@ jobs:
     name: Build sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # hiredis is vendored in-tree; the psqlodbc submodule is only used by
           # the pgcache server module and never by the sdist/wheel builds.
           submodules: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -36,7 +36,7 @@ jobs:
       - name: Validate metadata
         run: pipx run twine check dist/*
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -60,18 +60,18 @@ jobs:
           - os: macos-14           # arm64
             macos-target: "14.0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # hiredis is vendored in-tree; the psqlodbc submodule is only used by
           # the pgcache server module and never by the sdist/wheel builds.
           submodules: false
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.1
+        uses: pypa/cibuildwheel@v4.2
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos-target }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -90,7 +90,7 @@ jobs:
       id-token: write  # required for OIDC trusted publishing
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -111,7 +111,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

@@ -13,6 +13,8 @@ pyproject.toml:
 3. Inject numpy's include directory into the ``cy_redis.features.ai``
    extension and OpenSSL's include/lib directories into ``tls_support``
    (their paths are only known at build time).
+4. Default to compiling the ~30 extensions across all available cores; the
+   serial default dominates wheel build time.
 """
 import os
 import subprocess
@@ -55,6 +57,11 @@ class build_ext(_build_ext):
     def run(self):
         self.hiredis_ssl_available = self._build_hiredis()
         super().run()
+
+    def finalize_options(self):
+        super().finalize_options()
+        if self.parallel is None:
+            self.parallel = os.cpu_count() or 1
 
     def build_extensions(self):
         if not self.hiredis_ssl_available:
@@ -110,17 +117,18 @@ class build_ext(_build_ext):
             make_env.setdefault("OPENSSL_PREFIX", openssl_prefix)
 
         # Preferred: one build that produces both archives.
+        jobs = "-j%d" % (os.cpu_count() or 1)
         print("building vendored hiredis static libraries (make -C hiredis static USE_SSL=1)")
         try:
             subprocess.check_call(
-                ["make", "static", "USE_SSL=1"], cwd=HIREDIS_DIR, env=make_env
+                ["make", jobs, "static", "USE_SSL=1"], cwd=HIREDIS_DIR, env=make_env
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Most likely OpenSSL headers are absent. Fall back to a plain
             # build; only the TLS extension is lost.
             print("hiredis SSL build failed; retrying without SSL (TLS support disabled)")
             try:
-                subprocess.check_call(["make", "static"], cwd=HIREDIS_DIR)
+                subprocess.check_call(["make", jobs, "static"], cwd=HIREDIS_DIR)
             except (subprocess.CalledProcessError, FileNotFoundError) as exc:
                 raise SystemExit(
                     "Failed to build hiredis/libhiredis.a. A C toolchain and `make` "

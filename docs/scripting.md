@@ -20,7 +20,8 @@ client.script_flush()
 
 ### Pre-built scripts
 
-Four production-ready scripts live in [`lua_scripts/`](../lua_scripts/):
+Four production-ready scripts ship inside the package, in
+[`cy_redis/lua_scripts/`](../cy_redis/lua_scripts/):
 
 | Script | File | What it does |
 |--------|------|-------------|
@@ -32,9 +33,10 @@ Four production-ready scripts live in [`lua_scripts/`](../lua_scripts/):
 ```python
 import time
 
+from cy_redis.lua_scripts import script_source
+
 # Load at startup
-with open("lua_scripts/rate_limiter.lua") as f:
-    rate_sha = client.script_load(f.read())
+rate_sha = client.script_load(script_source("rate_limiter"))
 
 # Use per-request: KEYS[1]=bucket key; ARGV = limit, window_seconds, now
 allowed = client.evalsha(
@@ -42,7 +44,10 @@ allowed = client.evalsha(
 )
 ```
 
-See [`lua_scripts/README.md`](../lua_scripts/README.md) for full argument documentation.
+`available_scripts()` lists the bundled names and `script_path(name)` returns an
+absolute path for APIs that want a file. See
+[`cy_redis/lua_scripts/README.md`](../cy_redis/lua_scripts/README.md) for full
+argument documentation.
 
 ## Script manager
 
@@ -58,7 +63,7 @@ mgr = CyLuaScriptManager(client, namespace="scripts")
 mgr.register_script("echo", "return ARGV[1]")
 
 # Or load from a file
-mgr.load_script_from_file("rate_limiter", "lua_scripts/rate_limiter.lua")
+mgr.load_script_from_file("rate_limiter", script_path("rate_limiter"))
 
 # Execute by name (args match the script; rate_limiter wants limit/window/now)
 import time

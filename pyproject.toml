@@ -116,6 +116,9 @@ where = ["."]
 include = ["cy_redis*", "cyredis_game*"]
 exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "hiredis*"]
 
+[tool.setuptools.package-data]
+"cy_redis.lua_scripts" = ["*.lua", "README.md"]
+
 # ── cy_redis core ──────────────────────────────────────────────────────────────
 
 [[tool.setuptools.ext-modules]]
@@ -449,7 +452,7 @@ package = true
 [tool.cibuildwheel]
 # CPython 3.9–3.14; no PyPy (the extensions use CPython C-API + numpy), no 32-bit.
 build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
-skip = "*_i686 *-win32 pp*"
+skip = "*_i686 *-win32"
 # setup.py builds the vendored hiredis static lib during build_ext, so no extra
 # before-build step is needed. Import the compiled extension modules directly —
 # cy_redis/__init__.py swallows ImportError, so `from cy_redis import

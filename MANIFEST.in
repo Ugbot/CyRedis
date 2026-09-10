@@ -5,15 +5,15 @@ include pyproject.toml
 
 # Cython sources + C/C++ headers for the package (so the sdist can be recompiled)
 recursive-include cy_redis *.pyx *.pxd *.pyi *.hpp *.h py.typed
-recursive-include cyredis_game *.py *.pyx *.pxd *.md *.sh
+recursive-include cyredis_game *.py *.pyx *.pxd *.md
 
 # Vendored hiredis — sources, headers, and Makefile only. libhiredis.a is
 # deliberately NOT shipped: a static archive is platform-specific, and
 # setup.py rebuilds it from these sources on every fresh sdist install.
 recursive-include hiredis *.c *.h Makefile
 
-# Lua scripts shipped at runtime
-recursive-include lua_scripts *.lua *.md
+# Lua scripts shipped as package data inside cy_redis/lua_scripts/
+recursive-include cy_redis/lua_scripts *.lua *.md
 
 # pgcache Redis module sources (server-side C module, scoped to src/)
 recursive-include plugins *.py *.md
