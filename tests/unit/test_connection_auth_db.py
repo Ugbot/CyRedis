@@ -14,6 +14,7 @@ from cy_redis.core.cy_redis_client import (
     CyRedisClient,
     CyRedisConnection,
 )
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 def _key():
@@ -24,8 +25,8 @@ def _key():
 def test_db_select_isolates_keys():
     """A key written on db=1 is not visible on db=0 (SELECT was applied)."""
     key = _key()
-    c0 = CyRedisClient(host="localhost", port=6379, db=0)
-    c1 = CyRedisClient(host="localhost", port=6379, db=1)
+    c0 = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, db=0)
+    c1 = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, db=1)
     try:
         c1.set(key, "in-db-1")
         assert c1.get(key) == "in-db-1"
@@ -40,7 +41,7 @@ def test_db_select_isolates_keys():
 def test_db_out_of_range_rejected():
     """The pool rejects an impossible db index at construction."""
     with pytest.raises(AssertionError):
-        CyRedisClient(host="localhost", port=6379, db=70000)
+        CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, db=70000)
 
 
 @pytest.mark.redis
@@ -50,7 +51,7 @@ def test_password_against_unsecured_server_fails_cleanly():
     (never a silently-unauthenticated connection)."""
     from cy_redis.core.cy_redis_client import ConnectionError as CyConnectionError
 
-    c = CyRedisClient(host="localhost", port=6379, password="unexpected-password")
+    c = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, password="unexpected-password")
     with pytest.raises(CyConnectionError):
         c.set(_key(), "v")
 
@@ -58,7 +59,7 @@ def test_password_against_unsecured_server_fails_cleanly():
 @pytest.mark.redis
 def test_connection_constructor_accepts_password_and_db():
     """CyRedisConnection takes password/db without error and connects."""
-    conn = CyRedisConnection("localhost", 6379, 5.0, None, 0)
+    conn = CyRedisConnection(REDIS_HOST, REDIS_PORT, 5.0, None, 0)
     assert conn.connect() == 0
     assert conn.connected
     conn.disconnect()

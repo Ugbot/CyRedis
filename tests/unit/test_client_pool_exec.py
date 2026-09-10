@@ -3,15 +3,13 @@ import asyncio
 import pytest
 
 from cy_redis.core.cy_redis_client import ConnectionError as CyConnectionError
-from cy_redis.core.cy_redis_client import (
-    CyRedisClient,
-    CyRedisConnectionPool,
-)
+from cy_redis.core.cy_redis_client import CyRedisClient, CyRedisConnectionPool
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.mark.redis
 def test_execute_async_delegates_and_returns():
-    host, port = "localhost", 6379
+    host, port = REDIS_HOST, REDIS_PORT
     key = "test:execute_async:key"
     value = "v1"
 
@@ -28,7 +26,7 @@ def test_execute_async_delegates_and_returns():
 
 @pytest.mark.redis
 def test_pool_respects_max_connections():
-    host, port = "localhost", 6379
+    host, port = REDIS_HOST, REDIS_PORT
     # Short wait_timeout so the exhaustion path returns promptly.
     pool = CyRedisConnectionPool(
         host=host, port=port, max_connections=1, wait_timeout=0.25
@@ -49,7 +47,7 @@ def test_pool_respects_max_connections():
 @pytest.mark.redis
 def test_pool_recovers_after_return():
     """A slot freed by return_connection is reusable (semaphore not leaked)."""
-    host, port = "localhost", 6379
+    host, port = REDIS_HOST, REDIS_PORT
     pool = CyRedisConnectionPool(
         host=host, port=port, max_connections=1, wait_timeout=0.25
     )

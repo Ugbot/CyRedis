@@ -104,6 +104,16 @@ end to end.
   `nogil` blocks, stubbed methods). Its one real feature, reliable queues,
   already lives in `messaging.pyx`.
 
+### Fixed (Valkey)
+- `detect_server_type()` returned `"redis"` for every Valkey server. Valkey
+  answers `INFO server` with a compatibility `redis_version:` line *before*
+  `server_name:valkey`/`valkey_version:`, and the parser returned on the first
+  version line it saw; it now reads the whole section.
+- The test suite hardcoded `localhost:6379` in 19 files, so it only ever
+  exercised whichever server sat on the default port. Every fixture now reads
+  `REDIS_HOST`/`REDIS_PORT` (`tests/server_env.py`) and the suite is run against
+  Redis 7 and Valkey 8 — identical results, same skips.
+
 ### Fixed (import surface)
 - A name whose compiled extension fails to load is now left unbound instead of
   bound to `None`: touching `cy_redis.CyRedisClient` on a broken install raises

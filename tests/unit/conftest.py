@@ -10,6 +10,8 @@ from typing import Any, List
 
 import pytest
 
+from tests.server_env import REDIS_HOST, REDIS_PORT
+
 
 def pytest_configure(config: Any) -> None:
     """Configure pytest"""
@@ -32,7 +34,7 @@ def redis_available() -> bool:
             from cy_redis.core.cy_redis_client import CyRedisClient
         if CyRedisClient is None:
             return False
-        client = CyRedisClient(host="localhost", port=6379)
+        client = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
         client.set("pytest_test", "ok")
         result = client.get("pytest_test")
         client.delete("pytest_test")

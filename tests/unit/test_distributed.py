@@ -10,12 +10,13 @@ import pytest
 
 from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock, CyReadWriteLock
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture
 def redis_client():
     """Create a Redis client for testing"""
-    return CyRedisClient(host="localhost", port=6379)
+    return CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
 
 
 @pytest.fixture

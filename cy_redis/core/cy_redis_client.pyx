@@ -2794,13 +2794,17 @@ cdef class CyRedisClient:
         else:
             return None
 
+        cdef bint saw_redis = False
+
+        # Valkey reports `redis_version:` first for compatibility and only then
+        # identifies itself, so the whole section has to be read before deciding.
         for line in text.splitlines():
             line = line.strip()
-            if line.startswith('valkey_version:'):
+            if line.startswith('valkey_version:') or line == 'server_name:valkey':
                 return 'valkey'
             if line.startswith('redis_version:'):
-                return 'redis'
-        return None
+                saw_redis = True
+        return 'redis' if saw_redis else None
 
     # ===== CLUSTER OPERATIONS =====
 

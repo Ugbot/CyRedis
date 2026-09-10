@@ -101,12 +101,25 @@ docker run -d -p 6379:6379 valkey/valkey:8-alpine
 
 The `conftest.py` in `tests/integration/` creates a `CyRedisClient` fixture and flushes the test database between tests.
 
+Every fixture takes its address from `REDIS_HOST`/`REDIS_PORT` (defaults
+`localhost:6379`), so the same suite runs against either server:
+
+```bash
+docker run -d -p 6381:6379 valkey/valkey:8-alpine
+REDIS_PORT=6381 uv run pytest tests/
+```
+
+The suite must be green on both — Redis 7 and Valkey 8 pass and skip exactly the
+same tests today. Never hardcode `localhost:6379` in a test; import
+`REDIS_HOST`/`REDIS_PORT` from `tests/server_env.py`.
+
 ## CI
 
 `.github/workflows/tests.yml` defines three jobs:
 
 - **test** (`ubuntu-latest`): Redis 7-alpine on 6379, Valkey 8-alpine on 6380,
-  and PostgreSQL 15 as service containers; runs the full suite with coverage.
+  and PostgreSQL 15 as service containers; runs the full suite with coverage
+  against Redis and then re-runs it with `REDIS_PORT=6380` against Valkey.
 - **test-macos** (`macos-latest`, Python 3.11): builds the extensions and runs
   the fast tests (`-m "not slow and not cluster"`). GitHub does not support
   service containers on macOS runners, so tests needing live services may be

@@ -18,6 +18,7 @@ import uuid
 import pytest
 
 from cy_redis.core.cy_redis_client import CyRedisClient
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -27,7 +28,7 @@ from cy_redis.core.cy_redis_client import CyRedisClient
 @pytest.fixture(scope="session")
 def redis_client():
     try:
-        c = CyRedisClient(host="localhost", port=6379)
+        c = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
         c.set("_probe", "1")
         return c
     except Exception:

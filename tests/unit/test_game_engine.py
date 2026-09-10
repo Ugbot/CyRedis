@@ -27,6 +27,7 @@ from cyredis_game.game_engine import (
     deserialize_game_data,
     serialize_game_data,
 )
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,7 +37,7 @@ from cyredis_game.game_engine import (
 @pytest.fixture(scope="session")
 def redis_available() -> bool:
     try:
-        c = CyRedisClient(host="localhost", port=6379)
+        c = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
         c.set("_probe", "1")
         return True
     except Exception:
@@ -47,7 +48,7 @@ def redis_available() -> bool:
 def redis_client(redis_available):
     if not redis_available:
         pytest.skip("Redis not available")
-    return CyRedisClient(host="localhost", port=6379)
+    return CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
 
 
 @pytest.fixture(scope="session")
