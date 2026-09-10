@@ -23,10 +23,7 @@ tls_support = pytest.importorskip(
 
 # The client's ConnectionError is a RedisError subclass, not the builtin.
 from cy_redis.core.cy_redis_client import ConnectionError as CyConnectionError
-from cy_redis.core.cy_redis_client import (
-    CyRedisClient,
-    RedisError,
-)
+from cy_redis.core.cy_redis_client import CyRedisClient, RedisError
 
 pytestmark = [
     pytest.mark.integration,

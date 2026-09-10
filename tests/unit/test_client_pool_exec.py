@@ -3,10 +3,7 @@ import asyncio
 import pytest
 
 from cy_redis.core.cy_redis_client import ConnectionError as CyConnectionError
-from cy_redis.core.cy_redis_client import (
-    CyRedisClient,
-    CyRedisConnectionPool,
-)
+from cy_redis.core.cy_redis_client import CyRedisClient, CyRedisConnectionPool
 
 
 @pytest.mark.redis
