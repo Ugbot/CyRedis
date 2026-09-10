@@ -104,6 +104,20 @@ end to end.
   `nogil` blocks, stubbed methods). Its one real feature, reliable queues,
   already lives in `messaging.pyx`.
 
+### Packaging
+- Wheels ship the Lua scripts as package data (`cy_redis/lua_scripts/`, reachable
+  through `available_scripts()`/`script_path()`/`script_source()`); previously they
+  lived at the repository root and were missing from every install.
+- Wheels no longer carry `.pyx` sources — those stay in the sdist, which can
+  recompile. `.pxd`/`.hpp` headers are still shipped for downstream `cimport`.
+- `build_ext` compiles the ~37 extensions in parallel and builds vendored hiredis
+  with `make -jN`.
+- The cibuildwheel smoke test also reads a bundled Lua script back out of the wheel.
+- The publish workflow refuses to build when the pushed tag disagrees with
+  `cy_redis.__version__`.
+- CI runs on every pull request and has a packaging job that builds, `twine check`s,
+  and installs both the wheel and the sdist into clean environments.
+
 ## [0.1.0] - 2025-09-28 [UNRELEASED]
 
 Initial development version — never published to PyPI (the sdist could not build).

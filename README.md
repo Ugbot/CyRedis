@@ -1,6 +1,6 @@
 # CyRedis
 
-High-performance Redis client for Python, built with Cython and the vendored [hiredis](hiredis/) C library. No redis-py. No RESP parsing in Python. All connection I/O goes through native C.
+High-performance Redis client for Python, built with Cython and the vendored [hiredis](https://github.com/Ugbot/CyRedis/tree/main/hiredis/) C library. No redis-py. No RESP parsing in Python. All connection I/O goes through native C.
 
 ## What it does
 
@@ -8,14 +8,14 @@ High-performance Redis client for Python, built with Cython and the vendored [hi
 - **Sync and async** — every operation has a sync path and an `*_async` coroutine; async path uses `run_in_executor` over the same native pool
 - **TLS** — native via hiredis_ssl/OpenSSL, including mutual TLS and SNI; connection retry with exponential backoff built in
 - **RPC** — Redis-backed request/response with service discovery, heartbeat liveness, and multi-worker servers (`cy_redis.communication.rpc`)
-- **Distributed WebSocket channels** — `CyChannelManager` gives you Redis-backed pub/sub channels with stream rewind, per-subscriber filters, and presence tracking; drops into FastAPI in three lines ([docs/web-channels.md](docs/web-channels.md))
-- **Web layer** — HTTP response cache, JWT tokens, session management, 2FA, password reset ([docs/web.md](docs/web.md))
-- **Redis Streams** — async iterators for `SUBSCRIBE`, `PSUBSCRIBE`, and `XREAD`; ClickHouse bridge for materializing query results into streams ([docs/streams.md](docs/streams.md))
-- **Lua scripting and Redis Functions** — pre-built scripts plus a script manager for atomic multi-key operations ([docs/scripting.md](docs/scripting.md))
-- **Advanced features** — cluster command helpers, distributed locks, shared dicts (cross-process), probabilistic structures, JSON, full-text search, graph, RedisAI tensors/models ([docs/advanced.md](docs/advanced.md))
+- **Distributed WebSocket channels** — `CyChannelManager` gives you Redis-backed pub/sub channels with stream rewind, per-subscriber filters, and presence tracking; drops into FastAPI in three lines ([docs/web-channels.md](https://github.com/Ugbot/CyRedis/blob/main/docs/web-channels.md))
+- **Web layer** — HTTP response cache, JWT tokens, session management, 2FA, password reset ([docs/web.md](https://github.com/Ugbot/CyRedis/blob/main/docs/web.md))
+- **Redis Streams** — async iterators for `SUBSCRIBE`, `PSUBSCRIBE`, and `XREAD`; ClickHouse bridge for materializing query results into streams ([docs/streams.md](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md))
+- **Lua scripting and Redis Functions** — pre-built scripts plus a script manager for atomic multi-key operations ([docs/scripting.md](https://github.com/Ugbot/CyRedis/blob/main/docs/scripting.md))
+- **Advanced features** — cluster command helpers, distributed locks, shared dicts (cross-process), probabilistic structures, JSON, full-text search, graph, RedisAI tensors/models ([docs/advanced.md](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md))
 - **Workers** — worker queues, lifecycle manager, worker coordinator, multi-session tracker
-- **Game engine** — authoritative ECS simulation backed by Redis Streams ([cyredis_game/README.md](cyredis_game/README.md))
-- **PostgreSQL cache plugin** — Redis module that serves as a read-through cache for Postgres ([plugins/pgcache/README.md](plugins/pgcache/README.md))
+- **Game engine** — authoritative ECS simulation backed by Redis Streams ([cyredis_game/README.md](https://github.com/Ugbot/CyRedis/blob/main/cyredis_game/README.md))
+- **PostgreSQL cache plugin** — Redis module that serves as a read-through cache for Postgres ([plugins/pgcache/README.md](https://github.com/Ugbot/CyRedis/blob/main/plugins/pgcache/README.md))
 
 ## Quick start
 
@@ -92,24 +92,24 @@ async def main():
 asyncio.run(main())
 ```
 
-See [docs/getting-started.md](docs/getting-started.md) for connection options, pooling, and the first 10 minutes.
+See [docs/getting-started.md](https://github.com/Ugbot/CyRedis/blob/main/docs/getting-started.md) for connection options, pooling, and the first 10 minutes.
 
 ## Documentation
 
 | Page | What it covers |
 |------|---------------|
-| [Getting started](docs/getting-started.md) | Install, connect, sync vs async, connection pool |
-| [Core API](docs/core-api.md) | Commands by data type, transactions, pipelines |
-| [Web channels](docs/web-channels.md) | `CyChannelManager` — WebSocket pub/sub, stream rewind, filters, presence |
-| [Web layer](docs/web.md) | Web cache, JWT, sessions, 2FA, FastAPI integration |
-| [Streams & integrations](docs/streams.md) | Redis Streams, async iterators, ClickHouse bridge |
-| [Scripting](docs/scripting.md) | Lua scripts, Redis Functions, script manager |
-| [Advanced features](docs/advanced.md) | Cluster command helpers, distributed locks, shared dicts, probabilistic, JSON, search, graph |
-| [Testing](docs/testing.md) | Running the test suite, CI, adding tests |
-| [Examples](examples/README.md) | Runnable example scripts |
-| [Plugins](plugins/README.md) | Plugin architecture, pgcache |
-| [Game engine](cyredis_game/README.md) | ECS game engine on Redis |
-| [Changelog](CHANGELOG.md) | Version history |
+| [Getting started](https://github.com/Ugbot/CyRedis/blob/main/docs/getting-started.md) | Install, connect, sync vs async, connection pool |
+| [Core API](https://github.com/Ugbot/CyRedis/blob/main/docs/core-api.md) | Commands by data type, transactions, pipelines |
+| [Web channels](https://github.com/Ugbot/CyRedis/blob/main/docs/web-channels.md) | `CyChannelManager` — WebSocket pub/sub, stream rewind, filters, presence |
+| [Web layer](https://github.com/Ugbot/CyRedis/blob/main/docs/web.md) | Web cache, JWT, sessions, 2FA, FastAPI integration |
+| [Streams & integrations](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md) | Redis Streams, async iterators, ClickHouse bridge |
+| [Scripting](https://github.com/Ugbot/CyRedis/blob/main/docs/scripting.md) | Lua scripts, Redis Functions, script manager |
+| [Advanced features](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md) | Cluster command helpers, distributed locks, shared dicts, probabilistic, JSON, search, graph |
+| [Testing](https://github.com/Ugbot/CyRedis/blob/main/docs/testing.md) | Running the test suite, CI, adding tests |
+| [Examples](https://github.com/Ugbot/CyRedis/blob/main/examples/README.md) | Runnable example scripts |
+| [Plugins](https://github.com/Ugbot/CyRedis/blob/main/plugins/README.md) | Plugin architecture, pgcache |
+| [Game engine](https://github.com/Ugbot/CyRedis/blob/main/cyredis_game/README.md) | ECS game engine on Redis |
+| [Changelog](https://github.com/Ugbot/CyRedis/blob/main/CHANGELOG.md) | Version history |
 
 ## Architecture
 
