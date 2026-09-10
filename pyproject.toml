@@ -11,10 +11,10 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    {name = "Ben Gamble", email = "ben.gamble@ververica.com"},
+    {name = "Ben Gamble", email = "bengamble7@gmail.com"},
 ]
 maintainers = [
-    {name = "Ben Gamble", email = "ben.gamble@ververica.com"},
+    {name = "Ben Gamble", email = "bengamble7@gmail.com"},
 ]
 keywords = [
     "redis",
