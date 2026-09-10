@@ -111,6 +111,11 @@ jobs:
       - name: Run fast tests
         run: python -m pytest -v -m "not slow and not cluster" tests/
 
+      - name: Run fast tests against Valkey
+        env:
+          REDIS_PORT: 6380
+        run: python -m pytest -v -m "not slow and not cluster" tests/
+
       - name: Run all tests with coverage
         if: matrix.python-version == '3.11'
         run: python -m pytest -v --cov=cy_redis --cov-report=xml --cov-report=term-missing tests/
@@ -292,4 +297,9 @@ jobs:
         run: uv pip install --system -e ".[dev,test]"
 
       - name: Run integration tests
+        run: python -m pytest -v -m "integration" tests/
+
+      - name: Run integration tests against Valkey
+        env:
+          REDIS_PORT: 6380
         run: python -m pytest -v -m "integration" tests/
