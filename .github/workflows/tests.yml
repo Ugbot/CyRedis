@@ -70,6 +70,28 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      # Module-bearing servers: the JSON and search wrappers are unreachable on
+      # the plain images above, and the two ecosystems ship different builds.
+      redis-stack:
+        image: redis/redis-stack-server:7.2.0-v11
+        ports:
+          - 6382:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey-bundle:
+        image: valkey/valkey-bundle:8
+        ports:
+          - 6383:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       postgres:
         image: postgres:16-alpine
         env:
@@ -115,6 +137,16 @@ jobs:
         env:
           REDIS_PORT: 6380
         run: python -m pytest -v -m "not slow and not cluster" tests/
+
+      - name: Run module parity tests against Redis Stack
+        env:
+          REDIS_PORT: 6382
+        run: python -m pytest -v tests/unit/test_module_parity.py
+
+      - name: Run module parity tests against valkey-bundle
+        env:
+          REDIS_PORT: 6383
+        run: python -m pytest -v tests/unit/test_module_parity.py
 
       - name: Run all tests with coverage
         if: matrix.python-version == '3.11'
