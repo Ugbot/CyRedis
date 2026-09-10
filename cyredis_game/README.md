@@ -358,10 +358,12 @@ def process_events(last_id="0"):
 ## 🚀 Getting Started
 
 1. **Install CyRedis Game Engine**
+
+   The engine ships inside `cy-redis` as the `cyredis_game` package:
    ```bash
-   pip install cyredis-game  # Future package
-   # Or build from source
-   python setup.py build_ext --inplace
+   pip install "cy-redis[game]"
+   # Or build from a checkout (from the repository root)
+   uv run python setup.py build_ext --inplace
    ```
 
 2. **Start Redis/Valkey Cluster**

@@ -4,10 +4,12 @@ Example demonstrating CyRedis Game Engine
 Authoritative ECS on Redis with zones, ticks, and scaling
 """
 
-import time
-import threading
 import asyncio
+import threading
+import time
+
 from .game_engine import GameEngine, run_zone_worker
+
 
 def demonstrate_basic_game_setup():
     """Demonstrate basic game engine setup and entity spawning."""
@@ -40,15 +42,23 @@ def demonstrate_basic_game_setup():
 
     for eid, etype, x, y, vx, vy in entities:
         result = zone.spawn_entity(eid, etype, x, y, vx, vy)
-        status = "✓" if result['success'] else "✗"
+        status = "✓" if result["success"] else "✗"
         print(f"  {status} Spawned {eid} ({etype}) at ({x}, {y})")
 
     # Send some intents (using fast MessagePack serialization)
     print("\n🎯 Sending intents with fast binary serialization...")
 
     intents = [
-        ("player_1", "move", {"direction": "right", "speed": 50, "timestamp": int(time.time()*1000)}),
-        ("enemy_1", "attack", {"target": "player_1", "damage": 25, "crit_chance": 0.15}),
+        (
+            "player_1",
+            "move",
+            {"direction": "right", "speed": 50, "timestamp": int(time.time() * 1000)},
+        ),
+        (
+            "enemy_1",
+            "attack",
+            {"target": "player_1", "damage": 25, "crit_chance": 0.15},
+        ),
         ("npc_1", "talk", {"message": "Welcome, adventurer!", "emotion": "friendly"}),
     ]
 
@@ -67,13 +77,13 @@ def demonstrate_basic_game_setup():
     events = zone.read_events("0", 20)
     for event in events:
         event_id, event_data = event
-        eid = event_data.get('eid', 'unknown')
-        event_type = event_data.get('type', 'unknown')
+        eid = event_data.get("eid", "unknown")
+        event_type = event_data.get("type", "unknown")
         print(f"  📝 Event {event_id[:8]}: {eid} {event_type}")
 
-        if event_type == 'pos':
-            x = event_data.get('x', 0)
-            y = event_data.get('y', 0)
+        if event_type == "pos":
+            x = event_data.get("x", 0)
+            y = event_data.get("y", 0)
             print(f"      Position: ({x}, {y})")
 
     # Apply some damage
@@ -86,13 +96,17 @@ def demonstrate_basic_game_setup():
     future_time = int(time.time() * 1000) + 5000  # 5 seconds from now
 
     jobs = [
-        ("respawn_enemy", future_time, '{"enemy_id": "enemy_1", "location": [150, 250]}'),
+        (
+            "respawn_enemy",
+            future_time,
+            '{"enemy_id": "enemy_1", "location": [150, 250]}',
+        ),
         ("heal_player", future_time + 2000, '{"player_id": "player_1", "amount": 50}'),
     ]
 
     for job_id, run_at, payload in jobs:
         result = zone.schedule_job(job_id, run_at, payload)
-        status = "✓" if result.get('success') else "✗"
+        status = "✓" if result.get("success") else "✗"
         print(f"  {status} Scheduled {job_id} for {run_at}")
 
     # Check due jobs
@@ -105,6 +119,7 @@ def demonstrate_basic_game_setup():
     print(f"\n📊 Engine stats: {stats}")
 
     print("\n✅ Basic game setup demo completed!")
+
 
 def demonstrate_zone_transfers():
     """Demonstrate cross-zone entity transfers."""
@@ -137,6 +152,7 @@ def demonstrate_zone_transfers():
 
     print("✅ Zone transfer demo completed!")
 
+
 def demonstrate_tick_worker():
     """Demonstrate running a tick worker for a zone."""
     print("\n⚙️  Zone Tick Worker Demo")
@@ -163,10 +179,12 @@ def demonstrate_tick_worker():
         start_time = time.time()
         while time.time() - start_time < 10:  # Run for 10 seconds
             result = engine.tick_zone("worker_demo", "worker_zone", 100, 5)
-            if result.get('tick') != 'not_due':
-                consumed = result.get('intents_consumed', 0)
+            if result.get("tick") != "not_due":
+                consumed = result.get("intents_consumed", 0)
                 if consumed > 0:
-                    print(f"  🎯 Tick {result.get('tick', 0)}: processed {consumed} intents")
+                    print(
+                        f"  🎯 Tick {result.get('tick', 0)}: processed {consumed} intents"
+                    )
 
             time.sleep(0.1)  # Don't spam
 
@@ -181,13 +199,14 @@ def demonstrate_tick_worker():
     final_pos = None
     for event in events:
         event_data = event[1]
-        if event_data.get('type') == 'pos':
-            final_pos = (event_data.get('x', 0), event_data.get('y', 0))
+        if event_data.get("type") == "pos":
+            final_pos = (event_data.get("x", 0), event_data.get("y", 0))
 
     if final_pos:
         print(f"✓ Entity moved to position: {final_pos}")
 
     print("✅ Tick worker demo completed!")
+
 
 async def demonstrate_async_gameplay():
     """Demonstrate async gameplay with multiple zones."""
@@ -220,10 +239,13 @@ async def demonstrate_async_gameplay():
 
     results = await asyncio.gather(*tasks)
 
-    total_consumed = sum(r.get('intents_consumed', 0) for r in results if r.get('tick') != 'not_due')
+    total_consumed = sum(
+        r.get("intents_consumed", 0) for r in results if r.get("tick") != "not_due"
+    )
     print(f"✓ Async ticks completed, processed {total_consumed} total intents")
 
     print("✅ Async gameplay demo completed!")
+
 
 def run_comprehensive_demo():
     """Run all game engine demonstrations."""
@@ -261,7 +283,9 @@ def run_comprehensive_demo():
     except Exception as e:
         print(f"❌ Demo failed: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     run_comprehensive_demo()

@@ -1,8 +1,12 @@
 # Lua scripts
 
-← [README](../README.md) | [Scripting guide](../docs/scripting.md)
+← [README](../../README.md) | [Scripting guide](../../docs/scripting.md)
 
-Pre-built scripts for common patterns. Load with `client.script_load()` or the `ScriptManager`. See [docs/scripting.md](../docs/scripting.md) for the full scripting guide.
+Pre-built scripts for common patterns, installed as package data alongside the client. `script_source(name)` reads one from the installed package; `script_path(name)` gives its absolute path and `available_scripts()` lists them. See [docs/scripting.md](../../docs/scripting.md) for the full scripting guide.
+
+```python
+from cy_redis.lua_scripts import available_scripts, script_path, script_source
+```
 
 ## rate_limiter.lua
 
@@ -15,7 +19,7 @@ Returns: remaining capacity as integer
 ```
 
 ```python
-sha = client.script_load(open("lua_scripts/rate_limiter.lua").read())
+sha = client.script_load(script_source("rate_limiter"))
 remaining = client.evalsha(sha, 1, "rl:user:123", "100", "3600", str(int(time.time())), "200")
 ```
 
@@ -30,7 +34,7 @@ Returns: 1 (acquired/extended), 0 (failed)
 ```
 
 ```python
-sha = client.script_load(open("lua_scripts/distributed_lock.lua").read())
+sha = client.script_load(script_source("distributed_lock"))
 # Acquire
 ok = client.evalsha(sha, 1, "lock:billing", my_token, "30000")
 # Extend
@@ -39,7 +43,7 @@ ok = client.evalsha(sha, 1, "lock:billing", my_token, "30000", "extend")
 client.evalsha(sha, 1, "lock:billing", my_token, "0")
 ```
 
-For application-level distributed locks see [docs/advanced.md](../docs/advanced.md).
+For application-level distributed locks see [docs/advanced.md](../../docs/advanced.md).
 
 ## smart_cache.lua
 
@@ -51,7 +55,7 @@ Args: "GET"|"SET"|"STATS", current_time [, value, ttl, max_size]
 ```
 
 ```python
-sha = client.script_load(open("lua_scripts/smart_cache.lua").read())
+sha = client.script_load(script_source("smart_cache"))
 val = client.evalsha(sha, 3, "cache:obj", "cache:access", "cache:stats",
                      "GET", str(int(time.time())))
 ```
@@ -66,7 +70,7 @@ Args: "PUSH"|"POP"|"COMPLETE"|"FAIL"|"STATS", current_time, [job_id, data, prior
 ```
 
 ```python
-sha = client.script_load(open("lua_scripts/job_queue.lua").read())
+sha = client.script_load(script_source("job_queue"))
 # Enqueue
 client.evalsha(sha, 4, "q:jobs", "q:proc", "q:failed", "q:dead",
                "PUSH", str(now), "job_1", json.dumps(payload), "5", "3", "0")
