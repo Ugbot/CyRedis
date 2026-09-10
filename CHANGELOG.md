@@ -104,6 +104,21 @@ end to end.
   `nogil` blocks, stubbed methods). Its one real feature, reliable queues,
   already lives in `messaging.pyx`.
 
+### Fixed (import surface)
+- A name whose compiled extension fails to load is now left unbound instead of
+  bound to `None`: touching `cy_redis.CyRedisClient` on a broken install raises
+  an `ImportError` quoting the loader's own message (`libssl.so.3: cannot open
+  shared object file`, …) rather than failing later as `'NoneType' object is not
+  callable`. `cy_redis.import_errors()` lists everything that did not load.
+- `cy_redis.core` exported four names it never bound (`CyRedisClient`,
+  `RedisProtocol`, `ConnectionPool`, `RedisCore` — the last two do not exist), so
+  `from cy_redis.core import *` raised `AttributeError`. It now exports what it
+  imports, and `AsyncRedisClient`/`AsyncRedisWrapper` are bound for real: the old
+  guarded import also asked for a nonexistent `create_async_client`, which left
+  `AsyncRedisClient` at `None` on every install.
+- Downstream `mypy` on `from cy_redis import CyRedisClient` reported
+  `"None" not callable`; it is now clean.
+
 ### Packaging
 - Wheels ship the Lua scripts as package data (`cy_redis/lua_scripts/`, reachable
   through `available_scripts()`/`script_path()`/`script_source()`); previously they

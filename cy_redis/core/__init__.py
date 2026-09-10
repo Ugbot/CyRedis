@@ -9,26 +9,23 @@ This module contains the fundamental building blocks of CyRedis:
 - Core Redis operations
 """
 
-from typing import Any, Callable, Optional
-
-# Import async client
-_async_available: bool
-AsyncRedisClient: Optional[Any]
-create_async_client: Optional[Callable]
-try:
-    from .async_core import AsyncRedisClient, create_async_client
-
-    _async_available = True
-except ImportError:
-    _async_available = False
-    AsyncRedisClient = None
-    create_async_client = None
+from cy_redis.core.async_core import AsyncRedisClient, AsyncRedisWrapper
+from cy_redis.core.cy_redis_client import (
+    CyRedisClient,
+    CyRedisConnection,
+    CyRedisConnectionPool,
+    CyRedisPipeline,
+    RedisError,
+)
+from cy_redis.core.protocol import RedisProtocol
 
 __all__ = [
-    "CyRedisClient",
-    "RedisProtocol",
-    "ConnectionPool",
     "AsyncRedisClient",
-    "create_async_client",
-    "RedisCore",
+    "AsyncRedisWrapper",
+    "CyRedisClient",
+    "CyRedisConnection",
+    "CyRedisConnectionPool",
+    "CyRedisPipeline",
+    "RedisError",
+    "RedisProtocol",
 ]
