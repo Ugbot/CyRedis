@@ -21,30 +21,48 @@ import uuid
 
 import pytest
 
-try:
-    import redis as redis_py
+from cy_redis.core.cy_redis_client import CyRedisClient
 
-    REDIS_PY_AVAILABLE = True
-except ImportError:
-    REDIS_PY_AVAILABLE = False
-
-MODULE_REDIS_PORT = int(os.getenv("CY_GAME_REDIS_PORT", "6380"))
+MODULE_REDIS_HOST = os.getenv("PGCACHE_REDIS_HOST", "127.0.0.1")
+MODULE_REDIS_PORT = int(os.getenv("PGCACHE_REDIS_PORT", "6380"))
 PGCACHE_SO_PATH = os.path.abspath("plugins/pgcache/src/pgcache.so")
+
+# The module opens its own libpq connection, so the server and the test
+# process must be pointed at the same database.
+PG_HOST = os.getenv("PGHOST", "127.0.0.1")
+PG_PORT = os.getenv("PGPORT", "5432")
+PG_DATABASE = os.getenv("PGDATABASE", "postgres")
+PG_USER = os.getenv("PGUSER", "postgres")
+
+
+def _psql(sql: str) -> subprocess.CompletedProcess:
+    """Run one statement against the test database."""
+    return subprocess.run(
+        [
+            "psql",
+            "-h",
+            PG_HOST,
+            "-p",
+            PG_PORT,
+            "-U",
+            PG_USER,
+            "-d",
+            PG_DATABASE,
+            "-c",
+            sql,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture(scope="session")
 def module_redis():
-    if not REDIS_PY_AVAILABLE:
-        pytest.skip("redis-py not installed")
     try:
-        r = redis_py.Redis(
-            host="127.0.0.1",
-            port=MODULE_REDIS_PORT,
-            decode_responses=True,
-            socket_timeout=5,
-        )
+        r = CyRedisClient(host=MODULE_REDIS_HOST, port=MODULE_REDIS_PORT)
         r.ping()
         return r
     except Exception:
@@ -69,22 +87,21 @@ def pgcache_loaded(module_redis):
     if "pgcache" not in names:
         if not os.path.exists(PGCACHE_SO_PATH):
             pytest.skip(f"pgcache.so not built at {PGCACHE_SO_PATH}")
-        pg_user = os.getenv("PGUSER", os.popen("whoami").read().strip())
         try:
             module_redis.execute_command(
                 "MODULE",
                 "LOAD",
                 PGCACHE_SO_PATH,
                 "pg_host",
-                "localhost",
+                PG_HOST,
                 "pg_port",
-                "5432",
+                PG_PORT,
                 "pg_database",
-                "postgres",
+                PG_DATABASE,
                 "pg_user",
-                pg_user,
+                PG_USER,
                 "pg_password",
-                "",
+                os.getenv("PGPASSWORD", ""),
                 "default_ttl",
                 "60",
             )
@@ -97,7 +114,6 @@ def pgcache_loaded(module_redis):
 @pytest.fixture(scope="session")
 def pg_table(pgcache_loaded):
     """Create and seed the test_users table via psql; yield table name."""
-    pg_user = os.getenv("PGUSER", os.popen("whoami").read().strip())
     ddl = """
 DROP TABLE IF EXISTS pgcache_test_users;
 CREATE TABLE pgcache_test_users (
@@ -111,29 +127,13 @@ INSERT INTO pgcache_test_users (id, name, email, score) VALUES
     (2, 'Bob',   'bob@example.com',   200),
     (3, 'Carol', 'carol@example.com', 150);
 """
-    result = subprocess.run(
-        ["psql", "-U", pg_user, "-d", "postgres", "-c", ddl],
-        capture_output=True,
-        text=True,
-    )
+    result = _psql(ddl)
     if result.returncode != 0:
         pytest.skip(f"Could not create test table: {result.stderr}")
 
     yield "pgcache_test_users"
 
-    # Teardown
-    subprocess.run(
-        [
-            "psql",
-            "-U",
-            pg_user,
-            "-d",
-            "postgres",
-            "-c",
-            "DROP TABLE IF EXISTS pgcache_test_users;",
-        ],
-        capture_output=True,
-    )
+    _psql("DROP TABLE IF EXISTS pgcache_test_users;")
 
 
 @pytest.fixture(autouse=True)

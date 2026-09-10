@@ -120,17 +120,13 @@ class TestRedisStreams:
                 group_name, consumer_name, {stream_key: ">"}, count=2
             )
 
-            assert messages is not None
+            assert len(messages) == 2
 
-        except Exception as e:
-            # Consumer groups might not be available in all Redis versions
-            pytest.skip(f"Consumer groups not available: {e}")
+            groups = redis_client.xinfo_groups(stream_key)
+            assert [group["name"] for group in groups] == [group_name]
+            assert groups[0]["pending"] == 2
         finally:
-            # Clean up
-            try:
-                redis_client.xgroup_destroy(stream_key, group_name)
-            except:
-                pass
+            redis_client.xgroup_destroy(stream_key, group_name)
             redis_client.delete(stream_key)
 
     @pytest.mark.slow
@@ -151,20 +147,13 @@ class TestRedisStreams:
             messages = redis_client.xreadgroup(
                 group_name, consumer_name, {stream_key: ">"}
             )
+            assert len(messages) == 1
 
-            if messages:
-                # Acknowledge message
-                ack_count = redis_client.xack(stream_key, group_name, msg_id)
-                assert ack_count >= 0
-
-        except Exception as e:
-            pytest.skip(f"Consumer groups not available: {e}")
+            assert redis_client.xack(stream_key, group_name, msg_id) == 1
+            # Acking twice reports nothing left pending.
+            assert redis_client.xack(stream_key, group_name, msg_id) == 0
         finally:
-            # Clean up
-            try:
-                redis_client.xgroup_destroy(stream_key, group_name)
-            except:
-                pass
+            redis_client.xgroup_destroy(stream_key, group_name)
             redis_client.delete(stream_key)
 
     def test_xlen_stream_length(self, redis_client):
@@ -195,15 +184,8 @@ class TestRedisStreams:
             redis_client.xadd(stream_key, {"index": str(i)})
 
         # Trim to 5 messages
-        try:
-            redis_client.xtrim(stream_key, maxlen=5)
-
-            # Verify trimmed length
-            length = redis_client.xlen(stream_key)
-            assert length == 5
-        except AttributeError:
-            # xtrim might not be available
-            pytest.skip("XTRIM not available")
+        redis_client.xtrim(stream_key, maxlen=5)
+        assert redis_client.xlen(stream_key) == 5
 
         # Clean up
         redis_client.delete(stream_key)
@@ -227,21 +209,13 @@ class TestRedisStreams:
             messages = redis_client.xreadgroup(
                 group_name, consumer_name, {stream_key: ">"}
             )
+            assert len(messages) == 3
 
-            # Check pending messages
+            # The summary form reports count, id range and per-consumer counts.
             pending = redis_client.xpending(stream_key, group_name)
-
-            # Should have pending messages
-            assert pending is not None
-
-        except Exception as e:
-            pytest.skip(f"Consumer groups not available: {e}")
+            assert pending[0] == 3
         finally:
-            # Clean up
-            try:
-                redis_client.xgroup_destroy(stream_key, group_name)
-            except:
-                pass
+            redis_client.xgroup_destroy(stream_key, group_name)
             redis_client.delete(stream_key)
 
     @pytest.mark.slow
@@ -270,17 +244,12 @@ class TestRedisStreams:
                 group_name, "consumer2", {stream_key: ">"}, count=3
             )
 
-            # Both should get different messages
-            assert messages1 is not None or messages2 is not None
-
-        except Exception as e:
-            pytest.skip(f"Consumer groups not available: {e}")
+            # The group hands each message to exactly one consumer.
+            assert len(messages1) == 3
+            assert len(messages2) == 3
+            assert not {m[1] for m in messages1} & {m[1] for m in messages2}
         finally:
-            # Clean up
-            try:
-                redis_client.xgroup_destroy(stream_key, group_name)
-            except:
-                pass
+            redis_client.xgroup_destroy(stream_key, group_name)
             redis_client.delete(stream_key)
 
     def test_xinfo_stream(self, redis_client):
@@ -291,15 +260,10 @@ class TestRedisStreams:
         for i in range(3):
             redis_client.xadd(stream_key, {"data": str(i)})
 
-        try:
-            # Get stream info
-            info = redis_client.xinfo_stream(stream_key)
-
-            assert info is not None
-            # Info should contain stream metadata
-
-        except (AttributeError, Exception) as e:
-            pytest.skip(f"XINFO not available: {e}")
+        info = redis_client.xinfo_stream(stream_key)
+        assert info["length"] == 3
+        assert info["groups"] == 0
+        assert info["last-generated-id"] is not None
 
         # Clean up
         redis_client.delete(stream_key)
@@ -313,17 +277,10 @@ class TestRedisStreams:
         redis_client.xadd(stream_key, {"data": "test"})
 
         # Blocking read with timeout
-        try:
-            messages = redis_client.xread(
-                {stream_key: "0"}, count=1, block=100  # 100ms timeout
-            )
-
-            assert messages is not None
-            assert len(messages) >= 1
-
-        except TypeError:
-            # block parameter might not be supported
-            pytest.skip("Blocking read not supported")
+        messages = redis_client.xread(
+            {stream_key: "0"}, count=1, block=100  # 100ms timeout
+        )
+        assert len(messages) >= 1
 
         # Clean up
         redis_client.delete(stream_key)
@@ -349,9 +306,7 @@ class TestStreamsAdvanced:
 
             # All should succeed
             assert len(results) == 5
-
-        except AttributeError:
-            pytest.skip("Pipeline not available")
+            assert redis_client.xlen(stream_key) == 5
         finally:
             redis_client.delete(stream_key)
 
@@ -361,16 +316,10 @@ class TestStreamsAdvanced:
 
         # Add with maxlen constraint
         for i in range(10):
-            try:
-                redis_client.xadd(stream_key, {"index": str(i)}, maxlen=5)
-            except TypeError:
-                # maxlen parameter might not be supported
-                pytest.skip("maxlen parameter not supported")
-                break
+            redis_client.xadd(stream_key, {"index": str(i)}, maxlen=5)
 
-        # Should have at most 5 messages
-        length = redis_client.xlen(stream_key)
-        assert length <= 5
+        # Exact trimming caps the stream at the threshold.
+        assert redis_client.xlen(stream_key) == 5
 
         # Clean up
         redis_client.delete(stream_key)
@@ -383,17 +332,12 @@ class TestStreamsAdvanced:
         auto_id = redis_client.xadd(stream_key, {"type": "auto"})
         assert auto_id is not None
 
-        # Custom ID (timestamp-based)
-        import time
-
-        custom_id = f"{int(time.time() * 1000)}-0"
-        try:
-            result_id = redis_client.xadd(stream_key, {"type": "custom"}, id=custom_id)
-            # Some implementations might not support custom IDs
-            if result_id:
-                assert result_id is not None
-        except (TypeError, Exception):
-            pytest.skip("Custom IDs not supported")
+        # Custom ID, which must sort after the entry already in the stream.
+        last = auto_id.decode() if isinstance(auto_id, bytes) else auto_id
+        auto_ms = int(last.split("-")[0])
+        custom_id = f"{auto_ms + 1}-0"
+        result_id = redis_client.xadd(stream_key, {"type": "custom"}, id=custom_id)
+        assert result_id in (custom_id, custom_id.encode())
 
         # Clean up
         redis_client.delete(stream_key)

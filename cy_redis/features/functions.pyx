@@ -509,7 +509,7 @@ cdef class CyRedisFunctionsManager:
 cdef class CyLocks:
     """Distributed locks with reentrancy and fencing tokens"""
 
-    cdef CyRedisFunctionsManager func_mgr
+    cdef readonly CyRedisFunctionsManager func_mgr
 
     def __init__(self, func_mgr):
         assert func_mgr is not None, "func_mgr must not be None"
@@ -559,7 +559,7 @@ cdef class CyLocks:
 cdef class CyRateLimiter:
     """Rate limiting with multiple algorithms"""
 
-    cdef CyRedisFunctionsManager func_mgr
+    cdef readonly CyRedisFunctionsManager func_mgr
 
     def __init__(self, func_mgr):
         assert func_mgr is not None, "func_mgr must not be None"
@@ -625,7 +625,7 @@ cdef class CyRateLimiter:
 cdef class CyQueue:
     """Reliable key-based queues with deduplication"""
 
-    cdef CyRedisFunctionsManager func_mgr
+    cdef readonly CyRedisFunctionsManager func_mgr
 
     def __init__(self, func_mgr):
         assert func_mgr is not None, "func_mgr must not be None"

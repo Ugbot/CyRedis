@@ -19,14 +19,10 @@ import uuid
 
 import pytest
 
-try:
-    import redis as redis_py
-
-    REDIS_PY_AVAILABLE = True
-except ImportError:
-    REDIS_PY_AVAILABLE = False
+from cy_redis.core.cy_redis_client import CyRedisClient, RedisError
 
 # Port where the module-loaded Redis instance lives.
+MODULE_REDIS_HOST = os.getenv("CY_GAME_REDIS_HOST", "127.0.0.1")
 MODULE_REDIS_PORT = int(os.getenv("CY_GAME_REDIS_PORT", "6380"))
 MODULE_SO_PATH = os.path.abspath("cyredis_game/module/cy_game.so")
 LUA_DIR = os.path.abspath("cyredis_game/lua")
@@ -38,15 +34,8 @@ LUA_DIR = os.path.abspath("cyredis_game/lua")
 @pytest.fixture(scope="session")
 def module_redis():
     """Connect to the module Redis instance, skip if unavailable."""
-    if not REDIS_PY_AVAILABLE:
-        pytest.skip("redis-py not installed")
     try:
-        r = redis_py.Redis(
-            host="127.0.0.1",
-            port=MODULE_REDIS_PORT,
-            decode_responses=True,
-            socket_timeout=2,
-        )
+        r = CyRedisClient(host=MODULE_REDIS_HOST, port=MODULE_REDIS_PORT)
         r.ping()
     except Exception:
         pytest.skip(
@@ -157,13 +146,13 @@ class TestFlecsWorldLifecycle:
         try:
             module_redis.execute_command("FLECS.INIT", wid)
             pytest.fail("Expected error on duplicate INIT")
-        except redis_py.ResponseError:
+        except RedisError:
             pass
         finally:
             module_redis.execute_command("FLECS.FINI", wid)
 
     def test_fini_unknown_world(self, module_redis):
-        with pytest.raises(redis_py.ResponseError):
+        with pytest.raises(RedisError):
             module_redis.execute_command("FLECS.FINI", "no_such_world_xyz")
 
     def test_stats(self, module_redis, world):

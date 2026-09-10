@@ -96,7 +96,13 @@ test = [
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
     "pytest-timeout>=2.1",
-    "redis>=5.0",
+    # The optional layers' own tests skip themselves without these.
+    "uvloop>=0.17.0",
+    "numpy>=1.21.0",
+    "PyJWT>=2.0",
+    "pyotp>=2.6",
+    "fastapi>=0.100",
+    "msgpack>=1.0",
 ]
 
 [project.urls]

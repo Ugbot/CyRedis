@@ -147,5 +147,6 @@ cdef class CyRedisClient:
     cdef str _server_type   # "redis" | "valkey" | None (undetected)
 
     cdef list _parse_xread_result(self, list result)
+    cdef dict _pair_reply(self, object reply)
     cdef void _negotiate_protocol(self)
     cdef str _parse_server_type(self, object info_response)

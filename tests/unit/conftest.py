@@ -43,6 +43,55 @@ def redis_available() -> bool:
         return False
 
 
+CY_GAME_SO = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../cyredis_game/module/cy_game.so")
+)
+
+
+def _cy_game_loaded(client: Any) -> bool:
+    """Whether the server already serves the cy_game module's commands."""
+    modules = client.execute_command(["MODULE", "LIST"]) or []
+    for module in modules:
+        fields = module if isinstance(module, (list, tuple)) else []
+        if any(field in ("cy_game", b"cy_game") for field in fields):
+            return True
+    return False
+
+
+CY_GAME_HOST = os.getenv("CY_GAME_REDIS_HOST", REDIS_HOST)
+CY_GAME_PORT = int(os.getenv("CY_GAME_REDIS_PORT", "0"))
+
+
+@pytest.fixture(scope="session")
+def module_loaded() -> Any:
+    """A client for a server that serves the cy_game module's commands.
+
+    CI and the docker-compose stack run a second server started with
+    ``--loadmodule``; ``CY_GAME_REDIS_PORT`` points the module tests at it.
+    Without that, the default server is used and the module is loaded from
+    the build tree, which only works where MODULE LOAD is permitted.
+    """
+    from cy_redis.core.cy_redis_client import CyRedisClient
+
+    host = CY_GAME_HOST if CY_GAME_PORT else REDIS_HOST
+    port = CY_GAME_PORT or REDIS_PORT
+    client = CyRedisClient(host=host, port=port)
+    try:
+        client.ping()
+    except Exception as exc:
+        pytest.skip(f"No Redis at {host}:{port} for the cy_game module: {exc}")
+
+    if _cy_game_loaded(client):
+        return client
+    if not os.path.exists(CY_GAME_SO):
+        pytest.skip("cy_game.so not built — run: make module")
+    try:
+        client.execute_command(["MODULE", "LOAD", CY_GAME_SO])
+    except Exception as exc:
+        pytest.skip(f"Could not load cy_game.so: {exc}")
+    return client
+
+
 @pytest.fixture(autouse=True)
 def check_redis(request: Any, redis_available: bool) -> None:
     """Automatically skip tests that require Redis if it's not available"""

@@ -113,12 +113,16 @@ class AsyncRedisConnection:
 class AsyncRedisClient:
     """High-level async Redis client using thread pools with uvloop"""
 
-    def __init__(self, host="localhost", port=6379, max_connections=10):
+    def __init__(self, host="localhost", port=6379, max_connections=10,
+                 db=0, password=None):
         # Preconditions: valid TCP port and a positive pool capacity.
         assert 0 < port <= 65535, "port out of range"
         assert max_connections > 0, "max_connections must be positive"
+        assert db >= 0, "db must be non-negative"
         self.host = host
         self.port = port
+        self.db = db
+        self.password = password
         self.max_connections = max_connections
         self.connections = []
         self.executor = None
@@ -172,9 +176,15 @@ class AsyncRedisClient:
         """Get a CyRedisConnectionPool-backed connection."""
         if self._pool is None:
             self._pool = CyRedisConnectionPool(
-                self.host, self.port, self.max_connections
+                self.host, self.port, self.max_connections,
+                password=self.password, db=self.db
             )
         return self._pool.get_connection()
+
+    async def connect(self):
+        """Open the pool eagerly so connection errors surface up front."""
+        await self.execute(['PING'])
+        return self
 
     def _return_connection(self, conn):
         if self._pool is not None and conn is not None:
@@ -203,13 +213,18 @@ class AsyncRedisClient:
     async def get(self, key: str):
         return await self.execute(['GET', key])
 
-    async def delete(self, key: str) -> int:
-        result = await self.execute(['DEL', key])
+    async def delete(self, *keys) -> int:
+        assert keys, "DEL needs at least one key"
+        result = await self.execute(['DEL'] + [str(key) for key in keys])
         return int(result) if result is not None else 0
 
     async def incr(self, key: str) -> int:
         result = await self.execute(['INCR', key])
         return int(result) if result is not None else 0
+
+    async def keys(self, pattern: str = '*') -> list:
+        result = await self.execute(['KEYS', pattern])
+        return list(result) if result is not None else []
 
     async def exists(self, key: str) -> bool:
         result = await self.execute(['EXISTS', key])

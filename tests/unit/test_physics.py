@@ -12,13 +12,9 @@ Redis integration tests (require cy_game.so):
     - CYPHYS.RESOLVE pushes overlapping entities apart
 """
 
-import os
 import uuid
 
 import pytest
-
-from cy_redis.core.cy_redis_client import CyRedisClient
-from tests.server_env import REDIS_HOST, REDIS_PORT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -26,29 +22,9 @@ from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture(scope="session")
-def redis_client():
-    try:
-        c = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
-        c.set("_probe", "1")
-        return c
-    except Exception:
-        pytest.skip("Redis not available")
-
-
-_SO_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../cyredis_game/module/cy_game.so")
-)
-
-
-@pytest.fixture(scope="session")
-def module_loaded(redis_client):
-    if not os.path.exists(_SO_PATH):
-        pytest.skip("cy_game.so not built — run: make module")
-    try:
-        redis_client.execute_command(["MODULE", "LOAD", _SO_PATH])
-    except Exception as e:
-        if "already" not in str(e).lower():
-            pytest.skip(f"Could not load cy_game.so: {e}")
+def redis_client(module_loaded):
+    """These tests talk to whichever server holds the cy_game module."""
+    return module_loaded
 
 
 @pytest.fixture
