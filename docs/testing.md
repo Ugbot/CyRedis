@@ -131,8 +131,10 @@ REDIS_PORT=6384 uv run pytest tests/unit/test_module_parity.py
 `.github/workflows/tests.yml` defines three jobs:
 
 - **test** (`ubuntu-latest`): Redis 7-alpine on 6379, Valkey 8-alpine on 6380,
-  and PostgreSQL 15 as service containers; runs the full suite with coverage
-  against Redis and then re-runs it with `REDIS_PORT=6380` against Valkey.
+  redis-stack-server on 6382, valkey-bundle on 6383, and PostgreSQL 15 as
+  service containers; runs the full suite with coverage against Redis, re-runs
+  it with `REDIS_PORT=6380` against Valkey, and runs the module parity tests
+  against both module-bearing servers.
 - **test-macos** (`macos-latest`, Python 3.11): builds the extensions and runs
   the fast tests (`-m "not slow and not cluster"`). GitHub does not support
   service containers on macOS runners, so tests needing live services may be
