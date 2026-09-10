@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
+from cy_redis.features.capabilities import execute_module_command
 
 
 cdef class CyRedisGraph:
@@ -81,7 +82,7 @@ cdef class CyRedisGraph:
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             return self._parse_query_result(result)
         finally:
             self.pool.return_connection(conn)
@@ -131,7 +132,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GRAPH.DELETE', graph_name])
+            return execute_module_command(conn, ['GRAPH.DELETE', graph_name])
         finally:
             self.pool.return_connection(conn)
 
@@ -142,7 +143,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GRAPH.EXPLAIN', graph_name, query])
+            return execute_module_command(conn, ['GRAPH.EXPLAIN', graph_name, query])
         finally:
             self.pool.return_connection(conn)
 
@@ -153,7 +154,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GRAPH.PROFILE', graph_name, query])
+            return execute_module_command(conn, ['GRAPH.PROFILE', graph_name, query])
         finally:
             self.pool.return_connection(conn)
 
@@ -164,7 +165,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GRAPH.SLOWLOG', graph_name])
+            return execute_module_command(conn, ['GRAPH.SLOWLOG', graph_name])
         finally:
             self.pool.return_connection(conn)
 
@@ -175,7 +176,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GRAPH.CONFIG', 'SET', config_name, str(value)])
+            return execute_module_command(conn, ['GRAPH.CONFIG', 'SET', config_name, str(value)])
         finally:
             self.pool.return_connection(conn)
 
@@ -186,7 +187,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['GRAPH.CONFIG', 'GET', config_name])
+            result = execute_module_command(conn, ['GRAPH.CONFIG', 'GET', config_name])
             if isinstance(result, list) and len(result) > 1:
                 return result[1]
             return result
@@ -200,7 +201,7 @@ cdef class CyRedisGraph:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['GRAPH.LIST'])
+            return execute_module_command(conn, ['GRAPH.LIST'])
         finally:
             self.pool.return_connection(conn)
 

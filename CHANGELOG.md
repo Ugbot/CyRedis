@@ -113,6 +113,22 @@ end to end.
   exercised whichever server sat on the default port. Every fixture now reads
   `REDIS_HOST`/`REDIS_PORT` (`tests/server_env.py`) and the suite is run against
   Redis 7 and Valkey 8 — identical results, same skips.
+- `json_numincrby()`/`json_nummultby()` raised
+  `could not convert string to float: '[3]'` against every RedisJSON-compatible
+  server: a JSONPath expression answers with a one-element JSON array, which the
+  wrappers passed through a `float` return annotation. Both syntaxes now answer
+  with the number, and an unmatched path with `None`.
+- `ft_create()` could not declare VECTOR fields and `ft_search()` could not send
+  `PARAMS`/`DIALECT`, which left vector search — the feature valkey-search is
+  built around — unreachable on both server families. Field options now render
+  the algorithm and attribute count, and `AS` aliases (required for JSON
+  indexes) are supported.
+- Module commands the server does not implement raise
+  `cy_redis.features.capabilities.ModuleUnavailableError` naming the module that
+  provides them, instead of a bare `ERR unknown command`. valkey-search
+  implements only `FT.CREATE`, `FT.DROPINDEX`, `FT.INFO`, `FT.SEARCH` and
+  `FT._LIST`, so aggregation, suggestion and dictionary commands now say so.
+  `docs/valkey.md` documents the parity matrix.
 
 ### Fixed (import surface)
 - A name whose compiled extension fails to load is now left unbound instead of

@@ -113,6 +113,19 @@ The suite must be green on both — Redis 7 and Valkey 8 pass and skip exactly t
 same tests today. Never hardcode `localhost:6379` in a test; import
 `REDIS_HOST`/`REDIS_PORT` from `tests/server_env.py`.
 
+`tests/unit/test_module_parity.py` covers the JSON and search modules and skips
+the families the configured server does not load, so point it at a
+module-bearing image to exercise them:
+
+```bash
+docker run -d -p 6383:6379 valkey/valkey-bundle:8
+docker run -d -p 6384:6379 redis/redis-stack-server:7.2.0-v11
+REDIS_PORT=6383 uv run pytest tests/unit/test_module_parity.py
+REDIS_PORT=6384 uv run pytest tests/unit/test_module_parity.py
+```
+
+[valkey.md](valkey.md) records which module features exist on each server.
+
 ## CI
 
 `.github/workflows/tests.yml` defines three jobs:

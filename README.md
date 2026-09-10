@@ -105,6 +105,7 @@ See [docs/getting-started.md](https://github.com/Ugbot/CyRedis/blob/main/docs/ge
 | [Streams & integrations](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md) | Redis Streams, async iterators, ClickHouse bridge |
 | [Scripting](https://github.com/Ugbot/CyRedis/blob/main/docs/scripting.md) | Lua scripts, Redis Functions, script manager |
 | [Advanced features](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md) | Cluster command helpers, distributed locks, shared dicts, probabilistic, JSON, search, graph |
+| [Redis and Valkey parity](https://github.com/Ugbot/CyRedis/blob/main/docs/valkey.md) | What behaves identically, and which module features differ |
 | [Testing](https://github.com/Ugbot/CyRedis/blob/main/docs/testing.md) | Running the test suite, CI, adding tests |
 | [Examples](https://github.com/Ugbot/CyRedis/blob/main/examples/README.md) | Runnable example scripts |
 | [Plugins](https://github.com/Ugbot/CyRedis/blob/main/plugins/README.md) | Plugin architecture, pgcache |

@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
+from cy_redis.features.capabilities import execute_module_command
 
 
 cdef class CyRedisSearch:
@@ -70,6 +71,11 @@ cdef class CyRedisSearch:
             index: Index name
             schema: List of (field_name, field_type, options) tuples
                    field_type: TEXT, TAG, NUMERIC, GEO, VECTOR
+                   VECTOR fields take 'algorithm' ('FLAT' or 'HNSW') plus the
+                   attribute pairs the algorithm expects, e.g.
+                   {'algorithm': 'HNSW', 'type': 'FLOAT32', 'dim': 3,
+                    'distance_metric': 'COSINE'}
+                   'as' renames the indexed field, which JSON indexes require
             on: Index type (HASH or JSON)
             prefix: List of key prefixes to index
             language: Default language for stemming
@@ -111,7 +117,13 @@ cdef class CyRedisSearch:
             args.append('SCHEMA')
             for field_name, field_type, options in schema:
                 args.append(field_name)
+                if 'as' in options:
+                    args.extend(['AS', options['as']])
                 args.append(field_type)
+
+                if field_type.upper() == 'VECTOR':
+                    args.extend(self._vector_field_args(field_name, options))
+                    continue
 
                 # Add field options
                 if 'sortable' in options and options['sortable']:
@@ -127,9 +139,33 @@ cdef class CyRedisSearch:
                 if 'separator' in options:
                     args.extend(['SEPARATOR', options['separator']])
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
+
+    cdef list _vector_field_args(self, str field_name, dict options):
+        """Render a VECTOR field's algorithm and attribute-count preamble.
+
+        Both RediSearch and valkey-search spell a vector field as
+        ``<algorithm> <number of attribute words> <attr> <value>...``, so the
+        count has to be derived from the attributes rather than supplied by
+        the caller.
+        """
+        cdef list attributes = []
+        algorithm = options.get('algorithm', 'HNSW')
+
+        for name, value in options.items():
+            if name in ('algorithm', 'as'):
+                continue
+            attributes.append(name.upper())
+            attributes.append(str(value))
+
+        if not attributes:
+            raise ValueError(
+                "VECTOR field %r needs at least TYPE, DIM and DISTANCE_METRIC" % field_name
+            )
+
+        return [algorithm.upper(), str(len(attributes))] + attributes
 
     def ft_dropindex(self, index: str, delete_docs: bool = False) -> str:
         """Drop a search index"""
@@ -141,7 +177,7 @@ cdef class CyRedisSearch:
             args = ['FT.DROPINDEX', index]
             if delete_docs:
                 args.append('DD')
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -152,7 +188,7 @@ cdef class CyRedisSearch:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['FT.INFO', index])
+            result = execute_module_command(conn, ['FT.INFO', index])
             # Parse result into dict
             if result and isinstance(result, list):
                 return {result[i]: result[i+1] for i in range(0, len(result), 2)}
@@ -178,7 +214,7 @@ cdef class CyRedisSearch:
                 if 'noindex' in options and options['noindex']:
                     args.append('NOINDEX')
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -196,7 +232,9 @@ cdef class CyRedisSearch:
                   expander: str = None, scorer: str = None,
                   explainscore: bool = False, payload: str = None,
                   sortby: str = None, asc: bool = True,
-                  limit: Tuple[int, int] = None) -> Dict[str, Any]:
+                  limit: Tuple[int, int] = None,
+                  params: Dict[str, Any] = None,
+                  dialect: int = None) -> Dict[str, Any]:
         """
         Full-text search with advanced options
 
@@ -227,6 +265,9 @@ cdef class CyRedisSearch:
             sortby: Field to sort by
             asc: Sort ascending (default True)
             limit: Result pagination (offset, num)
+            params: Query parameters referenced as $name, e.g. a KNN query
+                    vector; bytes are sent verbatim
+            dialect: Query dialect; vector and parameterised queries need 2
         """
         conn = self.pool.get_connection()
         if conn == None:
@@ -326,7 +367,17 @@ cdef class CyRedisSearch:
                 offset, num = limit
                 args.extend(['LIMIT', str(offset), str(num)])
 
-            result = conn.execute_command(args)
+            if params:
+                args.append('PARAMS')
+                args.append(str(len(params) * 2))
+                for name, value in params.items():
+                    args.append(name)
+                    args.append(value if isinstance(value, (bytes, bytearray)) else str(value))
+
+            if dialect is not None:
+                args.extend(['DIALECT', str(dialect)])
+
+            result = execute_module_command(conn, args)
             return self._parse_search_result(result)
         finally:
             self.pool.return_connection(conn)
@@ -427,7 +478,7 @@ cdef class CyRedisSearch:
                 offset, num = limit
                 args.extend(['LIMIT', str(offset), str(num)])
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             return self._parse_aggregate_result(result)
         finally:
             self.pool.return_connection(conn)
@@ -476,7 +527,7 @@ cdef class CyRedisSearch:
             if payload:
                 args.extend(['PAYLOAD', payload])
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -499,7 +550,7 @@ cdef class CyRedisSearch:
             if max is not None:
                 args.extend(['MAX', str(max)])
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -510,7 +561,7 @@ cdef class CyRedisSearch:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['FT.SUGDEL', key, string])
+            return execute_module_command(conn, ['FT.SUGDEL', key, string])
         finally:
             self.pool.return_connection(conn)
 
@@ -521,7 +572,7 @@ cdef class CyRedisSearch:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['FT.SUGLEN', key])
+            return execute_module_command(conn, ['FT.SUGLEN', key])
         finally:
             self.pool.return_connection(conn)
 

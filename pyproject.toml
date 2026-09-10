@@ -200,6 +200,12 @@ language = "c++"
 extra-compile-args = ["-std=c++14"]
 
 [[tool.setuptools.ext-modules]]
+name = "cy_redis.features.capabilities"
+sources = ["cy_redis/features/capabilities.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
 name = "cy_redis.features.json_ops"
 sources = ["cy_redis/features/json_ops.pyx"]
 include-dirs = [".", "hiredis"]
