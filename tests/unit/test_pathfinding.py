@@ -13,12 +13,9 @@ Redis integration tests (require cy_game.so):
     - Start == goal returns empty list
 """
 
-import os
 import uuid
 
 import pytest
-
-from cy_redis.core.cy_redis_client import CyRedisClient
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -26,29 +23,9 @@ from cy_redis.core.cy_redis_client import CyRedisClient
 
 
 @pytest.fixture(scope="session")
-def redis_client():
-    try:
-        c = CyRedisClient(host="localhost", port=6379)
-        c.set("_probe", "1")
-        return c
-    except Exception:
-        pytest.skip("Redis not available")
-
-
-_SO_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../cyredis_game/module/cy_game.so")
-)
-
-
-@pytest.fixture(scope="session")
-def module_loaded(redis_client):
-    if not os.path.exists(_SO_PATH):
-        pytest.skip("cy_game.so not built — run: make module")
-    try:
-        redis_client.execute_command(["MODULE", "LOAD", _SO_PATH])
-    except Exception as e:
-        if "already" not in str(e).lower():
-            pytest.skip(f"Could not load cy_game.so: {e}")
+def redis_client(module_loaded):
+    """These tests talk to whichever server holds the cy_game module."""
+    return module_loaded
 
 
 @pytest.fixture
@@ -137,9 +114,11 @@ class TestCyPathCommands:
         assert int(raw[-1]) == 0
 
     def test_path_around_wall(self, redis_client, module_loaded, grid_key):
-        # Block the direct x path at (2,0), (2,1) — force path to go around
-        for y in range(0, 5):
-            redis_client.execute_command(["CYPATH.SET", grid_key, "2", str(y), "1"])
+        # The grid is an unbounded plane, so a wall only diverts the route:
+        # the path must simply never step on a blocked cell.
+        blocked = {(2, y) for y in range(-4, 5)}
+        for x, y in blocked:
+            redis_client.execute_command(["CYPATH.SET", grid_key, str(x), str(y), "1"])
         raw = redis_client.execute_command(
             [
                 "CYPATH.FIND",
@@ -150,16 +129,16 @@ class TestCyPathCommands:
                 "2",
             ]
         )
-        # Should find some path — not necessarily the same route each time
-        # Just verify start/end are not in the blocked column
-        if raw:
-            for i in range(0, len(raw) - 1, 2):
-                assert int(raw[i]) != 2  # no waypoint in blocked column
+        assert raw
+        waypoints = [(int(raw[i]), int(raw[i + 1])) for i in range(0, len(raw) - 1, 2)]
+        assert waypoints[-1] == (4, 2)
+        assert not blocked.intersection(waypoints)
 
     def test_no_route(self, redis_client, module_loaded, grid_key):
-        # Build a solid wall sealing off the goal
-        for y in range(-1, 3):
-            redis_client.execute_command(["CYPATH.SET", grid_key, "2", str(y), "1"])
+        # Movement is 4-directional, so sealing the goal's four neighbours
+        # makes it unreachable even on an otherwise open plane.
+        for x, y in ((4, 0), (6, 0), (5, 1), (5, -1)):
+            redis_client.execute_command(["CYPATH.SET", grid_key, str(x), str(y), "1"])
         raw = redis_client.execute_command(
             [
                 "CYPATH.FIND",

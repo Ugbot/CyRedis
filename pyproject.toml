@@ -6,18 +6,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cy-redis"
 dynamic = ["version"]
-description = "High-performance Redis client built with Cython and hiredis"
+description = "High-performance Redis and Valkey client built with Cython and hiredis"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    {name = "Ben Gamble", email = "ben.gamble@ververica.com"},
+    {name = "Ben Gamble", email = "bengamble7@gmail.com"},
 ]
 maintainers = [
-    {name = "Ben Gamble", email = "ben.gamble@ververica.com"},
+    {name = "Ben Gamble", email = "bengamble7@gmail.com"},
 ]
 keywords = [
     "redis",
+    "valkey",
     "cython",
     "hiredis",
     "high-performance",
@@ -95,7 +96,13 @@ test = [
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
     "pytest-timeout>=2.1",
-    "redis>=5.0",
+    # The optional layers' own tests skip themselves without these.
+    "uvloop>=0.17.0",
+    "numpy>=1.21.0",
+    "PyJWT>=2.0",
+    "pyotp>=2.6",
+    "fastapi>=0.100",
+    "msgpack>=1.0",
 ]
 
 [project.urls]
@@ -119,6 +126,12 @@ exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "hiredis*"]
 [tool.setuptools.package-data]
 "cy_redis.lua_scripts" = ["*.lua", "README.md"]
 
+# The .pyx sources belong in the sdist (MANIFEST.in), not in a wheel that
+# already carries the compiled modules. .pxd/.hpp stay: downstream Cython
+# code cimports them.
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyx"]
+
 # ── cy_redis core ──────────────────────────────────────────────────────────────
 
 [[tool.setuptools.ext-modules]]
@@ -136,6 +149,18 @@ extra-objects = ["hiredis/libhiredis.a"]
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.core.protocol"
 sources = ["cy_redis/core/protocol.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.cluster"
+sources = ["cy_redis/core/cluster.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.core.sentinel"
+sources = ["cy_redis/core/sentinel.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
@@ -191,6 +216,12 @@ language = "c++"
 # The cpp/ headers use constexpr etc.; some toolchains (macOS runners) still
 # default to pre-C++11, so pin the standard explicitly.
 extra-compile-args = ["-std=c++14"]
+
+[[tool.setuptools.ext-modules]]
+name = "cy_redis.features.capabilities"
+sources = ["cy_redis/features/capabilities.pyx"]
+include-dirs = [".", "hiredis"]
+extra-objects = ["hiredis/libhiredis.a"]
 
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.features.json_ops"
@@ -459,8 +490,9 @@ skip = "*_i686 *-win32"
 # cy_redis/__init__.py swallows ImportError, so `from cy_redis import
 # CyRedisClient` would pass even on a wheel whose extensions are broken. Every
 # published wheel must ship working TLS, so the check also creates a real TLS
-# context via tls_support.
-test-command = "python -c \"import cy_redis.core.cy_redis_client; import cy_redis; assert cy_redis.CyRedisClient is not None; import cy_redis.core.tls_support as t; t.create_ssl_context(); print('cy-redis', cy_redis.__version__, 'with TLS')\""
+# context via tls_support, and reads a bundled Lua script back out of package
+# data (which a wheel can silently omit).
+test-command = "python -c \"import cy_redis.core.cy_redis_client; import cy_redis; assert cy_redis.CyRedisClient is not None; import cy_redis.core.tls_support as t; t.create_ssl_context(); from cy_redis.lua_scripts import available_scripts, script_source; assert all(script_source(s) for s in available_scripts()); print('cy-redis', cy_redis.__version__, 'with TLS and', len(available_scripts()), 'scripts')\""
 
 [tool.cibuildwheel.linux]
 # OpenSSL headers for hiredis_ssl/tls_support: dnf on manylinux (AlmaLinux),

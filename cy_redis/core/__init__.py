@@ -9,26 +9,37 @@ This module contains the fundamental building blocks of CyRedis:
 - Core Redis operations
 """
 
-from typing import Any, Callable, Optional
-
-# Import async client
-_async_available: bool
-AsyncRedisClient: Optional[Any]
-create_async_client: Optional[Callable]
-try:
-    from .async_core import AsyncRedisClient, create_async_client
-
-    _async_available = True
-except ImportError:
-    _async_available = False
-    AsyncRedisClient = None
-    create_async_client = None
+from cy_redis.core.async_core import AsyncRedisClient, AsyncRedisWrapper
+from cy_redis.core.cluster import (
+    ClusterError,
+    CyRedisCluster,
+    CyRedisClusterPipeline,
+    key_slot,
+)
+from cy_redis.core.cy_redis_client import (
+    CyRedisClient,
+    CyRedisConnection,
+    CyRedisConnectionPool,
+    CyRedisPipeline,
+    RedisError,
+)
+from cy_redis.core.protocol import RedisProtocol
+from cy_redis.core.sentinel import CySentinel, SentinelError, SentinelManagedClient
 
 __all__ = [
-    "CyRedisClient",
-    "RedisProtocol",
-    "ConnectionPool",
     "AsyncRedisClient",
-    "create_async_client",
-    "RedisCore",
+    "AsyncRedisWrapper",
+    "ClusterError",
+    "CyRedisCluster",
+    "CyRedisClusterPipeline",
+    "CySentinel",
+    "SentinelError",
+    "SentinelManagedClient",
+    "key_slot",
+    "CyRedisClient",
+    "CyRedisConnection",
+    "CyRedisConnectionPool",
+    "CyRedisPipeline",
+    "RedisError",
+    "RedisProtocol",
 ]

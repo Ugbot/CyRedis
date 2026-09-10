@@ -101,12 +101,40 @@ docker run -d -p 6379:6379 valkey/valkey:8-alpine
 
 The `conftest.py` in `tests/integration/` creates a `CyRedisClient` fixture and flushes the test database between tests.
 
+Every fixture takes its address from `REDIS_HOST`/`REDIS_PORT` (defaults
+`localhost:6379`), so the same suite runs against either server:
+
+```bash
+docker run -d -p 6381:6379 valkey/valkey:8-alpine
+REDIS_PORT=6381 uv run pytest tests/
+```
+
+The suite must be green on both — Redis 7 and Valkey 8 pass and skip exactly the
+same tests today. Never hardcode `localhost:6379` in a test; import
+`REDIS_HOST`/`REDIS_PORT` from `tests/server_env.py`.
+
+`tests/unit/test_module_parity.py` covers the JSON and search modules and skips
+the families the configured server does not load, so point it at a
+module-bearing image to exercise them:
+
+```bash
+docker run -d -p 6383:6379 valkey/valkey-bundle:8
+docker run -d -p 6384:6379 redis/redis-stack-server:7.2.0-v11
+REDIS_PORT=6383 uv run pytest tests/unit/test_module_parity.py
+REDIS_PORT=6384 uv run pytest tests/unit/test_module_parity.py
+```
+
+[valkey.md](valkey.md) records which module features exist on each server.
+
 ## CI
 
 `.github/workflows/tests.yml` defines three jobs:
 
 - **test** (`ubuntu-latest`): Redis 7-alpine on 6379, Valkey 8-alpine on 6380,
-  and PostgreSQL 15 as service containers; runs the full suite with coverage.
+  redis-stack-server on 6382, valkey-bundle on 6383, and PostgreSQL 15 as
+  service containers; runs the full suite with coverage against Redis, re-runs
+  it with `REDIS_PORT=6380` against Valkey, and runs the module parity tests
+  against both module-bearing servers.
 - **test-macos** (`macos-latest`, Python 3.11): builds the extensions and runs
   the fast tests (`-m "not slow and not cluster"`). GitHub does not support
   service containers on macOS runners, so tests needing live services may be
@@ -117,6 +145,74 @@ The `conftest.py` in `tests/integration/` creates a `CyRedisClient` fixture and 
 # Run the fast subset locally
 uv run pytest tests/ -m "not slow and not cluster"
 ```
+
+## Native Redis modules
+
+The `cy_game` and `pgcache` tests drive C modules that a stock server does not
+carry, so they run against their own server. Both modules are built against
+glibc and cannot be relocated into an Alpine image — use the Debian-based
+`redis:7`.
+
+```bash
+make module        # builds cyredis_game/module/cy_game.so
+docker run -d -p 6385:6379 -v "$PWD/cyredis_game/module:/mod:ro" redis:7 \
+    redis-server --loadmodule /mod/cy_game.so
+CY_GAME_REDIS_PORT=6385 uv run pytest tests/unit/test_physics.py \
+    tests/unit/test_goap.py tests/unit/test_pathfinding.py \
+    tests/unit/test_flecs_module.py tests/integration/test_cy_game_module.py
+```
+
+pgcache also needs libpq and jansson in the server image (see
+`tests/docker/pgcache/Dockerfile`) and a PostgreSQL the module and the tests
+both reach:
+
+```bash
+make -C plugins/pgcache/src
+docker build -t cyredis-pgcache tests/docker/pgcache
+docker run -d -p 5433:5432 -e POSTGRES_USER=pgcache \
+    -e POSTGRES_PASSWORD=pgcache -e POSTGRES_DB=pgcache postgres:16
+docker run -d -p 6386:6379 -v "$PWD/plugins/pgcache/src:/mod:ro" cyredis-pgcache
+PGCACHE_REDIS_PORT=6386 PGPORT=5433 PGUSER=pgcache PGPASSWORD=pgcache \
+    PGDATABASE=pgcache uv run pytest tests/integration/test_pgcache_module.py
+```
+
+## Cluster and Sentinel
+
+`tests/integration/test_cluster_operations.py` runs against `CyRedisCluster`
+and `test_sentinel_failover.py` against `CySentinel`; both skip only when no
+such deployment is reachable. Cluster and sentinel nodes gossip the addresses
+they are configured with, so the containers need the host network — a bridged
+port mapping advertises addresses the client cannot dial.
+
+```bash
+for port in 7000 7001 7002 7003 7004 7005; do
+    docker run -d --name "cluster-$port" --network host redis:7 \
+        redis-server --port "$port" --cluster-enabled yes \
+        --cluster-config-file "/data/$port.conf" \
+        --cluster-node-timeout 5000 --appendonly no
+done
+docker run --rm --network host redis:7 redis-cli --cluster create \
+    127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 \
+    127.0.0.1:7003 127.0.0.1:7004 127.0.0.1:7005 --cluster-replicas 1 --cluster-yes
+uv run pytest tests/integration/test_cluster_operations.py
+```
+
+For Sentinel, one master, one replica and a quorum of sentinels:
+
+```bash
+docker run -d --name sentinel-master --network host redis:7 \
+    redis-server --port 7100 --appendonly no
+docker run -d --name sentinel-replica --network host redis:7 \
+    redis-server --port 7101 --appendonly no --replicaof 127.0.0.1 7100
+# then one `redis-sentinel` per port in 26379..26381 monitoring
+# `mymaster` at 127.0.0.1:7100 with a quorum of 2 — see the
+# cluster-and-sentinel job in .github/workflows/tests.yml
+REDIS_SENTINEL_HOSTS=127.0.0.1:26379,127.0.0.1:26380,127.0.0.1:26381 \
+    uv run pytest tests/integration/test_sentinel_failover.py
+```
+
+`REDIS_CLUSTER_NODES`, `REDIS_SENTINEL_HOSTS` and `REDIS_SENTINEL_MASTER`
+point the fixtures at an existing deployment.
 
 ## Adding tests
 

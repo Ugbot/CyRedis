@@ -12,6 +12,7 @@ Proper wrapper around hiredis C library for maximum performance.
 
 import asyncio
 import builtins
+import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -74,6 +75,7 @@ cdef extern from "hiredis.h":
     int redisAppendCommand(redisContext *c, const char *format, ...)
     int redisAppendCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen)
     int redisGetReply(redisContext *c, void **reply) nogil
+    int redisBufferWrite(redisContext *c, int *done)
 
 from cy_redis.core.protocol import ProtocolNegotiator
 
@@ -566,6 +568,57 @@ cdef class CyRedisConnection:
         """Python-callable execute."""
         return self._ensure_connected_and_run(args)
 
+    def send_command(self, list args):
+        """Write a command without reading its reply.
+
+        A subscribed connection has a reader consuming every inbound frame,
+        so (un)subscribing must not read here: the confirmation arrives in
+        that stream like any other message.
+        """
+        cdef int argc = len(args)
+        cdef char **argv
+        cdef size_t *argvlen
+        cdef list arg_bytes_list = []
+        cdef bytes arg_bytes
+        cdef int i
+        cdef int done = 0
+
+        assert argc > 0, "send_command requires a command"
+        if not self._connected:
+            if self._connect() != 0:
+                raise ConnectionError("Not connected")
+
+        argv = <char **>malloc(sizeof(char *) * argc)
+        argvlen = <size_t *>malloc(sizeof(size_t) * argc)
+        if argv == <char **>0 or argvlen == <size_t *>0:
+            if argv != <char **>0: free(argv)
+            if argvlen != <size_t *>0: free(argvlen)
+            raise MemoryError("Failed to allocate command args")
+        try:
+            for i in range(argc):
+                if isinstance(args[i], str):
+                    arg_bytes = (<str>args[i]).encode('utf-8')
+                elif isinstance(args[i], bytes):
+                    arg_bytes = <bytes>args[i]
+                else:
+                    arg_bytes = str(args[i]).encode('utf-8')
+                arg_bytes_list.append(arg_bytes)
+                argv[i] = <char *>arg_bytes_list[i]
+                argvlen[i] = len(arg_bytes_list[i])
+            if redisAppendCommandArgv(self.ctx, argc,
+                                      <const char **>argv,
+                                      <const size_t *>argvlen) != 0:
+                raise ConnectionError("Failed to buffer command")
+        finally:
+            free(argv)
+            free(argvlen)
+
+        while done == 0:
+            if redisBufferWrite(self.ctx, &done) != 0:
+                self._connected = False
+                raise ConnectionError("Failed to write command")
+        return 0
+
     def read_reply(self):
         """Block until the server sends a reply (for pub/sub subscribed connections)."""
         cdef void *raw_reply
@@ -669,6 +722,12 @@ cdef class CyRedisConnectionPool:
     def get_timeout(self):
         return self._timeout
 
+    def get_password(self):
+        return self._password
+
+    def get_db(self):
+        return self._db
+
     cpdef CyRedisConnection get_connection(self):
         """Get a connection, blocking up to wait_timeout if pool is exhausted.
 
@@ -720,6 +779,123 @@ cdef class CyRedisConnectionPool:
                         self._total_created -= 1
         finally:
             self._semaphore.release()
+
+
+def _decode(value):
+    """Decode a RESP bulk string to text, leaving anything else alone."""
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode('utf-8', 'replace')
+    return value
+
+
+class CyRedisPubSub:
+    """Subscriber over a dedicated connection.
+
+    A subscribed connection may only receive, so the socket is owned by one
+    reader thread and every frame — including subscribe/unsubscribe
+    confirmations — is delivered through :meth:`get_message`/:meth:`listen`.
+    """
+
+    def __init__(self, host="localhost", port=6379, password=None, db=0,
+                 timeout=5.0):
+        self._conn = CyRedisConnection(host, port, timeout, password, db)
+        if self._conn.connect() != 0:
+            raise ConnectionError(f"pub/sub connection to {host}:{port} failed")
+        self._queue = queue.Queue()
+        self._closed = False
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def _read_loop(self):
+        # Bounded by inbound traffic: each turn blocks in read_reply() until a
+        # frame arrives, and the loop ends when close() shuts the socket down.
+        while not self._closed:
+            try:
+                reply = self._conn.read_reply()
+            except Exception:
+                if not self._closed:
+                    self._queue.put(None)
+                return
+            if isinstance(reply, (list, tuple)) and len(reply) >= 3:
+                kind = _decode(reply[0])
+                if kind == 'pmessage' and len(reply) == 4:
+                    self._queue.put({
+                        'type': 'pmessage',
+                        'pattern': _decode(reply[1]),
+                        'channel': _decode(reply[2]),
+                        'data': _decode(reply[3]),
+                    })
+                else:
+                    self._queue.put({
+                        'type': kind,
+                        'pattern': None,
+                        'channel': _decode(reply[1]),
+                        'data': reply[2],
+                    })
+
+    def subscribe(self, *channels):
+        """Subscribe to one or more channels."""
+        assert channels, "subscribe requires at least one channel"
+        self._conn.send_command(['SUBSCRIBE'] + [str(c) for c in channels])
+
+    def psubscribe(self, *patterns):
+        """Subscribe to one or more glob-style patterns."""
+        assert patterns, "psubscribe requires at least one pattern"
+        self._conn.send_command(['PSUBSCRIBE'] + [str(p) for p in patterns])
+
+    def unsubscribe(self, *channels):
+        """Unsubscribe from the given channels, or from all of them."""
+        self._conn.send_command(['UNSUBSCRIBE'] + [str(c) for c in channels])
+
+    def punsubscribe(self, *patterns):
+        """Unsubscribe from the given patterns, or from all of them."""
+        self._conn.send_command(['PUNSUBSCRIBE'] + [str(p) for p in patterns])
+
+    def get_message(self, timeout=0.0, ignore_subscribe_messages=False):
+        """Next frame, or ``None`` if none arrives within ``timeout`` seconds."""
+        deadline = time.time() + timeout
+        while True:
+            try:
+                message = self._queue.get(timeout=max(timeout, 0.0)) \
+                    if timeout > 0 else self._queue.get_nowait()
+            except queue.Empty:
+                return None
+            if message is None:
+                return None
+            if ignore_subscribe_messages and message['type'].endswith(
+                    ('subscribe', 'unsubscribe')):
+                timeout = deadline - time.time()
+                if timeout <= 0:
+                    return None
+                continue
+            return message
+
+    def listen(self):
+        """Yield frames as they arrive until the subscriber is closed."""
+        while not self._closed:
+            message = self._queue.get()
+            if message is None:
+                return
+            yield message
+
+    def close(self):
+        """Stop the reader thread and drop the connection."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._conn.shutdown_socket()
+            self._reader.join(timeout=2.0)
+            self._conn.disconnect()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
 
 # Pipeline: queue commands and flush in one round trip
 cdef class CyRedisPipeline:
@@ -1017,11 +1193,34 @@ cdef class CyRedisClient:
         """Return a CyRedisPipeline context manager for batched commands."""
         return CyRedisPipeline(self._pool)
 
-    def execute_command(self, list args):
-        """Execute a raw Redis command from a list of arguments."""
+    def pubsub(self):
+        """Return a subscriber on its own connection to the same server."""
+        return CyRedisPubSub(
+            self._pool.get_host(),
+            self._pool.get_port(),
+            password=self._pool.get_password(),
+            db=self._pool.get_db(),
+        )
+
+    def execute_command(self, *args):
+        """Execute a raw Redis command.
+
+        Accepts either the argument list as one sequence
+        (``execute_command(['SET', 'k', 'v'])``) or the arguments spread out
+        (``execute_command('SET', 'k', 'v')``).
+        """
+        cdef list command
+
+        assert len(args) > 0, "execute_command requires a command"
+        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+            command = list(args[0])
+        else:
+            command = list(args)
+        assert len(command) > 0, "execute_command requires a command"
+
         cdef CyRedisConnection conn = self.pool.get_connection()
         try:
-            return conn.execute_command(args)
+            return conn.execute_command(command)
         finally:
             self.pool.return_connection(conn)
 
@@ -1085,6 +1284,57 @@ cdef class CyRedisClient:
             return conn.execute_command(args)
         finally:
             self.pool.return_connection(conn)
+
+    def keys(self, pattern: str = '*') -> list:
+        """Every key matching ``pattern``.
+
+        KEYS walks the whole keyspace; prefer :meth:`scan_iter` on a server
+        holding real data.
+        """
+        cdef CyRedisConnection conn = self.pool.get_connection()
+
+        try:
+            return conn.execute_command(['KEYS', pattern]) or []
+        finally:
+            self.pool.return_connection(conn)
+
+    def scan(self, cursor: int = 0, match: str = None, count: int = None,
+             type: str = None):
+        """One SCAN step, returning ``(next_cursor, keys)``.
+
+        A returned cursor of 0 means the iteration is complete; any other
+        cursor is the value to pass to the next call.
+        """
+        cdef CyRedisConnection conn = self.pool.get_connection()
+
+        try:
+            args = ['SCAN', str(cursor)]
+            if match is not None:
+                args.extend(['MATCH', match])
+            if count is not None:
+                args.extend(['COUNT', str(count)])
+            if type is not None:
+                args.extend(['TYPE', type])
+            reply = conn.execute_command(args)
+        finally:
+            self.pool.return_connection(conn)
+
+        next_cursor = reply[0]
+        if isinstance(next_cursor, (bytes, bytearray)):
+            next_cursor = next_cursor.decode('utf-8')
+        return int(next_cursor), list(reply[1] or [])
+
+    def scan_iter(self, match: str = None, count: int = None,
+                  type: str = None):
+        """Iterate the keyspace with SCAN, yielding one key at a time."""
+        cursor = 0
+        while True:
+            cursor, keys = self.scan(cursor, match=match, count=count,
+                                     type=type)
+            for key in keys:
+                yield key
+            if cursor == 0:
+                return
 
     def type(self, key: str) -> str:
         """Return the type of value stored at key (string/list/set/...)."""
@@ -1216,12 +1466,40 @@ cdef class CyRedisClient:
             self.pool.return_connection(conn)
 
     # Stream operations
-    def xadd(self, stream: str, data: Dict[str, Any], message_id: str = "*") -> str:
-        """Add message to stream"""
+    def xadd(self, stream: str, data: Dict[str, Any], message_id: str = "*",
+             id: str = None, maxlen: int = None, minid: str = None,
+             approximate: bool = False, limit: int = None,
+             nomkstream: bool = False) -> str:
+        """Add a message to a stream, optionally capping the stream in place.
+
+        ``id`` is the spelling used by XADD itself and takes precedence over the
+        older ``message_id`` keyword. ``maxlen``/``minid`` trim the stream as
+        part of the same command; ``approximate`` switches to the cheaper ``~``
+        trimming, which only frees whole macro nodes and so leaves the stream
+        longer than the threshold.
+        """
         cdef CyRedisConnection conn = self.pool.get_connection()
 
+        if maxlen is not None and minid is not None:
+            raise ValueError("XADD accepts either maxlen or minid, not both")
+        if limit is not None and not approximate:
+            raise ValueError("XADD LIMIT requires approximate trimming")
+
         try:
-            args = ['XADD', stream, message_id]
+            args = ['XADD', stream]
+            if nomkstream:
+                args.append('NOMKSTREAM')
+            if maxlen is not None:
+                args.append('MAXLEN')
+                args.append('~' if approximate else '=')
+                args.append(str(maxlen))
+            elif minid is not None:
+                args.append('MINID')
+                args.append('~' if approximate else '=')
+                args.append(str(minid))
+            if limit is not None:
+                args.extend(['LIMIT', str(limit)])
+            args.append(id if id is not None else message_id)
             for k, v in data.items():
                 args.extend([k, str(v)])
             return conn.execute_command(args)
@@ -2201,30 +2479,54 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
+    cdef dict _pair_reply(self, object reply):
+        """Fold a RESP2 flat ``[field, value, ...]`` reply into a dict.
+
+        RESP3 servers already answer XINFO with a map, so a dict is passed
+        through untouched.
+        """
+        cdef dict paired
+        cdef Py_ssize_t i
+
+        if reply is None:
+            return {}
+        if isinstance(reply, dict):
+            return dict(reply)
+
+        paired = {}
+        for i in range(0, len(reply) - 1, 2):
+            field = reply[i]
+            if isinstance(field, (bytes, bytearray)):
+                field = field.decode('utf-8', 'replace')
+            paired[field] = reply[i + 1]
+        return paired
+
     def xinfo_stream(self, stream: str) -> Dict[str, Any]:
-        """Get stream information"""
+        """Stream metadata as a mapping of field name to value."""
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['XINFO', 'STREAM', stream])
+            return self._pair_reply(conn.execute_command(['XINFO', 'STREAM', stream]))
         finally:
             self.pool.return_connection(conn)
 
     def xinfo_groups(self, stream: str) -> List[Dict[str, Any]]:
-        """Get consumer groups info"""
+        """One mapping per consumer group on the stream."""
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['XINFO', 'GROUPS', stream])
+            groups = conn.execute_command(['XINFO', 'GROUPS', stream])
+            return [self._pair_reply(group) for group in groups or []]
         finally:
             self.pool.return_connection(conn)
 
     def xinfo_consumers(self, stream: str, group: str) -> List[Dict[str, Any]]:
-        """Get consumers in group"""
+        """One mapping per consumer in the group."""
         cdef CyRedisConnection conn = self.pool.get_connection()
 
         try:
-            return conn.execute_command(['XINFO', 'CONSUMERS', stream, group])
+            consumers = conn.execute_command(['XINFO', 'CONSUMERS', stream, group])
+            return [self._pair_reply(consumer) for consumer in consumers or []]
         finally:
             self.pool.return_connection(conn)
 
@@ -2794,13 +3096,17 @@ cdef class CyRedisClient:
         else:
             return None
 
+        cdef bint saw_redis = False
+
+        # Valkey reports `redis_version:` first for compatibility and only then
+        # identifies itself, so the whole section has to be read before deciding.
         for line in text.splitlines():
             line = line.strip()
-            if line.startswith('valkey_version:'):
+            if line.startswith('valkey_version:') or line == 'server_name:valkey':
                 return 'valkey'
             if line.startswith('redis_version:'):
-                return 'redis'
-        return None
+                saw_redis = True
+        return 'redis' if saw_redis else None
 
     # ===== CLUSTER OPERATIONS =====
 

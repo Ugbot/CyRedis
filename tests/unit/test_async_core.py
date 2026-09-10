@@ -13,12 +13,13 @@ from cy_redis.core.async_core import (
     AsyncRedisConnection,
     AsyncRedisWrapper,
 )
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture
 async def async_client():
     """Create an async Redis client for testing"""
-    client = AsyncRedisWrapper(host="localhost", port=6379)
+    client = AsyncRedisWrapper(host=REDIS_HOST, port=REDIS_PORT)
     yield client
     # Cleanup
     del client
@@ -46,12 +47,12 @@ class TestAsyncRedisConnection:
 
     def test_connection_creation(self):
         """Test creating an async connection"""
-        conn = AsyncRedisConnection(host="localhost", port=6379)
+        conn = AsyncRedisConnection(host=REDIS_HOST, port=REDIS_PORT)
         assert conn is not None
 
     def test_connect_disconnect(self):
         """Test async connect and disconnect"""
-        conn = AsyncRedisConnection(host="localhost", port=6379)
+        conn = AsyncRedisConnection(host=REDIS_HOST, port=REDIS_PORT)
         result = conn.connect()
         assert result == 0  # Success
         conn.disconnect()
@@ -62,7 +63,7 @@ class TestAsyncRedisWrapper:
 
     def test_wrapper_creation(self):
         """Test creating async wrapper"""
-        wrapper = AsyncRedisWrapper(host="localhost", port=6379)
+        wrapper = AsyncRedisWrapper(host=REDIS_HOST, port=REDIS_PORT)
         assert wrapper is not None
 
     @pytest.mark.asyncio
@@ -90,13 +91,13 @@ class TestAsyncRedisClient:
 
     def test_client_creation(self):
         """Test creating async Redis client"""
-        client = AsyncRedisClient(host="localhost", port=6379)
+        client = AsyncRedisClient(host=REDIS_HOST, port=REDIS_PORT)
         assert client is not None
         assert client.max_connections == 10
 
     def test_start_stop_workers(self):
         """Test starting and stopping worker threads"""
-        client = AsyncRedisClient(host="localhost", port=6379)
+        client = AsyncRedisClient(host=REDIS_HOST, port=REDIS_PORT)
         client.start_workers()
         assert client.running is True
 
@@ -140,7 +141,7 @@ class TestAsyncEdgeCases:
     @pytest.mark.asyncio
     async def test_async_timeout(self):
         """Test async operation timeout"""
-        client = AsyncRedisWrapper(host="localhost", port=6379)
+        client = AsyncRedisWrapper(host=REDIS_HOST, port=REDIS_PORT)
 
         # Test with reasonable timeout
         try:

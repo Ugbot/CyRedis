@@ -21,7 +21,10 @@ TARGET = pgcache.so
 all: $(TARGET)
 
 $(TARGET): pgcache.c redismodule.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ pgcache.c
+	# Libraries go after the translation unit: with --as-needed (the default
+	# on Linux) a -l listed first is dropped, and the module then fails to
+	# load with an undefined jansson/libpq symbol.
+	$(CC) $(CFLAGS) -o $@ pgcache.c $(LDFLAGS)
 	@echo "Built $(TARGET)"
 
 clean:

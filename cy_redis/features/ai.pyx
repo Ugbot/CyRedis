@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
+from cy_redis.features.capabilities import execute_module_command
 
 
 cdef class CyRedisAI:
@@ -115,7 +116,7 @@ cdef class CyRedisAI:
             args.append('BLOB')
             args.append(data)
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -132,7 +133,7 @@ cdef class CyRedisAI:
             if blob:
                 args.append('BLOB')
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             return self._parse_model_info(result)
         finally:
             self.pool.return_connection(conn)
@@ -144,7 +145,7 @@ cdef class CyRedisAI:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['AI.MODELDEL', key])
+            return execute_module_command(conn, ['AI.MODELDEL', key])
         finally:
             self.pool.return_connection(conn)
 
@@ -186,7 +187,7 @@ cdef class CyRedisAI:
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -242,7 +243,7 @@ cdef class CyRedisAI:
             else:
                 args.append('VALUES')
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -269,7 +270,7 @@ cdef class CyRedisAI:
             if blob:
                 args.append('BLOB')
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             return self._parse_tensor_result(result, blob)
         finally:
             self.pool.return_connection(conn)
@@ -400,7 +401,7 @@ cdef class CyRedisAI:
             args.append('SOURCE')
             args.append(script)
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -442,7 +443,7 @@ cdef class CyRedisAI:
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -453,7 +454,7 @@ cdef class CyRedisAI:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['AI.SCRIPTDEL', key])
+            return execute_module_command(conn, ['AI.SCRIPTDEL', key])
         finally:
             self.pool.return_connection(conn)
 
@@ -504,7 +505,7 @@ cdef class CyRedisAI:
             if timeout is not None:
                 args.extend(['TIMEOUT', str(timeout)])
 
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -523,7 +524,7 @@ cdef class CyRedisAI:
             if reset:
                 args.append('RESETSTAT')
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             return self._parse_model_info(result)
         finally:
             self.pool.return_connection(conn)

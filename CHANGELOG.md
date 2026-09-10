@@ -104,6 +104,61 @@ end to end.
   `nogil` blocks, stubbed methods). Its one real feature, reliable queues,
   already lives in `messaging.pyx`.
 
+### Fixed (Valkey)
+- `detect_server_type()` returned `"redis"` for every Valkey server. Valkey
+  answers `INFO server` with a compatibility `redis_version:` line *before*
+  `server_name:valkey`/`valkey_version:`, and the parser returned on the first
+  version line it saw; it now reads the whole section.
+- The test suite hardcoded `localhost:6379` in 19 files, so it only ever
+  exercised whichever server sat on the default port. Every fixture now reads
+  `REDIS_HOST`/`REDIS_PORT` (`tests/server_env.py`) and the suite is run against
+  Redis 7 and Valkey 8 — identical results, same skips.
+- `json_numincrby()`/`json_nummultby()` raised
+  `could not convert string to float: '[3]'` against every RedisJSON-compatible
+  server: a JSONPath expression answers with a one-element JSON array, which the
+  wrappers passed through a `float` return annotation. Both syntaxes now answer
+  with the number, and an unmatched path with `None`.
+- `ft_create()` could not declare VECTOR fields and `ft_search()` could not send
+  `PARAMS`/`DIALECT`, which left vector search — the feature valkey-search is
+  built around — unreachable on both server families. Field options now render
+  the algorithm and attribute count, and `AS` aliases (required for JSON
+  indexes) are supported.
+- Module commands the server does not implement raise
+  `cy_redis.features.capabilities.ModuleUnavailableError` naming the module that
+  provides them, instead of a bare `ERR unknown command`. valkey-search
+  implements only `FT.CREATE`, `FT.DROPINDEX`, `FT.INFO`, `FT.SEARCH` and
+  `FT._LIST`, so aggregation, suggestion and dictionary commands now say so.
+  `docs/valkey.md` documents the parity matrix.
+
+### Fixed (import surface)
+- A name whose compiled extension fails to load is now left unbound instead of
+  bound to `None`: touching `cy_redis.CyRedisClient` on a broken install raises
+  an `ImportError` quoting the loader's own message (`libssl.so.3: cannot open
+  shared object file`, …) rather than failing later as `'NoneType' object is not
+  callable`. `cy_redis.import_errors()` lists everything that did not load.
+- `cy_redis.core` exported four names it never bound (`CyRedisClient`,
+  `RedisProtocol`, `ConnectionPool`, `RedisCore` — the last two do not exist), so
+  `from cy_redis.core import *` raised `AttributeError`. It now exports what it
+  imports, and `AsyncRedisClient`/`AsyncRedisWrapper` are bound for real: the old
+  guarded import also asked for a nonexistent `create_async_client`, which left
+  `AsyncRedisClient` at `None` on every install.
+- Downstream `mypy` on `from cy_redis import CyRedisClient` reported
+  `"None" not callable`; it is now clean.
+
+### Packaging
+- Wheels ship the Lua scripts as package data (`cy_redis/lua_scripts/`, reachable
+  through `available_scripts()`/`script_path()`/`script_source()`); previously they
+  lived at the repository root and were missing from every install.
+- Wheels no longer carry `.pyx` sources — those stay in the sdist, which can
+  recompile. `.pxd`/`.hpp` headers are still shipped for downstream `cimport`.
+- `build_ext` compiles the ~37 extensions in parallel and builds vendored hiredis
+  with `make -jN`.
+- The cibuildwheel smoke test also reads a bundled Lua script back out of the wheel.
+- The publish workflow refuses to build when the pushed tag disagrees with
+  `cy_redis.__version__`.
+- CI runs on every pull request and has a packaging job that builds, `twine check`s,
+  and installs both the wheel and the sdist into clean environments.
+
 ## [0.1.0] - 2025-09-28 [UNRELEASED]
 
 Initial development version — never published to PyPI (the sdist could not build).

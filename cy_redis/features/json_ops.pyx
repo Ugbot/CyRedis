@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
 from cy_redis.core.cy_redis_client cimport CyRedisConnection, CyRedisConnectionPool
+from cy_redis.features.capabilities import execute_module_command
 
 
 cdef class CyRedisJSON:
@@ -80,7 +81,7 @@ cdef class CyRedisJSON:
 
             # Invariant: the optional flag adds at most one trailing token.
             assert len(args) <= 5, "JSON.SET takes at most one NX/XX flag"
-            return conn.execute_command(args)
+            return execute_module_command(conn, args)
         finally:
             self.pool.return_connection(conn)
 
@@ -108,7 +109,7 @@ cdef class CyRedisJSON:
             else:
                 args.append('$')
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             if result:
                 try:
                     return json.loads(result)
@@ -137,7 +138,7 @@ cdef class CyRedisJSON:
             # Invariant: command is MGET + one token per key + the path.
             assert len(args) == 2 + len(keys), "one arg per key plus path"
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             if result:
                 # Bounded by len(result); Redis returns one entry per key.
                 parsed = [json.loads(r) if r else None for r in result]
@@ -154,7 +155,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['JSON.DEL', key, path])
+            return execute_module_command(conn, ['JSON.DEL', key, path])
         finally:
             self.pool.return_connection(conn)
 
@@ -165,7 +166,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.TYPE', key, path])
+            result = execute_module_command(conn, ['JSON.TYPE', key, path])
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -174,6 +175,29 @@ cdef class CyRedisJSON:
 
     # ===== NUMERIC OPERATIONS =====
 
+    cdef object _numeric_reply(self, object result):
+        """Normalise a numeric reply to the value at the first matched path.
+
+        JSONPath expressions (``$.a``) answer with a JSON array holding one
+        value per match, while legacy paths (``.a``) answer with a bare
+        number, so the array has to be unwrapped like the other path helpers do.
+        """
+        if result is None:
+            return None
+
+        if isinstance(result, (bytes, bytearray, str)):
+            try:
+                result = json.loads(result)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return float(result)
+
+        if isinstance(result, list):
+            if not result or result[0] is None:
+                return None
+            return float(result[0])
+
+        return float(result)
+
     def json_numincrby(self, key: str, path: str, value: Union[int, float]) -> Optional[float]:
         """Increment numeric value at path"""
         conn = self.pool.get_connection()
@@ -181,13 +205,8 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.NUMINCRBY', key, path, str(value)])
-            if result:
-                try:
-                    return json.loads(result)
-                except (json.JSONDecodeError, TypeError):
-                    return float(result)
-            return None
+            result = execute_module_command(conn, ['JSON.NUMINCRBY', key, path, str(value)])
+            return self._numeric_reply(result)
         finally:
             self.pool.return_connection(conn)
 
@@ -198,13 +217,8 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.NUMMULTBY', key, path, str(value)])
-            if result:
-                try:
-                    return json.loads(result)
-                except (json.JSONDecodeError, TypeError):
-                    return float(result)
-            return None
+            result = execute_module_command(conn, ['JSON.NUMMULTBY', key, path, str(value)])
+            return self._numeric_reply(result)
         finally:
             self.pool.return_connection(conn)
 
@@ -217,7 +231,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.STRAPPEND', key, path, json.dumps(value)])
+            result = execute_module_command(conn, ['JSON.STRAPPEND', key, path, json.dumps(value)])
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -231,7 +245,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.STRLEN', key, path])
+            result = execute_module_command(conn, ['JSON.STRLEN', key, path])
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -249,7 +263,7 @@ cdef class CyRedisJSON:
         try:
             args = ['JSON.ARRAPPEND', key, path]
             args.extend([json.dumps(v) for v in values])
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -277,7 +291,7 @@ cdef class CyRedisJSON:
             # Invariant: 4 base tokens, optionally + start, optionally + stop.
             assert 4 <= len(args) <= 6, "ARRINDEX arg count within bounds"
 
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -293,7 +307,7 @@ cdef class CyRedisJSON:
         try:
             args = ['JSON.ARRINSERT', key, path, str(index)]
             args.extend([json.dumps(v) for v in values])
-            result = conn.execute_command(args)
+            result = execute_module_command(conn, args)
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -307,7 +321,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.ARRLEN', key, path])
+            result = execute_module_command(conn, ['JSON.ARRLEN', key, path])
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -321,7 +335,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.ARRPOP', key, path, str(index)])
+            result = execute_module_command(conn, ['JSON.ARRPOP', key, path, str(index)])
             if result:
                 try:
                     return json.loads(result)
@@ -338,7 +352,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.ARRTRIM', key, path, str(start), str(stop)])
+            result = execute_module_command(conn, ['JSON.ARRTRIM', key, path, str(start), str(stop)])
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -354,7 +368,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.OBJKEYS', key, path])
+            result = execute_module_command(conn, ['JSON.OBJKEYS', key, path])
             if isinstance(result, list) and result:
                 if isinstance(result[0], list):
                     return result[0]
@@ -369,7 +383,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.OBJLEN', key, path])
+            result = execute_module_command(conn, ['JSON.OBJLEN', key, path])
             if isinstance(result, list) and result:
                 return result[0]
             return result
@@ -385,7 +399,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['JSON.CLEAR', key, path])
+            return execute_module_command(conn, ['JSON.CLEAR', key, path])
         finally:
             self.pool.return_connection(conn)
 
@@ -396,7 +410,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            return conn.execute_command(['JSON.RESP', key, path])
+            return execute_module_command(conn, ['JSON.RESP', key, path])
         finally:
             self.pool.return_connection(conn)
 
@@ -407,7 +421,7 @@ cdef class CyRedisJSON:
             raise ConnectionError("No available connections")
 
         try:
-            result = conn.execute_command(['JSON.DEBUG', 'MEMORY', key, path])
+            result = execute_module_command(conn, ['JSON.DEBUG', 'MEMORY', key, path])
             if isinstance(result, list) and result:
                 return result[0]
             return result

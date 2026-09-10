@@ -181,27 +181,11 @@ def redis_client(redis_host, redis_port, redis_db, redis_password, redis_availab
     """
     skip_if_no_redis(redis_available)
 
-    try:
-        # Try to import CyRedis client
-        from cy_redis.cy_redis_client import CyRedisClient
+    from cy_redis.core.cy_redis_client import CyRedisClient
 
-        client = CyRedisClient(
-            host=redis_host, port=redis_port, db=redis_db, password=redis_password
-        )
-    except ImportError:
-        # Fallback to redis-py if CyRedis not built
-        try:
-            import redis
-
-            client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                db=redis_db,
-                password=redis_password,
-                decode_responses=True,
-            )
-        except ImportError:
-            pytest.skip("Neither CyRedis nor redis-py available")
+    client = CyRedisClient(
+        host=redis_host, port=redis_port, db=redis_db, password=redis_password
+    )
 
     # Track keys created during test for cleanup
     keys_before = set()
@@ -241,26 +225,12 @@ async def async_redis_client(
     """
     skip_if_no_redis(redis_available)
 
-    try:
-        # Try to import async CyRedis client
-        from cy_redis.async_core import AsyncRedisClient
+    from cy_redis.core.async_core import AsyncRedisClient
 
-        client = AsyncRedisClient(
-            host=redis_host, port=redis_port, db=redis_db, password=redis_password
-        )
-        await client.connect()
-    except ImportError:
-        # Fallback to redis-py async
-        try:
-            import redis.asyncio as aioredis
-
-            client = await aioredis.from_url(
-                f"redis://{redis_host}:{redis_port}/{redis_db}",
-                password=redis_password,
-                decode_responses=True,
-            )
-        except ImportError:
-            pytest.skip("Neither async CyRedis nor redis-py available")
+    client = AsyncRedisClient(
+        host=redis_host, port=redis_port, db=redis_db, password=redis_password
+    )
+    await client.connect()
 
     # Track keys created during test for cleanup
     keys_before = set()
@@ -295,17 +265,12 @@ def redis_cluster_client(redis_cluster_nodes, redis_available):
     """Provide a Redis cluster client instance."""
     skip_if_no_redis(redis_available)
 
+    from cy_redis.core.cluster import CyRedisCluster
+
     try:
-        from cy_redis.distributed import RedisCluster
-
-        client = RedisCluster(nodes=redis_cluster_nodes)
-    except ImportError:
-        try:
-            from redis.cluster import RedisCluster
-
-            client = RedisCluster(startup_nodes=redis_cluster_nodes)
-        except ImportError:
-            pytest.skip("Redis cluster client not available")
+        client = CyRedisCluster(nodes=redis_cluster_nodes)
+    except Exception as exc:
+        pytest.skip(f"No Redis Cluster at {redis_cluster_nodes}: {exc}")
 
     yield client
 

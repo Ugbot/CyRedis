@@ -2,6 +2,7 @@
 Unit tests for functions.pyx - Redis Functions
 """
 
+import json
 import uuid
 
 import pytest
@@ -15,17 +16,31 @@ from cy_redis.features.functions import (
     CyRedisFunctionsManager,
     RedisFunctions,
 )
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture
 def redis_client():
     """Create a Redis client for testing"""
-    return CyRedisClient(host="localhost", port=6379)
+    return CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
+
+
+@pytest.fixture(scope="session")
+def server_supports_functions():
+    """Whether the server under test implements FUNCTION (Redis 7+, Valkey 7+)."""
+    client = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
+    try:
+        client.execute_command(["FUNCTION", "LIST"])
+    except Exception:
+        return False
+    return True
 
 
 @pytest.fixture
-def functions_manager(redis_client):
+def functions_manager(redis_client, server_supports_functions):
     """Create a functions manager for testing"""
+    if not server_supports_functions:
+        pytest.skip("server has no FUNCTION support")
     manager = CyRedisFunctionsManager(redis_client)
     yield manager
 
@@ -53,19 +68,15 @@ class TestCyRedisFunctionsManager:
 
     def test_manager_creation(self, redis_client):
         """Test creating functions manager"""
-        manager = CyRedisFunctionsManager(redis_client)
+        manager = CyRedisFunctionsManager(redis_client)  # no server round trip
         assert manager is not None
         assert manager.redis is not None
 
     def test_load_library(self, functions_manager):
         """Test loading a function library"""
-        try:
-            result = functions_manager.load_library("cy:locks")
-            assert "status" in result
-            # May be 'loaded' or 'already_loaded'
-        except Exception as e:
-            # Redis may not support functions or server may be old version
-            pytest.skip(f"Redis Functions not supported: {e}")
+        result = functions_manager.load_library("cy:locks")
+        assert result["status"] in ("loaded", "already_loaded")
+        assert result["functions"] == FUNCTION_LIBRARIES["cy:locks"]["functions"]
 
     def test_load_invalid_library(self, functions_manager):
         """Test loading invalid library"""
@@ -79,14 +90,10 @@ class TestCyRedisFunctionsManager:
 
     def test_get_library_info(self, functions_manager):
         """Test getting library information"""
-        # Try to load a library first
-        try:
-            functions_manager.load_library("cy:locks")
-            info = functions_manager.get_library_info("cy:locks")
-            assert isinstance(info, dict)
-        except:
-            # Library may not be loaded
-            pass
+        functions_manager.load_library("cy:locks")
+        info = functions_manager.get_library_info("cy:locks")
+        assert info["name"] == "cy:locks"
+        assert info["functions"] == FUNCTION_LIBRARIES["cy:locks"]["functions"]
 
 
 class TestFunctionLibraries:
@@ -127,49 +134,40 @@ class TestCyLocks:
         lock_key = f"test_lock_{uuid.uuid4().hex[:8]}"
         owner = f"owner_{uuid.uuid4().hex[:8]}"
 
-        try:
-            # Try to load library first
-            cy_locks.func_mgr.load_library("cy:locks")
+        cy_locks.func_mgr.load_library("cy:locks")
 
-            result = cy_locks.acquire(lock_key, owner)
-            assert isinstance(result, dict)
-            assert "acquired" in result
-            assert "fencing_token" in result
+        result = cy_locks.acquire(lock_key, owner)
+        assert result["acquired"] is True
+        assert result["fencing_token"] >= 1
 
-            # Release lock
-            if result["acquired"]:
-                cy_locks.release(lock_key, owner)
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        # A second owner must not get the same lock.
+        contended = cy_locks.acquire(lock_key, f"other_{owner}")
+        assert contended["acquired"] is False
+
+        cy_locks.release(lock_key, owner)
 
     def test_release_lock(self, cy_locks):
         """Test releasing a lock"""
         lock_key = f"test_lock_{uuid.uuid4().hex[:8]}"
         owner = f"owner_{uuid.uuid4().hex[:8]}"
 
-        try:
-            cy_locks.func_mgr.load_library("cy:locks")
-            result = cy_locks.acquire(lock_key, owner)
-            if result["acquired"]:
-                release_result = cy_locks.release(lock_key, owner)
-                assert isinstance(release_result, (bool, int))
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        cy_locks.func_mgr.load_library("cy:locks")
+        assert cy_locks.acquire(lock_key, owner)["acquired"] is True
+        assert cy_locks.release(lock_key, owner) is True
+        # Once released the lock is free again.
+        assert cy_locks.acquire(lock_key, f"other_{owner}")["acquired"] is True
 
     def test_refresh_lock(self, cy_locks):
         """Test refreshing a lock"""
         lock_key = f"test_lock_{uuid.uuid4().hex[:8]}"
         owner = f"owner_{uuid.uuid4().hex[:8]}"
 
-        try:
-            cy_locks.func_mgr.load_library("cy:locks")
-            result = cy_locks.acquire(lock_key, owner)
-            if result["acquired"]:
-                refresh_result = cy_locks.refresh(lock_key, owner)
-                assert isinstance(refresh_result, (bool, int))
-                cy_locks.release(lock_key, owner)
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        cy_locks.func_mgr.load_library("cy:locks")
+        assert cy_locks.acquire(lock_key, owner)["acquired"] is True
+        assert cy_locks.refresh(lock_key, owner) is True
+        # A non-owner cannot refresh someone else's lock.
+        assert cy_locks.refresh(lock_key, f"other_{owner}") is False
+        cy_locks.release(lock_key, owner)
 
 
 class TestCyRateLimiter:
@@ -184,35 +182,62 @@ class TestCyRateLimiter:
         """Test token bucket rate limiting"""
         key = f"rate_{uuid.uuid4().hex[:8]}"
 
-        try:
-            cy_rate_limiter.func_mgr.load_library("cy:rate")
+        cy_rate_limiter.func_mgr.load_library("cy:rate")
 
-            result = cy_rate_limiter.token_bucket(
-                key, capacity=10, refill_rate_per_ms=1.0, cost=1
-            )
+        result = cy_rate_limiter.token_bucket(
+            key, capacity=2, refill_interval_ms=60_000, cost=1
+        )
+        assert result["allowed"] is True
+        assert result["remaining"] == 1
 
-            assert isinstance(result, dict)
-            assert "allowed" in result
-            assert "remaining" in result
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        # The bucket drains and then refuses, since refill is a minute away.
+        assert (
+            cy_rate_limiter.token_bucket(
+                key, capacity=2, refill_interval_ms=60_000, cost=1
+            )["allowed"]
+            is True
+        )
+        exhausted = cy_rate_limiter.token_bucket(
+            key, capacity=2, refill_interval_ms=60_000, cost=1
+        )
+        assert exhausted["allowed"] is False
+        assert exhausted["retry_after_ms"] > 0
 
     def test_sliding_window(self, cy_rate_limiter):
         """Test sliding window rate limiting"""
         key = f"rate_{uuid.uuid4().hex[:8]}"
 
-        try:
-            cy_rate_limiter.func_mgr.load_library("cy:rate")
+        cy_rate_limiter.func_mgr.load_library("cy:rate")
 
-            result = cy_rate_limiter.sliding_window(
-                key, window_ms=1000, max_requests=10
-            )
+        result = cy_rate_limiter.sliding_window(key, window_ms=60_000, max_requests=2)
+        assert result["allowed"] is True
+        assert result["remaining"] == 1
 
-            assert isinstance(result, dict)
-            assert "allowed" in result
-            assert "remaining" in result
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        assert (
+            cy_rate_limiter.sliding_window(key, window_ms=60_000, max_requests=2)[
+                "allowed"
+            ]
+            is True
+        )
+        assert (
+            cy_rate_limiter.sliding_window(key, window_ms=60_000, max_requests=2)[
+                "allowed"
+            ]
+            is False
+        )
+
+    def test_leaky_bucket(self, cy_rate_limiter):
+        """Test leaky bucket rate limiting"""
+        key = f"rate_{uuid.uuid4().hex[:8]}"
+
+        cy_rate_limiter.func_mgr.load_library("cy:rate")
+
+        result = cy_rate_limiter.leaky_bucket(key, rate_per_ms=0.000001, burst=1)
+        assert result["allowed"] is True
+        assert (
+            cy_rate_limiter.leaky_bucket(key, rate_per_ms=0.000001, burst=1)["allowed"]
+            is False
+        )
 
 
 class TestCyQueue:
@@ -228,76 +253,82 @@ class TestCyQueue:
         queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
         message_id = str(uuid.uuid4())
 
-        try:
-            cy_queue.func_mgr.load_library("cy:queue")
+        cy_queue.func_mgr.load_library("cy:queue")
 
-            result = cy_queue.enqueue(queue_name, message_id, "test_payload")
-
-            assert result in ["enqueued", "delayed", "duplicate"]
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        assert cy_queue.enqueue(queue_name, message_id, "test_payload") == "enqueued"
+        # The same id is deduplicated.
+        assert cy_queue.enqueue(queue_name, message_id, "test_payload") == "duplicate"
+        assert (
+            cy_queue.enqueue(queue_name, str(uuid.uuid4()), "later", delay_s=60)
+            == "delayed"
+        )
 
     def test_pull(self, cy_queue):
         """Test pulling messages from queue"""
         queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
 
-        try:
-            cy_queue.func_mgr.load_library("cy:queue")
+        cy_queue.func_mgr.load_library("cy:queue")
 
-            # Enqueue first
-            message_id = str(uuid.uuid4())
-            cy_queue.enqueue(queue_name, message_id, "test_payload")
+        message_id = str(uuid.uuid4())
+        cy_queue.enqueue(queue_name, message_id, "test_payload")
 
-            # Pull
-            messages = cy_queue.pull(queue_name, max_messages=1)
-            assert isinstance(messages, list)
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        messages = cy_queue.pull(queue_name, max_messages=1)
+        assert len(messages) == 1
+        assert json.loads(messages[0])["id"] == message_id
+        # Pulled messages are invisible until their visibility timeout expires.
+        assert cy_queue.pull(queue_name, max_messages=1) == []
 
     def test_ack(self, cy_queue):
         """Test acknowledging a message"""
         queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
 
-        try:
-            cy_queue.func_mgr.load_library("cy:queue")
-            message_id = str(uuid.uuid4())
-            cy_queue.enqueue(queue_name, message_id, "test_payload")
+        cy_queue.func_mgr.load_library("cy:queue")
+        message_id = str(uuid.uuid4())
+        cy_queue.enqueue(queue_name, message_id, "test_payload")
+        cy_queue.pull(queue_name, max_messages=1)
 
-            messages = cy_queue.pull(queue_name, max_messages=1)
-            if messages:
-                # Message format depends on implementation
-                # result = cy_queue.ack(queue_name, message_id)
-                pass
-        except Exception as e:
-            pytest.skip(f"Redis Functions not supported: {e}")
+        assert cy_queue.ack(queue_name, message_id) is True
+        # Acking twice reports the message is gone.
+        assert cy_queue.ack(queue_name, message_id) is False
+
+    def test_nack_requeues(self, cy_queue):
+        """Test negative acknowledgement puts the message back"""
+        queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
+
+        cy_queue.func_mgr.load_library("cy:queue")
+        message_id = str(uuid.uuid4())
+        cy_queue.enqueue(queue_name, message_id, "test_payload")
+        cy_queue.pull(queue_name, max_messages=1)
+
+        assert cy_queue.nack(queue_name, message_id, requeue=True) == "requeued"
+        redelivered = cy_queue.pull(queue_name, max_messages=1)
+        assert len(redelivered) == 1
+        assert json.loads(redelivered[0])["id"] == message_id
 
 
 class TestRedisFunctions:
     """Test RedisFunctions wrapper"""
 
-    def test_wrapper_creation(self):
+    def test_wrapper_creation(self, redis_client):
         """Test creating RedisFunctions wrapper"""
-        # Note: This requires a properly configured Redis client
-        pass
+        functions = RedisFunctions(redis_client)
+        assert isinstance(functions.locks, CyLocks)
 
-    def test_load_library(self):
-        """Test loading library through wrapper"""
-        # Simplified test
-        pass
+    def test_wrapper_rejects_foreign_client(self):
+        """The wrapper only drives CyRedis clients, never another library's"""
+        with pytest.raises(TypeError):
+            RedisFunctions(object())
 
 
 class TestEdgeCases:
     """Test edge cases for functions"""
 
-    def test_call_unloaded_library(self, functions_manager):
-        """Test calling function from unloaded library"""
-        # Should handle gracefully
-        pass
-
-    def test_invalid_function_name(self, functions_manager):
-        """Test calling invalid function name"""
-        # Should handle gracefully
-        pass
+    def test_call_unknown_function_name(self, functions_manager):
+        """Calling a function no library registered surfaces the server error"""
+        with pytest.raises(Exception, match="(?i)function not found"):
+            functions_manager.call_function(
+                f"cy_missing_{uuid.uuid4().hex[:8]}", keys=["k"], args=[]
+            )
 
 
 if __name__ == "__main__":

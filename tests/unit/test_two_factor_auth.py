@@ -12,11 +12,12 @@ pyotp = pytest.importorskip("pyotp")
 
 from cy_redis import CyRedisClient
 from cy_redis.auth import TwoFactorAuth
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture
 def tfa():
-    return TwoFactorAuth(CyRedisClient(host="localhost", port=6379))
+    return TwoFactorAuth(CyRedisClient(host=REDIS_HOST, port=REDIS_PORT))
 
 
 def _uid():

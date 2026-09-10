@@ -12,12 +12,13 @@ from cy_redis.core.redis_core import (
     MessageQueue,
     RedisConnection,
 )
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture
 def redis_client():
     """Create a Redis client for testing"""
-    client = CyRedisClient(host="localhost", port=6379, max_connections=5)
+    client = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, max_connections=5)
     yield client
     # Cleanup
     try:
@@ -30,7 +31,7 @@ def redis_client():
 @pytest.fixture
 def connection():
     """Create a Redis connection for testing"""
-    conn = RedisConnection(host="localhost", port=6379)
+    conn = RedisConnection(host=REDIS_HOST, port=REDIS_PORT)
     conn.connect()
     yield conn
     conn.disconnect()
@@ -41,7 +42,7 @@ class TestRedisConnection:
 
     def test_connection_creation(self):
         """Test creating a connection"""
-        conn = RedisConnection(host="localhost", port=6379)
+        conn = RedisConnection(host=REDIS_HOST, port=REDIS_PORT)
         assert conn is not None
 
     def test_connect_disconnect(self, connection):
@@ -72,20 +73,20 @@ class TestConnectionPool:
 
     def test_pool_creation(self):
         """Test creating a connection pool"""
-        pool = ConnectionPool(host="localhost", port=6379, max_connections=5)
+        pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, max_connections=5)
         assert pool is not None
         assert pool.max_connections == 5
 
     def test_get_connection(self):
         """Test getting a connection from pool"""
-        pool = ConnectionPool(host="localhost", port=6379, max_connections=5)
+        pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, max_connections=5)
         conn = pool.get_connection()
         assert conn is not None
         pool.return_connection(conn)
 
     def test_return_connection(self):
         """Test returning a connection to pool"""
-        pool = ConnectionPool(host="localhost", port=6379, max_connections=5)
+        pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, max_connections=5)
         conn = pool.get_connection()
         initial_size = len(pool.connections)
         pool.return_connection(conn)
@@ -112,7 +113,7 @@ class TestCyRedisClient:
 
     def test_client_creation(self):
         """Test creating a Redis client"""
-        client = CyRedisClient(host="localhost", port=6379)
+        client = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
         assert client is not None
 
     def test_set_get(self, redis_client):

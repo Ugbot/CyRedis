@@ -14,6 +14,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from tests.server_env import REDIS_HOST, REDIS_PORT
+
 try:
     from cy_redis.web_app_support import (
         ConcurrentSharedDict,
@@ -40,7 +42,7 @@ def web_app_support(hp_redis_client) -> Generator[WebApplicationSupport, None, N
         pytest.skip("CyRedis web app support not built")
 
     support = WebApplicationSupport(
-        redis_client=hp_redis_client, host="localhost", port=6379
+        redis_client=hp_redis_client, host=REDIS_HOST, port=REDIS_PORT
     )
 
     yield support

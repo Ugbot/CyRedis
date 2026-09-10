@@ -10,12 +10,13 @@ import pytest
 
 from cy_redis.communication.messaging import CyReliableQueue, ReliableQueue
 from cy_redis.core.cy_redis_client import CyRedisClient
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.fixture
 def redis_client() -> CyRedisClient:
     """Create a Redis client for testing"""
-    return CyRedisClient(host="localhost", port=6379)
+    return CyRedisClient(host=REDIS_HOST, port=REDIS_PORT)
 
 
 @pytest.fixture

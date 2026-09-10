@@ -13,13 +13,14 @@ import uuid
 import pytest
 
 from cy_redis import CyRedisClient
+from tests.server_env import REDIS_HOST, REDIS_PORT
 
 
 @pytest.mark.redis
 def test_blocking_commands_run_concurrently():
     n = 8
     prefix = "test:nogil:" + uuid.uuid4().hex
-    client = CyRedisClient(host="localhost", port=6379, max_connections=n + 4)
+    client = CyRedisClient(host=REDIS_HOST, port=REDIS_PORT, max_connections=n + 4)
 
     def block(i):
         # Key is never pushed, so BLPOP blocks for its full 1s timeout.
