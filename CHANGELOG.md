@@ -4,6 +4,35 @@
 
 ## [Unreleased]
 
+### Added
+- **Cluster client** — `CyRedisCluster` keeps a slot map from `CLUSTER SLOTS`, routes by
+  CRC16/XMODEM `key_slot()` (hash tags honoured), follows `MOVED`/`ASK` and retries
+  `CLUSTERDOWN`/`TRYAGAIN`, and fans multi-key commands out per slot so `mget`/`mset`/
+  `delete`/`exists` work across the keyspace. `CyRedisClusterPipeline` preserves order.
+- **Sentinel client** — `CySentinel(...).master_for(service)` discovers the master, reports
+  replicas, and re-resolves after a dropped connection or a `-READONLY` reply from a
+  demoted master.
+- **Pub/sub** — `CyRedisClient.pubsub()` returns a `CyRedisPubSub` with
+  `subscribe`/`psubscribe`/`get_message`/`listen` on its own connection.
+- `AsyncRedisClient` accepts `db`/`password` and exposes `connect()`, `keys()` and
+  variadic `delete()`; `execute_command()` accepts varargs as well as a list; added
+  `keys()`, `scan()` and `scan_iter()`.
+- Module capability detection (`cy_redis.features.capabilities`): commands a server's
+  modules do not implement raise `ModuleUnavailableError` naming the provider.
+- Vector search: `ft_create()` declares `VECTOR` fields and `ft_search()` sends
+  `PARAMS`/`DIALECT`, so valkey-search is usable.
+
+### Fixed
+- `detect_server_type()` reported `"redis"` for every Valkey server — Valkey answers
+  `INFO server` with a compatibility `redis_version:` line before `server_name:valkey`,
+  and the parser stopped at the first version line.
+- `json_numincrby()`/`json_nummultby()` raised `could not convert string to float: '[3]'`
+  against any RedisJSON-compatible server; both reply shapes are now unwrapped.
+- The pgcache module could not load on Linux: `LDFLAGS` preceded the translation unit, so
+  `--as-needed` dropped `-lpq -ljansson`.
+- Stream `xadd()` takes `maxlen`/`id`, and `xinfo_stream()` returns the dict its
+  annotation promises rather than a flat array.
+
 ## [0.2.0] - 2026-07-13
 
 First installable, hardened release. The package now builds and installs from a
