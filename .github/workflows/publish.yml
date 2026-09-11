@@ -76,7 +76,7 @@ jobs:
           submodules: false
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.2
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos-target }}
 
