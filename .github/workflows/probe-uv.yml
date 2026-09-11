@@ -1,0 +1,8 @@
+name: Probe uv
+on: pull_request
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: astral-sh/setup-uv@v10
+      - run: uv --version
