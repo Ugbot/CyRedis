@@ -15,6 +15,7 @@ pyproject.toml:
 4. Default to compiling the extensions across all available cores; the
    serial default dominates wheel build time.
 """
+
 import os
 import subprocess
 import sys
@@ -90,7 +91,9 @@ class build_ext(_build_ext):
         mandatory — every extension links it — so its absence is fatal; the
         SSL archive is best-effort.
         """
-        if os.path.exists(HIREDIS_STATIC_LIB) and os.path.exists(HIREDIS_SSL_STATIC_LIB):
+        if os.path.exists(HIREDIS_STATIC_LIB) and os.path.exists(
+            HIREDIS_SSL_STATIC_LIB
+        ):
             return True
         if not os.path.exists(os.path.join(HIREDIS_DIR, "Makefile")):
             raise SystemExit(
@@ -104,9 +107,21 @@ class build_ext(_build_ext):
         if openssl_prefix:
             make_env.setdefault("OPENSSL_PREFIX", openssl_prefix)
 
+        # cibuildwheel drives universal2/cross builds on macOS through
+        # ARCHFLAGS ("-arch arm64 -arch x86_64"). setuptools applies it to the
+        # extensions itself; hiredis's Makefile only reads CFLAGS/LDFLAGS, so
+        # the static archives must be told explicitly or the link fails with
+        # a single-arch libhiredis.a.
+        archflags = make_env.get("ARCHFLAGS", "").strip()
+        if archflags:
+            for var in ("CFLAGS", "LDFLAGS"):
+                make_env[var] = (make_env.get(var, "") + " " + archflags).strip()
+
         # Preferred: one build that produces both archives.
         jobs = "-j%d" % (os.cpu_count() or 1)
-        print("building vendored hiredis static libraries (make -C hiredis static USE_SSL=1)")
+        print(
+            "building vendored hiredis static libraries (make -C hiredis static USE_SSL=1)"
+        )
         try:
             subprocess.check_call(
                 ["make", jobs, "static", "USE_SSL=1"], cwd=HIREDIS_DIR, env=make_env
@@ -114,9 +129,13 @@ class build_ext(_build_ext):
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Most likely OpenSSL headers are absent. Fall back to a plain
             # build; only the TLS extension is lost.
-            print("hiredis SSL build failed; retrying without SSL (TLS support disabled)")
+            print(
+                "hiredis SSL build failed; retrying without SSL (TLS support disabled)"
+            )
             try:
-                subprocess.check_call(["make", jobs, "static"], cwd=HIREDIS_DIR)
+                subprocess.check_call(
+                    ["make", jobs, "static"], cwd=HIREDIS_DIR, env=make_env
+                )
             except (subprocess.CalledProcessError, FileNotFoundError) as exc:
                 raise SystemExit(
                     "Failed to build hiredis/libhiredis.a. A C toolchain and `make` "

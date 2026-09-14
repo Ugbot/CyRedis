@@ -2,13 +2,80 @@
 
 ← [README](README.md)
 
-## [Unreleased]
+Dates are the dates of the commits on `main`. Nothing below has been published
+to PyPI yet: `0.2.0` is the first release and is still being prepared.
 
-## [0.2.0] - 2026-07-13
+## [Unreleased] — 0.2.0
 
-First installable, hardened release. The package now builds and installs from a
-clean sdist, ships modular optional extras, and has been audited and hardened
-end to end.
+Work since the repository was created (2025-10-02): the package did not build
+from an sdist until 2026-05-06, and the release polish ran through 2026-09.
+
+### Moved out of the package (2026-09-14)
+- The web cache/channels, auth (JWT, sessions, 2FA, password reset), worker and
+  lifecycle layers, RPC/messaging/reliable queues, probabilistic structures,
+  RedisAI, ClickHouse bridge, `cyredis_game` and the pgcache Redis module now
+  live under `experimental/` in the repository as `cyredis_experimental`. They
+  are not in the wheel or sdist, have no support guarantee, and build separately
+  (`experimental/README.md`). The `ai`/`auth`/`web`/`game`/`pgcache`/`all`
+  extras that pointed at them are gone; `async` (uvloop) is the only extra.
+- Shared dictionaries stay in the package as one implementation
+  (`cy_redis.data.shared_dict`: `CySharedDict`, `CySharedDictManager`, with
+  `ConcurrentSharedDict`/`ConcurrentSharedDictWrapper` kept as compatibility
+  names); the three duplicate copies were deleted.
+- `redis_core`, the pure-Python compat shims, the `RESPParser` draft and the
+  checked-in dylibs were deleted.
+
+### Developer loop (2026-09-14)
+- `uv sync` installs a `dev` dependency group that matches the `test` extra plus
+  the lint/format/type-check/Cython/build tooling the Makefile and CI use.
+- Makefile targets run through `uv`; `make lint` is the gating CI lint and
+  fails on error, `make lint-report` is the advisory style report, and
+  `make test-examples` imports every example against the installed package
+  (`scripts/check_examples.py`) instead of `|| true`.
+- `run_automated_tests.sh` (raw `pip`, deleted test paths, swallowed failures)
+  is gone; examples that only ran against mocks were deleted, the
+  `MockRequest` stand-in in `web_cache_example.py` is labelled, and the cluster
+  and API-tour demos use the real client API.
+- `CyRedisClient` is a context manager: `close()` drops idle pooled
+  connections and stops the executor; `with CyRedisClient(...) as r:` works.
+- `xread()`/`xreadgroup()` parse RESP3 map replies as well as RESP2 arrays.
+- `setup.py` passes `ARCHFLAGS` through to the hiredis `make`, so macOS
+  universal2/cross builds link a matching static archive.
+
+### Added (2026-09-10 – 2026-09-11)
+- **Cluster client** — `CyRedisCluster` keeps a slot map from `CLUSTER SLOTS`, routes by
+  CRC16/XMODEM `key_slot()` (hash tags honoured), follows `MOVED`/`ASK` and retries
+  `CLUSTERDOWN`/`TRYAGAIN`, and fans multi-key commands out per slot so `mget`/`mset`/
+  `delete`/`exists` work across the keyspace. `CyRedisClusterPipeline` preserves order.
+- **Sentinel client** — `CySentinel(...).master_for(service)` discovers the master, reports
+  replicas, and re-resolves after a dropped connection or a `-READONLY` reply from a
+  demoted master.
+- **Pub/sub** — `CyRedisClient.pubsub()` returns a `CyRedisPubSub` with
+  `subscribe`/`psubscribe`/`get_message`/`listen` on its own connection.
+- `AsyncRedisClient` accepts `db`/`password` and exposes `connect()`, `keys()` and
+  variadic `delete()`; `execute_command()` accepts varargs as well as a list; added
+  `keys()`, `scan()` and `scan_iter()`.
+- Module capability detection (`cy_redis.features.capabilities`): commands a server's
+  modules do not implement raise `ModuleUnavailableError` naming the provider.
+- Vector search: `ft_create()` declares `VECTOR` fields and `ft_search()` sends
+  `PARAMS`/`DIALECT`, so valkey-search is usable.
+
+### Fixed
+- `detect_server_type()` reported `"redis"` for every Valkey server — Valkey answers
+  `INFO server` with a compatibility `redis_version:` line before `server_name:valkey`,
+  and the parser stopped at the first version line.
+- `json_numincrby()`/`json_nummultby()` raised `could not convert string to float: '[3]'`
+  against any RedisJSON-compatible server; both reply shapes are now unwrapped.
+- The pgcache module could not load on Linux: `LDFLAGS` preceded the translation unit, so
+  `--as-needed` dropped `-lpq -ljansson`.
+- Stream `xadd()` takes `maxlen`/`id`, and `xinfo_stream()` returns the dict its
+  annotation promises rather than a flat array.
+
+### 2026-05-06 – 2026-07-13
+
+The package first built and installed from a clean sdist, and was audited and
+hardened end to end. Several items below describe code that has since moved to
+`experimental/` (see above).
 
 ### Added
 - **Connection AUTH + logical DB select** — `CyRedisClient(password=..., db=...)`;
@@ -16,7 +83,8 @@ end to end.
 - **GIL released around blocking hiredis calls** (`nogil`) — the executor-backed
   `*_async` variants now achieve real concurrency instead of serializing.
 - **Modular optional extras** — `pip install cy-redis[async|ai|auth|web|game|pgcache|all]`;
-  the core client has no runtime Python dependencies.
+  the core client has no runtime Python dependencies. (All but `async` were
+  removed again on 2026-09-14 with the experimental split.)
 - Wider redis-py-compatible command surface: `mget`/`mset`, `type`, `rename`/`renamenx`,
   `incrby`/`decrby`/`incrbyfloat`, variadic `delete`/`exists`, `ping`, `info` (parsed),
   `xrange`/`xrevrange`, `brpoplpush`, `zrange`/`zrangebyscore` `WITHSCORES` tuples.
@@ -159,15 +227,13 @@ end to end.
 - CI runs on every pull request and has a packaging job that builds, `twine check`s,
   and installs both the wheel and the sdist into clean environments.
 
-## [0.1.0] - 2025-09-28 [UNRELEASED]
+## [0.1.0] - 2025-10-02 (never published)
 
-Initial development version — never published to PyPI (the sdist could not build).
-Superseded by 0.2.0.
-
-## [0.1.0] - 2025-09-28
+Initial development version, imported from the parent repository on 2025-10-02.
+Never uploaded to PyPI: the sdist could not build. Superseded by 0.2.0.
 
 ### Added
-- Initial release
+- Initial import
 - Cython Redis client built on vendored hiredis C library — no redis-py dependency
 - Sync and async (`*_async`) variants for all commands
 - Connection pool

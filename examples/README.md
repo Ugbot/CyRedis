@@ -8,13 +8,17 @@ All examples connect to Redis on `localhost:6379` by default. Run any of them wi
 uv run python examples/<name>.py
 ```
 
-## Core and data structures
+Every example here talks to a real server through the public API; there are
+no mock-backed demos. `make test-examples` (also run by CI's packaging job)
+imports each file against the installed package, so an example that drifts
+from the shipped API fails the build.
+
+## Core (supported `cy-redis` wheel)
 
 | File | What it shows |
 |------|--------------|
-| `streaming_example.py` | Redis Streams and the data-structure async iterators (XADD/XREAD, list/pub-sub iteration) |
-| `enhanced_cyredis_demo.py` | Broad feature tour (see note below) |
-| `cluster_aware_demo.py` | Cluster command helpers and routing (see note below) |
+| `enhanced_cyredis_demo.py` | Broad feature tour: sync + async clients, pipelines, streams, capability detection |
+| `cluster_aware_demo.py` | `CyRedisCluster`: topology, slot routing, cross-slot `mget`/`mset`, cluster pipeline (needs a running cluster; `REDIS_CLUSTER_NODES`) |
 
 ## Web (experimental)
 
@@ -25,9 +29,7 @@ wheel — install it from [`experimental/`](../experimental/README.md) first
 | File | What it shows |
 |------|--------------|
 | `example_fastapi_channels.py` | `CyChannelManager` — WebSocket pub/sub, stream rewind, filters, presence (needs `fastapi`/`uvicorn`) |
-| `web_app_example.py` | JWT tokens, sessions, 2FA, password reset |
 | `web_cache_example.py` | `WebCache` set/get, the `cached_endpoint` decorator, namespace/pattern invalidation |
-| `web_cache_simple_example.py` | Minimal web cache usage |
 
 ## Integrations (experimental)
 
@@ -38,9 +40,11 @@ the wheel.
 |------|--------------|
 | `example_clickhouse_redis.py` | ClickHouse bridge — live cache, stream dump, watch loop, channel broadcast |
 
-> Note: `enhanced_cyredis_demo.py` and `cluster_aware_demo.py` currently import
-> `CyRedisClientAsync`, which is not part of the public package, so they do not
-> run as-is. The other scripts run against a local Redis on `localhost:6379`.
+## Game engine (experimental)
+
+| File | What it shows |
+|------|--------------|
+| `game_engine_example.py` | `cyredis_experimental.game` — zones, entities, intents, ticks; needs Redis 7+ (`FUNCTION`) and `experimental[game]` installed |
 
 ## FastAPI channels quick start
 

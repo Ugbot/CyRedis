@@ -269,9 +269,24 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning",
 ]
 
+# `uv sync` installs this group by default; it is the `test` extra plus the
+# tooling the Makefile and CI lint job run, plus what `--no-build-isolation`
+# builds need. Keep it in step with `[project.optional-dependencies]`.
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.1",
+    "uvloop>=0.17.0",
+    "black>=23.0",
+    "flake8>=6.0",
+    "isort>=5.12",
+    "mypy>=1.0",
+    "Cython>=3.0,<4",
+    "setuptools>=77",
+    "build>=1.0",
+    "twine>=4.0",
 ]
 
 [tool.uv]

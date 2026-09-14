@@ -1,385 +1,168 @@
 #!/usr/bin/env python3
 """
-Enhanced CyRedis Demo - Showcasing all new features
+CyRedis feature tour.
 
-This demo script demonstrates the comprehensive Redis features now available
-in CyRedis, including bitmap operations, Bloom filters, JSON operations,
-full-text search, geospatial operations, time series, and advanced operations.
+Everything here runs against a plain Redis 7 / Valkey 8 on localhost:6379
+through the supported ``cy-redis`` package. The JSON section is skipped
+unless the server has the RedisJSON / valkey-json module loaded.
+
+    uv run python examples/enhanced_cyredis_demo.py
 """
 
 import asyncio
-import json
+import os
 import time
-from typing import Any, Dict, List
 
-# Import the enhanced CyRedis client
-from cy_redis import CyRedisClient, CyRedisClientAsync
+from cy_redis import CyRedisClient
+from cy_redis.core import AsyncRedisClient
+from cy_redis.features import CyRedisJSON, module_names
 
+HOST = os.environ.get("REDIS_HOST", "localhost")
+PORT = int(os.environ.get("REDIS_PORT", "6379"))
 
-def demo_bitmap_operations():
-    """Demonstrate bitmap operations"""
-    print("🗺️  Bitmap Operations Demo")
-    print("=" * 50)
 
-    with CyRedisClient() as client:
-        # Create a bitmap representing user activity (1 = active, 0 = inactive)
-        user_bitmap = "user_activity"
+def banner(title: str) -> None:
+    print(f"\n{title}\n{'=' * len(title)}")
 
-        # Set bits for active users (users 1, 3, 5, 7 are active)
-        client.setbit(user_bitmap, 1, 1)  # User 1 active
-        client.setbit(user_bitmap, 3, 1)  # User 3 active
-        client.setbit(user_bitmap, 5, 1)  # User 5 active
-        client.setbit(user_bitmap, 7, 1)  # User 7 active
 
-        # Count active users
-        active_count = client.bitcount(user_bitmap)
-        print(f"Active users: {active_count}")
-
-        # Check if specific users are active
-        user_1_active = client.getbit(user_bitmap, 1)
-        user_2_active = client.getbit(user_bitmap, 2)
-        print(f"User 1 active: {user_1_active}")
-        print(f"User 2 active: {user_2_active}")
-
-        # Find first active user
-        first_active = client.bitpos(user_bitmap, 1)
-        print(f"First active user: {first_active}")
-
-        # Create another bitmap for premium users
-        premium_bitmap = "premium_users"
-        client.setbit(premium_bitmap, 1, 1)  # User 1 is premium
-        client.setbit(premium_bitmap, 7, 1)  # User 7 is premium
-
-        # Find users who are both active and premium (bitwise AND)
-        active_premium = "active_premium"
-        client.bitop("AND", active_premium, user_bitmap, premium_bitmap)
-
-        premium_active_count = client.bitcount(active_premium)
-        print(f"Active premium users: {premium_active_count}")
-
-
-def demo_bloom_filters():
-    """Demonstrate Bloom filter operations"""
-    print("\n🌸 Bloom Filter Operations Demo")
-    print("=" * 50)
-
-    with CyRedisClient() as client:
-        # Create a Bloom filter for email addresses
-        email_filter = "email_bloom"
-
-        # Reserve Bloom filter with 0.01% error rate and capacity for 1000 emails
-        client.bf_reserve(email_filter, 0.01, 1000)
-
-        # Add some email addresses
-        emails = [
-            "user1@example.com",
-            "user2@example.com",
-            "user3@example.com",
-            "admin@company.com",
-        ]
-
-        for email in emails:
-            client.bf_add(email_filter, email)
-
-        # Check if emails exist in the filter
-        test_emails = [
-            "user1@example.com",  # Should exist
-            "user4@example.com",  # Should not exist
-            "admin@company.com",  # Should exist
-        ]
-
-        for email in test_emails:
-            exists = client.bf_exists(email_filter, email)
-            status = "EXISTS" if exists else "NOT FOUND"
-            print(f"Email '{email}': {status}")
-
-        # Get filter information
-        info = client.bf_info(email_filter)
-        print(f"Bloom filter info: {info}")
-
-
-def demo_json_operations():
-    """Demonstrate JSON operations"""
-    print("\n📄 JSON Operations Demo")
-    print("=" * 50)
-
-    with CyRedisClient() as client:
-        # Create a complex JSON document
-        user_profile = {
-            "id": 12345,
-            "name": "Alice Johnson",
-            "email": "alice@example.com",
-            "preferences": {"theme": "dark", "notifications": True, "language": "en"},
-            "tags": ["premium", "verified", "active"],
-            "last_login": time.time(),
-        }
-
-        # Set the entire JSON document
-        client.json_set("user:12345", ".", user_profile)
-
-        # Get specific fields
-        user_name = client.json_get("user:12345", ".name")
-        user_theme = client.json_get("user:12345", ".preferences.theme")
-        print(f"User name: {user_name}")
-        print(f"User theme: {user_theme}")
-
-        # Modify specific fields
-        client.json_set("user:12345", ".preferences.theme", "light")
-        client.json_set("user:12345", ".last_login", time.time())
-
-        # Add to array
-        client.json_arrappend("user:12345", ".tags", "vip")
-
-        # Get updated tags
-        updated_tags = client.json_get("user:12345", ".tags")
-        print(f"Updated tags: {updated_tags}")
-
-        # Get multiple users' data
-        client.json_set(
-            "user:67890",
-            ".",
-            {"id": 67890, "name": "Bob Smith", "email": "bob@example.com"},
-        )
-
-        users_data = client.json_mget(["user:12345", "user:67890"], ".name")
-        print(f"User names: {users_data}")
-
-
-def demo_geospatial_operations():
-    """Demonstrate geospatial operations"""
-    print("\n🗺️  Geospatial Operations Demo")
-    print("=" * 50)
-
-    with CyRedisClient() as client:
-        # Add some locations (longitude, latitude, member)
-        locations = [
-            (-122.4194, 37.7749, "San Francisco"),  # San Francisco, CA
-            (-118.2437, 34.0522, "Los Angeles"),  # Los Angeles, CA
-            (-74.0060, 40.7128, "New York"),  # New York, NY
-            (-87.6298, 41.8781, "Chicago"),  # Chicago, IL
-            (-71.0589, 42.3601, "Boston"),  # Boston, MA
-        ]
-
-        for lon, lat, city in locations:
-            client.geoadd("cities", lon, lat, city)
-
-        # Find distance between cities
-        sf_nyc_distance = client.geodist("cities", "San Francisco", "New York", "km")
-        print(f"Distance SF to NYC: {sf_nyc_distance:.2f} km")
-
-        la_sf_distance = client.geodist("cities", "Los Angeles", "San Francisco", "mi")
-        print(f"Distance LA to SF: {la_sf_distance:.2f} miles")
-
-        # Find cities within 1000km of Chicago
-        nearby_cities = client.georadius(
-            "cities", -87.6298, 41.8781, 1000, "km", count=5
-        )
-        print(f"Cities within 1000km of Chicago: {nearby_cities}")
-
-        # Get geohash for cities
-        geohashes = client.geohash("cities", "San Francisco", "New York")
-        print(f"Geohashes: {geohashes}")
-
-
-def demo_time_series_operations():
-    """Demonstrate time series operations"""
-    print("\n⏰ Time Series Operations Demo")
-    print("=" * 50)
-
-    with CyRedisClient() as client:
-        # Create a time series for temperature readings
-        temp_series = "sensor:temperature"
-
-        # Create the time series with retention and labels
-        client.ts_create(
-            temp_series,
-            retention=86400,
-            labels={"sensor_id": "temp_001", "location": "office", "unit": "celsius"},
-        )
-
-        # Add some temperature readings
-        current_time = int(time.time() * 1000)  # Milliseconds
-        temperatures = [
-            (current_time - 300000, 22.5),  # 5 minutes ago
-            (current_time - 240000, 23.1),  # 4 minutes ago
-            (current_time - 180000, 22.8),  # 3 minutes ago
-            (current_time - 120000, 23.5),  # 2 minutes ago
-            (current_time - 60000, 24.2),  # 1 minute ago
-            (current_time, 23.9),  # Now
-        ]
-
-        for timestamp, temp in temperatures:
-            client.ts_add(temp_series, timestamp, temp)
-
-        # Get the latest reading
-        latest = client.ts_get(temp_series, latest=True)
-        print(f"Latest temperature: {latest}")
-
-        # Get temperature range for the last 10 minutes
-        ten_min_ago = current_time - 600000
-        temp_range = client.ts_range(temp_series, ten_min_ago, current_time)
-        print(f"Temperature readings (last 10 min): {len(temp_range)} samples")
-
-        # Get time series info
-        info = client.ts_info(temp_series)
-        print(f"Time series info: {info}")
-
-
-def demo_full_text_search():
-    """Demonstrate full-text search operations"""
-    print("\n🔍 Full-Text Search Demo")
-    print("=" * 50)
-
-    with CyRedisClient() as client:
-        # Create a search index for articles
-        index_name = "articles_idx"
-
-        # Define schema for articles
-        schema = [
-            {"field": "title", "type": "TEXT"},
-            {"field": "content", "type": "TEXT"},
-            {"field": "author", "type": "TEXT"},
-            {"field": "category", "type": "TAG"},
-            {"field": "published_date", "type": "NUMERIC"},
-        ]
-
-        # Create the search index
-        client.ft_create(
-            index_name, schema, {"prefix": ["article:"], "default_score": 1.0}
-        )
-
-        # Add some articles
-        articles = [
-            {
-                "title": "Redis Performance Tuning",
-                "content": "Learn how to optimize Redis for maximum performance in production environments.",
-                "author": "John Doe",
-                "category": "database",
-                "published_date": 20231201,
-            },
-            {
-                "title": "Python Async Best Practices",
-                "content": "Essential patterns for writing efficient asynchronous Python applications.",
-                "author": "Jane Smith",
-                "category": "programming",
-                "published_date": 20231202,
-            },
-            {
-                "title": "Database Indexing Strategies",
-                "content": "Comprehensive guide to creating effective database indexes for optimal query performance.",
-                "author": "Bob Johnson",
-                "category": "database",
-                "published_date": 20231203,
-            },
-        ]
-
-        for i, article in enumerate(articles):
-            key = f"article:{i+1}"
-            client.json_set(key, ".", article)
-
-        # Search for articles about databases
-        db_results = client.ft_search(index_name, "@category:database")
-        print(f"Database articles found: {db_results['total']}")
-
-        # Search for articles containing "performance"
-        perf_results = client.ft_search(index_name, "performance")
-        print(f"Performance articles found: {perf_results['total']}")
-
-        # Get index information
-        index_info = client.ft_info(index_name)
-        print(f"Index info: {index_info}")
-
-
-async def demo_async_operations():
-    """Demonstrate async operations"""
-    print("\n⚡ Async Operations Demo")
-    print("=" * 50)
-
-    async with CyRedisClientAsync() as client:
-        # Demonstrate async JSON operations
-        user_data = {"id": 999, "name": "Async User", "preferences": {"theme": "async"}}
-
-        await client.json_set_async("async_user", ".", user_data)
-
-        user = await client.json_get_async("async_user", ".")
-        print(f"Async user: {user}")
-
-        # Demonstrate async geospatial operations
-        await client.geoadd_async("async_cities", -122.4194, 37.7749, "Async SF")
-
-        distance = await client.geodist_async(
-            "async_cities", "Async SF", "San Francisco"
-        )
-        print(f"Async distance: {distance}")
-
-
-def demo_advanced_hash_operations():
-    """Demonstrate advanced hash operations"""
-    print("\n🎯 Advanced Hash Operations Demo")
-    print("=" * 50)
-
-    with CyRedisClient() as client:
-        # Set hash fields with expiration
-        client.hsetex("session:123", "user_id", "456", 3600)  # Expires in 1 hour
-        client.hsetex("session:123", "token", "abc123", 3600)
-
-        # Set field-level expiration
-        client.hexpire("session:123", 7200, ["user_id"])  # user_id expires in 2 hours
-
-        # Get all fields as dictionary
-        session_data = client.hgetall_dict("session:123")
-        print(f"Session data: {session_data}")
-
-        # Get string length of field
-        user_id_length = client.hstrlen("session:123", "user_id")
-        print(f"User ID length: {user_id_length}")
-
-        # Increment float field
-        client.hincrbyfloat("user:456", "balance", 10.50)
-        balance = client.hincrbyfloat("user:456", "balance", -5.25)
-        print(f"Updated balance: {balance}")
-
-        # Get random fields
-        random_fields = client.hrandfield("user:456", 2, withvalues=True)
-        print(f"Random fields: {random_fields}")
-
-
-def main():
-    """Run all demonstrations"""
-    print("🚀 Enhanced CyRedis Feature Demo")
-    print("=" * 60)
-
+def loaded_modules(client: CyRedisClient) -> set:
+    conn = client.pool.get_connection()
     try:
-        # Run synchronous demos
-        demo_bitmap_operations()
-        demo_bloom_filters()
-        demo_json_operations()
-        demo_geospatial_operations()
-        demo_time_series_operations()
-        demo_full_text_search()
-        demo_advanced_hash_operations()
+        return module_names(conn)
+    finally:
+        client.pool.return_connection(conn)
 
-        # Run async demo
-        asyncio.run(demo_async_operations())
 
-        print("\n🎉 All demos completed successfully!")
-        print("\nCyRedis now supports:")
-        print("  • Bitmap operations (SETBIT, GETBIT, BITCOUNT, etc.)")
-        print("  • Bloom filters (BF.RESERVE, BF.ADD, BF.EXISTS, etc.)")
-        print("  • JSON operations (JSON.SET, JSON.GET, JSON.ARRAPPEND, etc.)")
-        print("  • Full-text search (FT.CREATE, FT.SEARCH, etc.)")
-        print("  • Geospatial operations (GEOADD, GEODIST, GEORADIUS, etc.)")
-        print("  • Time series (TS.CREATE, TS.ADD, TS.RANGE, etc.)")
-        print("  • Advanced hash operations (HSETEX, HEXPIRE, HINCRBYFLOAT, etc.)")
-        print("  • Async versions of all operations")
+def demo_server_info(client: CyRedisClient) -> None:
+    banner("Server")
+    print(f"server type : {client.detect_server_type()}")
+    print(f"version     : {client.info('server').get('redis_version')}")
+    print(f"modules     : {sorted(loaded_modules(client)) or 'none'}")
 
-    except Exception as e:
-        print(f"\n❌ Demo failed: {e}")
-        print("Make sure Redis is running and the required modules are loaded.")
-        return 1
 
-    return 0
+def demo_strings_and_hashes(client: CyRedisClient) -> None:
+    banner("Strings and hashes")
+    client.set("demo:counter", "0")
+    for _ in range(3):
+        client.incr("demo:counter")
+    print(f"counter after 3 INCR: {client.get('demo:counter')}")
+
+    client.hset("demo:user:1", mapping={"name": "ada", "lang": "cython", "score": 42})
+    print(f"hash        : {client.hgetall('demo:user:1')}")
+    print(f"hincrby     : {client.hincrby('demo:user:1', 'score', 8)}")
+
+
+def demo_bitmaps_and_hll(client: CyRedisClient) -> None:
+    banner("Bitmaps and HyperLogLog")
+    client.delete("demo:active", "demo:premium", "demo:active_premium", "demo:visitors")
+    for user in (1, 3, 5, 7):
+        client.setbit("demo:active", user, 1)
+    for user in (1, 7):
+        client.setbit("demo:premium", user, 1)
+    client.bitop("AND", "demo:active_premium", "demo:active", "demo:premium")
+    print(f"active users         : {client.bitcount('demo:active')}")
+    print(f"first active user    : {client.bitpos('demo:active', 1)}")
+    print(f"active AND premium   : {client.bitcount('demo:active_premium')}")
+
+    client.pfadd("demo:visitors", *[f"visitor-{i}" for i in range(1000)])
+    print(f"HLL cardinality      : ~{client.pfcount('demo:visitors')}")
+
+
+def demo_sorted_sets(client: CyRedisClient) -> None:
+    banner("Sorted sets")
+    client.delete("demo:leaderboard")
+    client.zadd(
+        "demo:leaderboard", {"ada": 120, "grace": 95, "linus": 150, "guido": 110}
+    )
+    top = client.zrevrange("demo:leaderboard", 0, 2, withscores=True)
+    print(f"top 3       : {top}")
+    print(f"rank(guido) : {client.zrevrank('demo:leaderboard', 'guido')}")
+
+
+def demo_pipeline(client: CyRedisClient) -> None:
+    banner("Pipeline")
+    started = time.perf_counter()
+    with client.pipeline() as pipe:
+        for i in range(500):
+            pipe.set(f"demo:pipe:{i}", str(i))
+        for i in range(0, 500, 100):
+            pipe.get(f"demo:pipe:{i}")
+        results = pipe.execute()
+    elapsed = (time.perf_counter() - started) * 1000
+    print(
+        f"505 commands in one round trip: {elapsed:.1f} ms; sampled gets = {results[-5:]}"
+    )
+
+
+def demo_streams(client: CyRedisClient) -> None:
+    banner("Streams and consumer groups")
+    stream, group = "demo:events", "demo-workers"
+    client.delete(stream)
+    client.xgroup_create(stream, group, id="0", mkstream=True)
+    for i in range(5):
+        client.xadd(
+            stream, {"event": "click", "n": str(i)}, maxlen=1000, approximate=True
+        )
+    print(f"stream length: {client.xlen(stream)}")
+
+    # Entries come back flattened as (stream, id, {field: value}).
+    entries = client.xreadgroup(group, "worker-1", {stream: ">"}, count=10)
+    ids = [entry_id for _, entry_id, _ in entries]
+    print(f"worker-1 read {len(ids)} messages, first: {entries[0][2]}")
+    print(f"acknowledged : {client.xack(stream, group, *ids)}")
+    print(f"pending now  : {client.xpending(stream, group)}")
+
+
+def demo_pubsub(client: CyRedisClient) -> None:
+    banner("Pub/Sub")
+    with client.pubsub() as subscriber:
+        subscriber.subscribe("demo:channel")
+        subscriber.get_message(timeout=1.0)  # the subscribe confirmation
+        receivers = client.publish("demo:channel", "hello from cy-redis")
+        message = subscriber.get_message(timeout=1.0, ignore_subscribe_messages=True)
+        print(f"published to {receivers} subscriber(s); received: {message}")
+
+
+def demo_json(client: CyRedisClient) -> None:
+    banner("JSON (module)")
+    if not loaded_modules(client) & {"rejson", "json"}:
+        print("no JSON module loaded on this server - skipping")
+        return
+    js = CyRedisJSON(HOST, PORT)
+    js.json_set("demo:doc", "$", {"name": "cy-redis", "tags": ["fast"], "stars": 1})
+    js.json_arrappend("demo:doc", "$.tags", "cython", "hiredis")
+    print(f"stars after NUMINCRBY: {js.json_numincrby('demo:doc', '$.stars', 41)}")
+    print(f"document             : {js.json_get('demo:doc', '$')}")
+
+
+async def demo_async() -> None:
+    banner("Async client")
+    async with AsyncRedisClient(HOST, PORT) as client:
+        await client.set("demo:async", "ok")
+        values = await asyncio.gather(*(client.get("demo:async") for _ in range(5)))
+        print(f"5 concurrent GETs: {values}")
+
+
+def cleanup(client: CyRedisClient) -> None:
+    keys = list(client.scan_iter(match="demo:*"))
+    if keys:
+        client.delete(*keys)
+    print(f"\nremoved {len(keys)} demo keys")
+
+
+def main() -> None:
+    with CyRedisClient(HOST, PORT) as client:
+        demo_server_info(client)
+        demo_strings_and_hashes(client)
+        demo_bitmaps_and_hll(client)
+        demo_sorted_sets(client)
+        demo_pipeline(client)
+        demo_streams(client)
+        demo_pubsub(client)
+        demo_json(client)
+        asyncio.run(demo_async())
+        cleanup(client)
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()
