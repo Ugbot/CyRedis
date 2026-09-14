@@ -2,14 +2,19 @@
 
 ← [README](../README.md) | [Web channels](web-channels.md) | [Getting started](getting-started.md)
 
+> **Experimental — not in the `cy-redis` wheel.** Everything on this page lives in
+> [`experimental/`](../experimental/README.md) (`cyredis_experimental.*`), is unsupported,
+> and has known correctness/security issues listed there. Build it separately with
+> `uv pip install --no-build-isolation -e ./experimental`.
+
 ## Web cache
 
 `WebCache` stores HTTP responses (or arbitrary values) in Redis with automatic
 expiry and a decorator for endpoints. The web layer pulls in FastAPI/PyJWT/pyotp
-via the `[web]` extra (`uv pip install -e ".[web]"`).
+via the experimental `[web]` extra (`uv pip install --no-build-isolation -e "./experimental[web]"`).
 
 ```python
-from cy_redis.web import WebCache
+from cyredis_experimental.web import WebCache
 
 # WebCache(redis_client=None, backend_type="redis", prefix="cyredis:cache",
 #          default_ttl=3600, backend_config=None)
@@ -33,7 +38,7 @@ async def get_user(user_id: int) -> dict:
 ### FastAPI integration
 
 ```python
-from cy_redis.web import CacheManager, create_redis_lifespan
+from cyredis_experimental.web import CacheManager, create_redis_lifespan
 
 # CacheManager wraps a backend directly; WebCache is the simpler entry point.
 app = FastAPI(lifespan=create_redis_lifespan(redis_client))
@@ -51,7 +56,7 @@ HTTP cache headers (`Cache-Control`, `ETag`) are managed by the cache's
 
 ## Auth and session management
 
-All auth modules live in `cy_redis.auth` and store their state in Redis. They
+All auth modules live in `cyredis_experimental.auth` and store their state in Redis. They
 require the `[auth]` extra (`uv pip install -e ".[auth]"`), which pulls in
 **PyJWT** (token signing/verification) and **pyotp** (TOTP 2FA).
 
@@ -61,7 +66,7 @@ Tokens are real JWTs (HS256). If you omit `secret_key`, a random one is
 generated per instance.
 
 ```python
-from cy_redis.auth import TokenManager
+from cyredis_experimental.auth import TokenManager
 
 # TokenManager(redis_client, secret_key=None,
 #              access_token_expiry=900, refresh_token_expiry=604800)
@@ -80,7 +85,7 @@ api = tokens.create_api_token("u123", scopes=["read"])
 ### Session manager
 
 ```python
-from cy_redis.auth import SessionManager
+from cyredis_experimental.auth import SessionManager
 
 # SessionManager(redis_client, session_timeout=3600, cleanup_interval=300)
 sessions = SessionManager(redis_client)
@@ -96,7 +101,7 @@ sessions.destroy_user_sessions("u123")
 ### WebSocket token
 
 ```python
-from cy_redis.web import WebAppSupport
+from cyredis_experimental.web import WebAppSupport
 
 # WebAppSupport(redis_client=None, host="localhost", port=6379)
 support = WebAppSupport(redis_client)
@@ -115,7 +120,7 @@ Backed by pyotp (RFC 6238 TOTP). `enable_2fa` returns the base32 secret, a set
 of one-time backup codes, and an `otpauth://` provisioning URL for QR display.
 
 ```python
-from cy_redis.auth import TwoFactorAuth
+from cyredis_experimental.auth import TwoFactorAuth
 
 tfa = TwoFactorAuth(redis_client)
 
@@ -131,7 +136,7 @@ tfa.disable_2fa("u123")
 ### Password reset
 
 ```python
-from cy_redis.auth import PasswordResetManager
+from cyredis_experimental.auth import PasswordResetManager
 
 # PasswordResetManager(redis_client, token_expiry=900)
 reset = PasswordResetManager(redis_client)
@@ -146,7 +151,7 @@ info = reset.verify_reset_token(token)   # {"user_id": ..., "email": ...}, or No
 `create_redis_lifespan` wires the Redis client (and optionally a `CyChannelManager`) into the FastAPI app lifecycle:
 
 ```python
-from cy_redis.web import create_redis_lifespan, get_redis, get_channels
+from cyredis_experimental.web import create_redis_lifespan, get_redis, get_channels
 
 # create_redis_lifespan(redis_client, channel_manager=None)
 app = FastAPI(lifespan=create_redis_lifespan(redis_client, channel_manager))

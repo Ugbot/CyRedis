@@ -28,7 +28,7 @@ Quick smoke-test (separate terminal):
 from fastapi import Depends, FastAPI, Query, WebSocket, WebSocketDisconnect
 
 from cy_redis import CyRedisClient
-from cy_redis.web import CyChannelManager, create_redis_lifespan, get_channels
+from cyredis_experimental.web import CyChannelManager, create_redis_lifespan, get_channels
 
 # ---------------------------------------------------------------------------
 # App bootstrap

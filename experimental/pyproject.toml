@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77", "Cython>=3.0,<4", "numpy>=1.21"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyredis-experimental"
+version = "0.0.0"
+description = "Unsupported, in-development CyRedis subsystems. Not published to PyPI."
+requires-python = ">=3.9"
+# Installed from the repository checkout only, alongside an editable cy-redis.
+dependencies = ["cy-redis"]
+
+[project.optional-dependencies]
+auth = ["PyJWT>=2.0", "pyotp>=2.6"]
+web = ["fastapi>=0.100", "PyJWT>=2.0", "pyotp>=2.6"]
+game = ["msgpack>=1.0"]
+ai = ["numpy>=1.21.0"]
+all = ["PyJWT>=2.0", "pyotp>=2.6", "fastapi>=0.100", "msgpack>=1.0", "numpy>=1.21.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cyredis_experimental*"]
+
+[tool.setuptools.package-data]
+"cyredis_experimental.game" = ["lua/*.lua", "module/Makefile", "module/*.c", "module/*.h"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyx"]

@@ -10,10 +10,9 @@ pyproject.toml:
 2. Drop the ``cy_redis.core.tls_support`` extension when OpenSSL development
    headers are missing, so plain-TCP installs still succeed anywhere. The
    client raises a clear error at runtime if TLS is requested on such a build.
-3. Inject numpy's include directory into the ``cy_redis.features.ai``
-   extension and OpenSSL's include/lib directories into ``tls_support``
-   (their paths are only known at build time).
-4. Default to compiling the ~30 extensions across all available cores; the
+3. Inject OpenSSL's include/lib directories into ``tls_support`` (the prefix
+   is only known at build time).
+4. Default to compiling the extensions across all available cores; the
    serial default dominates wheel build time.
 """
 import os
@@ -77,18 +76,7 @@ class build_ext(_build_ext):
             ]
 
         openssl_prefix = _find_openssl_prefix()
-        try:
-            import numpy
-
-            np_inc = numpy.get_include()
-        except ImportError:
-            # numpy missing → the ai extension fails to compile on its own,
-            # with a clearer C error than a silent skip would give.
-            np_inc = None
-
         for ext in self.extensions:
-            if ext.name == "cy_redis.features.ai" and np_inc and np_inc not in ext.include_dirs:
-                ext.include_dirs.append(np_inc)
             if ext.name == TLS_EXTENSION_NAME and openssl_prefix:
                 ext.include_dirs.append(os.path.join(openssl_prefix, "include"))
                 ext.library_dirs.append(os.path.join(openssl_prefix, "lib"))

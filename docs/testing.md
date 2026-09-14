@@ -154,12 +154,15 @@ glibc and cannot be relocated into an Alpine image — use the Debian-based
 `redis:7`.
 
 ```bash
-make module        # builds cyredis_game/module/cy_game.so
-docker run -d -p 6385:6379 -v "$PWD/cyredis_game/module:/mod:ro" redis:7 \
+uv pip install --no-build-isolation -e "./experimental[game]"
+make module        # builds experimental/cyredis_experimental/game/module/cy_game.so
+docker run -d -p 6385:6379 \
+    -v "$PWD/experimental/cyredis_experimental/game/module:/mod:ro" redis:7 \
     redis-server --loadmodule /mod/cy_game.so
-CY_GAME_REDIS_PORT=6385 uv run pytest tests/unit/test_physics.py \
-    tests/unit/test_goap.py tests/unit/test_pathfinding.py \
-    tests/unit/test_flecs_module.py tests/integration/test_cy_game_module.py
+CY_GAME_REDIS_PORT=6385 uv run pytest experimental/tests/unit/test_physics.py \
+    experimental/tests/unit/test_goap.py experimental/tests/unit/test_pathfinding.py \
+    experimental/tests/unit/test_flecs_module.py \
+    experimental/tests/integration/test_cy_game_module.py
 ```
 
 pgcache also needs libpq and jansson in the server image (see
@@ -167,13 +170,13 @@ pgcache also needs libpq and jansson in the server image (see
 both reach:
 
 ```bash
-make -C plugins/pgcache/src
+make -C experimental/pgcache/src
 docker build -t cyredis-pgcache tests/docker/pgcache
 docker run -d -p 5433:5432 -e POSTGRES_USER=pgcache \
     -e POSTGRES_PASSWORD=pgcache -e POSTGRES_DB=pgcache postgres:16
-docker run -d -p 6386:6379 -v "$PWD/plugins/pgcache/src:/mod:ro" cyredis-pgcache
+docker run -d -p 6386:6379 -v "$PWD/experimental/pgcache/src:/mod:ro" cyredis-pgcache
 PGCACHE_REDIS_PORT=6386 PGPORT=5433 PGUSER=pgcache PGPASSWORD=pgcache \
-    PGDATABASE=pgcache uv run pytest tests/integration/test_pgcache_module.py
+    PGDATABASE=pgcache uv run pytest experimental/tests/integration/test_pgcache_module.py
 ```
 
 ## Cluster and Sentinel
@@ -221,12 +224,15 @@ point the fixtures at an existing deployment.
 3. Use randomized data (not hardcoded values) so tests surface ordering and encoding bugs.
 4. Fix what the test reveals — do not adjust assertions to hide failures.
 
-## Plugin tests
+## Experimental tests
 
-The pgcache plugin has its own test suite:
+Tests for the unsupported subsystems under `experimental/` (web/auth, workers,
+queues, game engine, pgcache) live in `experimental/tests` and need the
+experimental package installed:
 
 ```bash
-uv run pytest plugins/pgcache/ -v -m pgcache
+uv pip install --no-build-isolation -e ./experimental
+uv run pytest experimental/tests
 ```
 
-See [plugins/pgcache/README.md](../plugins/pgcache/README.md) for setup requirements.
+See [experimental/README.md](../experimental/README.md) for setup requirements.

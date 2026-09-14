@@ -5,7 +5,6 @@ include pyproject.toml
 
 # Cython sources + C/C++ headers for the package (so the sdist can be recompiled)
 recursive-include cy_redis *.pyx *.pxd *.pyi *.hpp *.h py.typed
-recursive-include cyredis_game *.py *.pyx *.pxd *.md
 
 # Vendored hiredis — sources, headers, and Makefile only. libhiredis.a is
 # deliberately NOT shipped: a static archive is platform-specific, and
@@ -14,11 +13,6 @@ recursive-include hiredis *.c *.h Makefile
 
 # Lua scripts shipped as package data inside cy_redis/lua_scripts/
 recursive-include cy_redis/lua_scripts *.lua *.md
-
-# pgcache Redis module sources (server-side C module, scoped to src/)
-recursive-include plugins *.py *.md
-recursive-include plugins/pgcache/src *.c *.h
-include plugins/pgcache/Makefile plugins/pgcache/build_module.sh
 
 # Examples and docs
 recursive-include examples *.py *.md
@@ -33,7 +27,8 @@ global-exclude __pycache__
 global-exclude .DS_Store
 global-exclude .git*
 prune .github
+# Unsupported subsystems: developed in-repo, never shipped on PyPI.
+prune experimental
 prune build
 prune dist
 prune htmlcov
-prune **/psqlodbc

@@ -99,62 +99,37 @@ another process after expiry.
 Shared dicts expose a Python dict-like interface backed by a Redis Hash, making data accessible to multiple processes without explicit serialization.
 
 ```python
-from cy_redis.data import CySharedDict, ConcurrentSharedDict
+from cy_redis.data import CySharedDict, CySharedDictManager
 
-# CySharedDict(redis_client, dict_key) — dict_key is positional
-shared = CySharedDict(client, "config")
+# CySharedDict(redis_client, dict_key) — dict_key is the Redis hash key
+shared = CySharedDict(client, "shared_dict:config")
 shared["timeout"] = "30"
 shared["retries"] = "3"
 print(shared.get("timeout"))
 shared.increment("hits", 1)        # atomic numeric increment
 shared.increment_float("rate", 0.5)
 print(shared.keys(), shared.items())
+shared.multi_set({"a": "1", "b": "2"})
+print(shared.multi_get("a", "b"))    # variadic -> {"a": "1", "b": "2"}
+print(shared.bulk_get(["a", "b"]))   # list arg -> ["1", "2"]
 
-# ConcurrentSharedDict(dict_name, redis_client) — note argument order
-csd = ConcurrentSharedDict("counters", client)
-csd.increment("page_views", 1)
-csd.multi_set({"a": "1", "b": "2"})
-print(csd.multi_get("a", "b"))       # variadic -> {"a": "1", "b": "2"}
-print(csd.bulk_get(["a", "b"]))      # list arg -> ["1", "2"]
+# The manager namespaces dicts under "shared_dict:<name>" and caches instances
+counters = CySharedDictManager(client).get_dict("counters")
+counters.dict_key    # "shared_dict:counters"
+counters.dict_name   # "counters"
 ```
 
-### Shared state manager
-
-`SharedStateManager(redis_client)` provides distributed locks, counters, shared
-data, and pub/sub events for coordinating worker processes:
-
-```python
-from cy_redis.data import SharedStateManager
-
-state = SharedStateManager(client)
-
-# Shared data
-state.set_shared_data("feature_flags", {"dark_mode": True, "beta": False})
-print(state.get_shared_data("feature_flags"))
-
-# Counters
-state.increment_counter("views", 1)
-print(state.get_counter("views"))
-
-# Distributed locks
-token = state.acquire_lock("job", timeout=30)
-if token:
-    try:
-        ...
-    finally:
-        state.release_lock("job", token)
-
-# Pub/sub events
-state.publish_event("topic", {"kind": "update"})
-```
 
 ## Probabilistic structures
+
+> **Experimental — not in the `cy-redis` wheel.** Ships as
+> `cyredis_experimental.extras.probabilistic`; see [`experimental/`](../experimental/README.md).
 
 These are self-contained, in-process Cython data structures (not Redis
 server-side modules). Each is constructed standalone — no client argument.
 
 ```python
-from cy_redis.features import (
+from cyredis_experimental.extras.probabilistic import (
     CyBloomFilter, CyCountMinSketch, CyTopK, CyCuckooFilter,
 )
 
@@ -239,10 +214,13 @@ results = graph.query("social", "MATCH (p:Person)-[:KNOWS]->(f) RETURN p.name, f
 
 ## AI / tensors and models
 
+> **Experimental — not in the `cy-redis` wheel.** Ships as
+> `cyredis_experimental.extras.ai`; see [`experimental/`](../experimental/README.md).
+
 Requires the RedisAI module. Construct with `host`/`port`.
 
 ```python
-from cy_redis.features import CyRedisAI
+from cyredis_experimental.extras.ai import CyRedisAI
 
 ai = CyRedisAI(host="localhost", port=6379)
 
@@ -258,8 +236,11 @@ ai.modelexecute("m1", inputs=["a", "b"], outputs=["c"])
 
 ## Workers
 
+> **Experimental — not in the `cy-redis` wheel.** Ships as `cyredis_experimental.workers`;
+> the queue/hash key collision noted in [`experimental/README.md`](../experimental/README.md) is unfixed.
+
 ```python
-from cy_redis.workers import WorkerQueue, WorkerCoordinator, LifecycleManager
+from cyredis_experimental.workers import WorkerQueue, WorkerCoordinator, LifecycleManager
 
 # Enqueue work — note the constructor is WorkerQueue(queue_name, redis_client)
 queue = WorkerQueue("jobs", client, max_workers=4)
@@ -284,13 +265,15 @@ lifecycle.shutdown(graceful=True)
 
 ## Reliable queue
 
-`cy_redis.communication` provides a reliable, at-least-once queue with
+> **Experimental — not in the `cy-redis` wheel.** Ships as `cyredis_experimental.communication`.
+
+`cyredis_experimental.communication` provides a reliable, at-least-once queue with
 visibility timeouts, retries, and a dead-letter queue. Use `CyReliableQueue`
 directly with a `CyRedisClient` (the `ReliableQueue` Python wrapper expects a
 different client object). There is no separate `Messaging`/`RPC` class.
 
 ```python
-from cy_redis.communication import CyReliableQueue
+from cyredis_experimental.communication import CyReliableQueue
 
 q = CyReliableQueue(client, "tasks", visibility_timeout=30, max_retries=3)
 

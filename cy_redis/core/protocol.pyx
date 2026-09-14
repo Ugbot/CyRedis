@@ -5,270 +5,28 @@
 # cython: nonecheck=False
 # distutils: language=c
 
+"""RESP protocol version negotiation and per-connection capability state.
+
+Reply parsing lives in ``cy_redis_client.pyx`` next to the hiredis calls that
+produce the replies; this module only knows how to ask a server which
+protocol it speaks and remember the answer.
 """
-High-Performance RESP2/3 Protocol Implementation
-Supports Redis protocol versions 2 and 3 with auto-negotiation
-"""
-
-import time
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-
-# Import hiredis types
-cdef extern from "hiredis.h":
-    ctypedef struct redisReply:
-        int type
-        long long integer
-        double dval
-        size_t len
-        char *str
-        size_t elements
-        redisReply **element
-
-# RESP3 reply types (extending RESP2)
-DEF REDIS_REPLY_STRING = 1
-DEF REDIS_REPLY_ARRAY = 2
-DEF REDIS_REPLY_INTEGER = 3
-DEF REDIS_REPLY_NIL = 4
-DEF REDIS_REPLY_STATUS = 5
-DEF REDIS_REPLY_ERROR = 6
-
-# RESP3 additional types
-DEF REDIS_REPLY_DOUBLE = 7
-DEF REDIS_REPLY_BOOL = 8
-DEF REDIS_REPLY_MAP = 9
-DEF REDIS_REPLY_SET = 10
-DEF REDIS_REPLY_PUSH = 11
-DEF REDIS_REPLY_VERBATIM = 12
-DEF REDIS_REPLY_BIGNUM = 13
-DEF REDIS_REPLY_ATTRIBUTE = 14
-
-# Hard upper bound on RESP reply nesting depth. Real Redis replies nest only a
-# few levels; this cap turns a pathological/hostile deeply-nested reply into a
-# bounded, loud failure instead of unbounded recursion (TigerStyle: bound
-# everything; no unbounded recursion). Matches cy_redis_client.pyx.
-DEF MAX_REPLY_DEPTH = 128
 
 # Protocol version constants (module-level for Python import and default params)
 RESP2 = 2
 RESP3 = 3
 
-# Exception classes
+
 class RedisProtocolError(Exception):
-    """Protocol parsing error"""
+    """Protocol-level error"""
     pass
+
 
 class RedisConnectionError(Exception):
     """Connection-related error"""
     pass
 
-# RESP3 Push message handler
-cdef class PushMessageHandler:
-    """
-    Handles RESP3 push messages (server-initiated messages)
-    """
 
-    cdef list push_messages
-    cdef public object push_callback
-
-    def __cinit__(self):
-        self.push_messages = []
-        self.push_callback = None
-
-    cpdef void set_callback(self, callback):
-        """Set callback for push messages"""
-        self.push_callback = callback
-
-    cpdef void handle_push_message(self, list message):
-        """Handle incoming push message"""
-        # Precondition: a push message is a parsed list of elements.
-        assert message is not None, "push message must not be None"
-        assert isinstance(message, list), "push message must be a list"
-        self.push_messages.append({
-            'timestamp': time.time(),
-            'message': message
-        })
-
-        if self.push_callback:
-            try:
-                self.push_callback(message)
-            except Exception as e:
-                # Log error but don't crash
-                print(f"Push message callback error: {e}")
-
-    cpdef list get_pending_messages(self):
-        """Get pending push messages"""
-        cdef list messages = self.push_messages.copy()
-        self.push_messages.clear()
-        return messages
-
-# High-performance RESP protocol parser
-cdef class RESPParser:
-    """
-    High-performance RESP2/3 parser with support for all data types
-    """
-
-    cdef readonly int protocol_version
-    cdef readonly PushMessageHandler push_handler
-
-    def __cinit__(self, int protocol_version=RESP2):
-        # Precondition: only RESP2/RESP3 are valid wire protocols.
-        assert protocol_version in (RESP2, RESP3), "protocol version must be 2 or 3"
-        self.protocol_version = protocol_version
-        self.push_handler = PushMessageHandler()
-        # Postcondition: the parser came up with a usable push handler.
-        assert self.push_handler is not None, "push handler not initialised"
-
-    cpdef void set_protocol_version(self, int version):
-        """Set protocol version (2 or 3)"""
-        if version not in (RESP2, RESP3):
-            raise ValueError("Protocol version must be 2 or 3")
-        self.protocol_version = version
-        # Postcondition: the stored version reflects the validated request.
-        assert self.protocol_version in (RESP2, RESP3), "version not applied"
-
-    cdef object parse_reply(self, redisReply *reply):
-        """
-        Parse Redis reply with full RESP2/3 support
-        """
-        # Precondition: hiredis hands us a real reply; callers branch on NULL
-        # before parsing.
-        assert reply != NULL, "parse_reply called with NULL reply"
-        cdef list push_data
-
-        if reply.type == REDIS_REPLY_PUSH and self.protocol_version >= RESP3:
-            # Handle push message
-            push_data = self._parse_reply_recursive(reply, 0)
-            self.push_handler.handle_push_message(push_data)
-            return None  # Push messages don't return values to caller
-
-        return self._parse_reply_recursive(reply, 0)
-
-    cdef object _parse_reply_recursive(self, redisReply *reply, int depth):
-        """Recursive reply parsing, bounded by MAX_REPLY_DEPTH."""
-        # Preconditions: a real reply, and nesting within the documented cap so
-        # a hostile/corrupt reply cannot drive unbounded recursion.
-        assert reply != NULL, "recursive parse called with NULL reply"
-        assert 0 <= depth <= MAX_REPLY_DEPTH, "RESP reply nesting too deep"
-        if reply.type == REDIS_REPLY_STRING:
-            return self._parse_string(reply)
-        elif reply.type == REDIS_REPLY_ARRAY:
-            return self._parse_array(reply, depth)
-        elif reply.type == REDIS_REPLY_INTEGER:
-            return reply.integer
-        elif reply.type == REDIS_REPLY_DOUBLE and self.protocol_version >= RESP3:
-            return reply.dval
-        elif reply.type == REDIS_REPLY_BOOL and self.protocol_version >= RESP3:
-            return bool(reply.integer)
-        elif reply.type == REDIS_REPLY_NIL:
-            return None
-        elif reply.type == REDIS_REPLY_STATUS:
-            return self._parse_status(reply)
-        elif reply.type == REDIS_REPLY_ERROR:
-            return self._parse_error(reply)
-        elif reply.type == REDIS_REPLY_MAP and self.protocol_version >= RESP3:
-            return self._parse_map(reply, depth)
-        elif reply.type == REDIS_REPLY_SET and self.protocol_version >= RESP3:
-            return self._parse_set(reply, depth)
-        elif reply.type == REDIS_REPLY_VERBATIM and self.protocol_version >= RESP3:
-            return self._parse_verbatim(reply, depth)
-        elif reply.type == REDIS_REPLY_BIGNUM and self.protocol_version >= RESP3:
-            return self._parse_bignum(reply)
-        elif reply.type == REDIS_REPLY_ATTRIBUTE and self.protocol_version >= RESP3:
-            # Attributes are metadata, parse the actual value
-            return self._parse_reply_recursive(reply.element[1], depth + 1) if reply.elements >= 2 else None
-        else:
-            # Unknown type, return as string if possible
-            if reply.str:
-                return reply.str[:reply.len].decode('utf-8', errors='replace')
-            return None
-
-    cdef object _parse_string(self, redisReply *reply):
-        """Parse string reply"""
-        if reply.str and reply.len > 0:
-            return reply.str[:reply.len].decode('utf-8', errors='replace')
-        return ""
-
-    cdef object _parse_status(self, redisReply *reply):
-        """Parse status reply"""
-        if reply.str and reply.len > 0:
-            return reply.str[:reply.len].decode('utf-8', errors='replace')
-        return "OK"
-
-    cdef object _parse_error(self, redisReply *reply):
-        """Parse error reply"""
-        cdef str error_msg = ""
-        if reply.str and reply.len > 0:
-            error_msg = reply.str[:reply.len].decode('utf-8', errors='replace')
-        raise RedisProtocolError(error_msg)
-
-    cdef list _parse_array(self, redisReply *reply, int depth):
-        """Parse array reply"""
-        assert reply != NULL, "array parse called with NULL reply"
-        cdef list result = []
-        cdef size_t i
-        for i in range(reply.elements):
-            result.append(self._parse_reply_recursive(reply.element[i], depth + 1))
-        # Postcondition: every element was parsed into the result list.
-        assert len(result) == reply.elements, "array parse dropped an element"
-        return result
-
-    cdef dict _parse_map(self, redisReply *reply, int depth):
-        """Parse RESP3 map (key-value pairs)"""
-        # A map always carries an even number of elements. Guard the invariant
-        # before iterating pairs.
-        assert reply != NULL, "map parse called with NULL reply"
-        assert reply.elements % 2 == 0, "RESP3 map has odd element count"
-        cdef dict result = {}
-        cdef size_t i
-        cdef object key
-        cdef object value
-
-        # Maps come as flat key-value pairs
-        for i in range(0, reply.elements, 2):
-            if i + 1 < reply.elements:
-                key = self._parse_reply_recursive(reply.element[i], depth + 1)
-                value = self._parse_reply_recursive(reply.element[i + 1], depth + 1)
-                result[key] = value
-        return result
-
-    cdef set _parse_set(self, redisReply *reply, int depth):
-        """Parse RESP3 set"""
-        assert reply != NULL, "set parse called with NULL reply"
-        cdef set result = set()
-        cdef size_t i
-        for i in range(reply.elements):
-            result.add(self._parse_reply_recursive(reply.element[i], depth + 1))
-        return result
-
-    cdef object _parse_verbatim(self, redisReply *reply, int depth):
-        """Parse RESP3 verbatim string (format:encoding:data)"""
-        assert reply != NULL, "verbatim parse called with NULL reply"
-        cdef object content
-
-        if reply.elements >= 1:
-            content = self._parse_reply_recursive(reply.element[0], depth + 1)
-            if isinstance(content, str) and ':' in content:
-                # Format: "format:encoding:data"
-                parts = content.split(':', 2)
-                if len(parts) >= 3:
-                    return {
-                        'format': parts[0],
-                        'encoding': parts[1],
-                        'data': parts[2]
-                    }
-            return content
-        return ""
-
-    cdef object _parse_bignum(self, redisReply *reply):
-        """Parse RESP3 big number"""
-        if reply.str and reply.len > 0:
-            # Return as string to preserve precision
-            return reply.str[:reply.len].decode('utf-8', errors='replace')
-        return "0"
-
-# Protocol negotiation helper
 cdef class ProtocolNegotiator:
     """
     Handles RESP protocol version negotiation with Redis server
@@ -313,7 +71,7 @@ cdef class ProtocolNegotiator:
                 # Server doesn't support HELLO or RESP2 switching
                 pass
 
-# Connection state tracker
+
 cdef class ConnectionState:
     """
     Tracks connection state including protocol version and capabilities
@@ -362,7 +120,7 @@ cdef class ConnectionState:
                 if section and current_section:
                     self.server_info[current_section] = section
                     section = {}
-                current_section = line[1:] if line.startswith('#') else ""
+                current_section = line[1:].strip() if line.startswith('#') else ""
                 continue
 
             if ':' in line:
@@ -386,47 +144,3 @@ cdef class ConnectionState:
         # Check server info for other features
         return feature in self.server_info.get('modules', {}) or \
                feature in self.server_info.get('features', {})
-
-# Export Python interface
-class RedisProtocol:
-    """
-    Python interface to RESP protocol handling
-    """
-
-    def __init__(self, protocol_version=RESP2):
-        self._parser = RESPParser(protocol_version)
-        self._negotiator = None
-        self._connection_state = ConnectionState()
-
-    def set_protocol_version(self, version):
-        """Set protocol version"""
-        self._parser.set_protocol_version(version)
-        self._connection_state.protocol_version = version
-
-    def negotiate_protocol(self, redis_client):
-        """Negotiate protocol with server"""
-        if not self._negotiator:
-            self._negotiator = ProtocolNegotiator(redis_client)
-        version = self._negotiator.negotiate_protocol()
-        self.set_protocol_version(version)
-        return version
-
-    def set_push_callback(self, callback):
-        """Set callback for push messages"""
-        self._parser.push_handler.set_callback(callback)
-
-    def get_pending_push_messages(self):
-        """Get pending push messages"""
-        return self._parser.push_handler.get_pending_messages()
-
-    def parse_reply(self, reply):
-        """Parse a Redis reply"""
-        return self._parser.parse_reply(reply)
-
-    @property
-    def protocol_version(self):
-        return self._connection_state.protocol_version
-
-    @property
-    def supports_resp3(self):
-        return self._connection_state.supports_resp3

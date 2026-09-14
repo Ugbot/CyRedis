@@ -16,7 +16,11 @@ uv run python examples/<name>.py
 | `enhanced_cyredis_demo.py` | Broad feature tour (see note below) |
 | `cluster_aware_demo.py` | Cluster command helpers and routing (see note below) |
 
-## Web
+## Web (experimental)
+
+These import `cyredis_experimental.web`, which is not part of the `cy-redis`
+wheel — install it from [`experimental/`](../experimental/README.md) first
+(`uv pip install --no-build-isolation -e "./experimental[web]"`).
 
 | File | What it shows |
 |------|--------------|
@@ -25,7 +29,10 @@ uv run python examples/<name>.py
 | `web_cache_example.py` | `WebCache` set/get, the `cached_endpoint` decorator, namespace/pattern invalidation |
 | `web_cache_simple_example.py` | Minimal web cache usage |
 
-## Integrations
+## Integrations (experimental)
+
+The ClickHouse bridge is `cyredis_experimental.extras.clickhouse`, also outside
+the wheel.
 
 | File | What it shows |
 |------|--------------|

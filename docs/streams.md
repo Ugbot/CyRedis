@@ -79,10 +79,13 @@ All iterators handle timeouts gracefully (yield `None` on timeout, allowing the 
 
 ## ClickHouse bridge
 
+> **Experimental — not in the `cy-redis` wheel.** The bridge lives in
+> [`experimental/`](../experimental/README.md) as `cyredis_experimental.extras.clickhouse`.
+
 `CyClickHouseBridge` moves data between ClickHouse and Redis using four patterns.
 
 ```python
-from cy_redis.integrations.clickhouse import CyClickHouseClient, CyClickHouseBridge
+from cyredis_experimental.extras.clickhouse import CyClickHouseClient, CyClickHouseBridge
 
 ch = CyClickHouseClient(host="localhost", port=8123)
 bridge = CyClickHouseBridge(ch, redis_client)

@@ -1,16 +1,17 @@
 """
-CyRedis - High-performance Cython Redis client with advanced features.
+CyRedis - High-performance Cython Redis and Valkey client.
 
-This package provides a comprehensive Redis client implementation with:
-- Core Redis operations with Cython performance
-- Connection pooling and protocol handling
-- Asynchronous operations
-- Distributed locks and coordination
-- Reliable queues, messaging, and RPC with service discovery
-- Native TLS (hiredis_ssl/OpenSSL) with connection retry/backoff
-- Advanced data structures
-- Web application support with authentication and sessions
-- Worker coordination and lifecycle management
+This package provides:
+- Core Redis operations with Cython performance (hiredis, ``nogil`` I/O)
+- Connection pooling, RESP2/RESP3, native TLS (hiredis_ssl/OpenSSL)
+- Cluster and Sentinel clients
+- Distributed locks, Lua script management and Redis Functions
+- JSON, Search and Graph module wrappers with capability detection
+- Redis-backed shared dictionaries and async iterators
+
+Web/auth, worker coordination, queues, the game engine and the pgcache
+server module live in the repository's ``experimental/`` tree and are not
+part of this distribution.
 
 Every public name below is backed by a compiled extension. A name whose
 extension failed to import is left unbound: touching it raises an ImportError
@@ -65,24 +66,9 @@ except ImportError as exc:
     _unavailable(exc, "CyDistributedLock")
 
 try:
-    from cy_redis.features.advanced import CyAdvancedRedisClient as RedisAdvanced
+    from cy_redis.data.shared_dict import CySharedDict, CySharedDictManager
 except ImportError as exc:
-    _unavailable(exc, "RedisAdvanced")
-
-try:
-    from cy_redis.data.shared_dict import CySharedDict
-except ImportError as exc:
-    _unavailable(exc, "CySharedDict")
-
-try:
-    from cy_redis.data.concurrent_shared_dict import ConcurrentSharedDict
-except ImportError as exc:
-    _unavailable(exc, "ConcurrentSharedDict")
-
-try:
-    from cy_redis.web.web_cache import WebCache
-except ImportError as exc:
-    _unavailable(exc, "WebCache")
+    _unavailable(exc, "CySharedDict", "CySharedDictManager")
 
 try:
     from cy_redis.features.script_manager import (
@@ -96,11 +82,6 @@ try:
     from cy_redis.features.functions import CyRedisFunctionsManager, RedisFunctions
 except ImportError as exc:
     _unavailable(exc, "CyRedisFunctionsManager", "RedisFunctions")
-
-try:
-    from cy_redis.communication.messaging import CyReliableQueue, ReliableQueue
-except ImportError as exc:
-    _unavailable(exc, "CyReliableQueue", "ReliableQueue")
 
 try:
     from cy_redis.utils.redis_iterators import (
@@ -118,11 +99,6 @@ except ImportError as exc:
         "RedisStreamIterator",
     )
 
-try:
-    from cy_redis.web.channels import CyChannelConnection, CyChannelManager
-except ImportError as exc:
-    _unavailable(exc, "CyChannelConnection", "CyChannelManager")
-
 # Make submodules available for advanced usage
 try:
     from . import core
@@ -130,29 +106,9 @@ except ImportError as exc:
     _unavailable(exc, "core")
 
 try:
-    from . import communication
-except ImportError as exc:
-    _unavailable(exc, "communication")
-
-try:
     from . import features
 except ImportError as exc:
     _unavailable(exc, "features")
-
-try:
-    from . import web
-except ImportError as exc:
-    _unavailable(exc, "web")
-
-try:
-    from . import auth
-except ImportError as exc:
-    _unavailable(exc, "auth")
-
-try:
-    from . import workers
-except ImportError as exc:
-    _unavailable(exc, "workers")
 
 try:
     from . import data
@@ -190,33 +146,19 @@ __all__ = [
     # Lua script management
     "CyLuaScriptManager",
     "OptimizedLuaScriptManager",
-    # Advanced operations
-    "RedisAdvanced",
-    # Messaging
-    "CyReliableQueue",
-    "ReliableQueue",
     # Async iterators
     "RedisStreamIterator",
     "RedisListIterator",
     "RedisPubSubIterator",
     "RedisPSubIterator",
-    # Channels (WebSocket + pub/sub + stream rewind)
-    "CyChannelManager",
-    "CyChannelConnection",
     # Data structures
     "CySharedDict",
-    "ConcurrentSharedDict",
-    # Web support
-    "WebCache",
+    "CySharedDictManager",
     # Install diagnostics
     "import_errors",
     # Submodules for advanced usage
     "core",
-    "communication",
     "features",
-    "web",
-    "auth",
-    "workers",
     "data",
     "utils",
 ]

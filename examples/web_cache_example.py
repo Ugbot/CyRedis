@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 # Import our new web cache functionality
 from cy_redis import CyRedisClient
-from cy_redis.web.web_cache import (
+from cyredis_experimental.web.web_cache import (
     JsonCoder,
     PickleCoder,
     RequestKeyBuilder,

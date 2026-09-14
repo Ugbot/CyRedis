@@ -7,15 +7,18 @@ High-performance Redis client for Python, built with Cython and the vendored [hi
 - **Full Redis command coverage** — strings, lists, sets, sorted sets, hashes, streams, HyperLogLog, bitmaps, pub/sub, scripting, transactions
 - **Sync and async** — every operation has a sync path and an `*_async` coroutine; async path uses `run_in_executor` over the same native pool
 - **TLS** — native via hiredis_ssl/OpenSSL, including mutual TLS and SNI; connection retry with exponential backoff built in
-- **RPC** — Redis-backed request/response with service discovery, heartbeat liveness, and multi-worker servers (`cy_redis.communication.rpc`)
-- **Distributed WebSocket channels** — `CyChannelManager` gives you Redis-backed pub/sub channels with stream rewind, per-subscriber filters, and presence tracking; drops into FastAPI in three lines ([docs/web-channels.md](https://github.com/Ugbot/CyRedis/blob/main/docs/web-channels.md))
-- **Web layer** — HTTP response cache, JWT tokens, session management, 2FA, password reset ([docs/web.md](https://github.com/Ugbot/CyRedis/blob/main/docs/web.md))
-- **Redis Streams** — async iterators for `SUBSCRIBE`, `PSUBSCRIBE`, and `XREAD`; ClickHouse bridge for materializing query results into streams ([docs/streams.md](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md))
+- **Cluster and Sentinel** — native `CyRedisCluster` (slot map, `MOVED`/`ASK`, cross-slot fan-out) and `CySentinel` (master discovery, failover re-resolve)
+- **Redis Streams** — async iterators for `SUBSCRIBE`, `PSUBSCRIBE`, and `XREAD` ([docs/streams.md](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md))
 - **Lua scripting and Redis Functions** — pre-built scripts plus a script manager for atomic multi-key operations ([docs/scripting.md](https://github.com/Ugbot/CyRedis/blob/main/docs/scripting.md))
-- **Advanced features** — cluster command helpers, distributed locks, shared dicts (cross-process), probabilistic structures, JSON, full-text search, graph, RedisAI tensors/models ([docs/advanced.md](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md))
-- **Workers** — worker queues, lifecycle manager, worker coordinator, multi-session tracker
-- **Game engine** — authoritative ECS simulation backed by Redis Streams ([cyredis_game/README.md](https://github.com/Ugbot/CyRedis/blob/main/cyredis_game/README.md))
-- **PostgreSQL cache plugin** — Redis module that serves as a read-through cache for Postgres ([plugins/pgcache/README.md](https://github.com/Ugbot/CyRedis/blob/main/plugins/pgcache/README.md))
+- **Modules** — JSON, full-text/vector search and graph wrappers with capability probing, so a missing module raises a clear `ModuleUnavailableError` ([docs/advanced.md](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md), [docs/valkey.md](https://github.com/Ugbot/CyRedis/blob/main/docs/valkey.md))
+- **Distributed primitives** — distributed locks and cross-process shared dicts (`CySharedDict`)
+
+The web layer, auth (JWT/sessions/2FA), worker coordination, RPC/reliable queues,
+the ClickHouse bridge, probabilistic/AI structures, the game engine and the pgcache
+Redis module are **not part of this package**. They live in
+[`experimental/`](https://github.com/Ugbot/CyRedis/tree/main/experimental) in the
+repository, are unsupported, and are built separately — see
+[experimental/README.md](https://github.com/Ugbot/CyRedis/blob/main/experimental/README.md).
 
 ## Quick start
 
@@ -28,15 +31,10 @@ glibc and musl) and macOS (arm64 on 14.0+, x86_64 on 15.0+). On other platforms 
 the sdist, which needs a C/C++ toolchain and `make` (the vendored hiredis
 builds automatically).
 
-Optional feature layers (the core client has no runtime dependencies):
+The core client has no runtime dependencies. One optional extra:
 
 ```bash
 pip install "cy-redis[async]"   # uvloop
-pip install "cy-redis[ai]"      # numpy (vector/AI features)
-pip install "cy-redis[auth]"    # PyJWT + pyotp (tokens, 2FA)
-pip install "cy-redis[web]"     # fastapi + PyJWT + pyotp
-pip install "cy-redis[game]"    # msgpack (game engine)
-pip install "cy-redis[all]"     # everything above
 ```
 
 Working from a checkout:
@@ -100,38 +98,32 @@ See [docs/getting-started.md](https://github.com/Ugbot/CyRedis/blob/main/docs/ge
 |------|---------------|
 | [Getting started](https://github.com/Ugbot/CyRedis/blob/main/docs/getting-started.md) | Install, connect, sync vs async, connection pool |
 | [Core API](https://github.com/Ugbot/CyRedis/blob/main/docs/core-api.md) | Commands by data type, transactions, pipelines |
-| [Web channels](https://github.com/Ugbot/CyRedis/blob/main/docs/web-channels.md) | `CyChannelManager` — WebSocket pub/sub, stream rewind, filters, presence |
-| [Web layer](https://github.com/Ugbot/CyRedis/blob/main/docs/web.md) | Web cache, JWT, sessions, 2FA, FastAPI integration |
-| [Streams & integrations](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md) | Redis Streams, async iterators, ClickHouse bridge |
+| [Streams & integrations](https://github.com/Ugbot/CyRedis/blob/main/docs/streams.md) | Redis Streams, async iterators (ClickHouse bridge is experimental) |
 | [Scripting](https://github.com/Ugbot/CyRedis/blob/main/docs/scripting.md) | Lua scripts, Redis Functions, script manager |
-| [Advanced features](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md) | Cluster command helpers, distributed locks, shared dicts, probabilistic, JSON, search, graph |
+| [Advanced features](https://github.com/Ugbot/CyRedis/blob/main/docs/advanced.md) | Cluster command helpers, distributed locks, shared dicts, JSON, search, graph |
 | [Redis and Valkey parity](https://github.com/Ugbot/CyRedis/blob/main/docs/valkey.md) | What behaves identically, and which module features differ |
 | [Testing](https://github.com/Ugbot/CyRedis/blob/main/docs/testing.md) | Running the test suite, CI, adding tests |
 | [Examples](https://github.com/Ugbot/CyRedis/blob/main/examples/README.md) | Runnable example scripts |
-| [Plugins](https://github.com/Ugbot/CyRedis/blob/main/plugins/README.md) | Plugin architecture, pgcache |
-| [Game engine](https://github.com/Ugbot/CyRedis/blob/main/cyredis_game/README.md) | ECS game engine on Redis |
+| [Experimental](https://github.com/Ugbot/CyRedis/blob/main/experimental/README.md) | Unsupported subsystems outside the wheel: web/auth, workers, queues, game engine, pgcache |
 | [Changelog](https://github.com/Ugbot/CyRedis/blob/main/CHANGELOG.md) | Version history |
 
 ## Architecture
 
 ```
-cy_redis/
-  core/           — CyRedisClient, connection pool, protocol, async core
-  features/       — advanced: distributed, functions, script_manager,
-                    probabilistic, json_ops, search, graph, ai
-  auth/           — token_manager, session_manager, two_factor_auth,
-                    password_reset_manager
-  data/           — shared_dict, concurrent_shared_dict, shared_state_manager
-  workers/        — worker_queue, lifecycle_manager, worker_coordinator,
-                    multi_session_tracker
-  communication/  — messaging, reliable queue (CyReliableQueue)
-  web/            — web_cache, web_app_support, channels, fastapi_integration
+cy_redis/                      — the published package
+  core/           — CyRedisClient, connection pool, protocol negotiation,
+                    cluster, sentinel, TLS, async core
+  features/       — distributed locks, functions, script_manager,
+                    capabilities, json_ops, search, graph
+  data/           — shared_dict (CySharedDict, CySharedDictManager)
+  lua_scripts/    — bundled Lua sources
   utils/          — redis_iterators (stream/pubsub async generators)
-  integrations/   — clickhouse bridge
-hiredis/          — vendored hiredis C library (built into every extension)
-cyredis_game/     — game engine extension
-plugins/          — loadable Redis server modules
-  pgcache/        — PostgreSQL read-through cache module
+hiredis/                       — vendored hiredis C library (built into every extension)
+experimental/                  — unsupported, not packaged; separate build
+  cyredis_experimental/
+    auth/ web/ workers/ communication/ game/ extras/
+  pgcache/        — PostgreSQL read-through cache Redis module
+  tests/
 ```
 
 ## Requirements

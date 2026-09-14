@@ -193,17 +193,17 @@ info: ## Show project information
 
 module-fetch: ## Fetch FLECS + redismodule.h vendor headers (requires internet)
 	@echo "$(BLUE)Fetching vendor headers for cy_game module...$(NC)"
-	$(MAKE) -C cyredis_game/module fetch-headers
+	$(MAKE) -C experimental/cyredis_experimental/game/module fetch-headers
 	@echo "$(GREEN)Vendor headers fetched$(NC)"
 
 module: ## Build cy_game.so Redis module
 	@echo "$(BLUE)Building cy_game Redis module...$(NC)"
-	$(MAKE) -C cyredis_game/module
-	@echo "$(GREEN)cy_game.so built: cyredis_game/module/cy_game.so$(NC)"
+	$(MAKE) -C experimental/cyredis_experimental/game/module
+	@echo "$(GREEN)cy_game.so built: experimental/cyredis_experimental/game/module/cy_game.so$(NC)"
 
 module-clean: ## Clean cy_game.so build artifacts
 	@echo "$(BLUE)Cleaning cy_game module build artifacts...$(NC)"
-	$(MAKE) -C cyredis_game/module clean
+	$(MAKE) -C experimental/cyredis_experimental/game/module clean
 	@echo "$(GREEN)Module clean completed$(NC)"
 
 .DEFAULT_GOAL := help
