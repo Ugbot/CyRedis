@@ -9,8 +9,10 @@ hiredis static library that the main ``setup.py`` produces, so run
 
 in that order.
 """
+
 import os
 
+from Cython.Build import cythonize
 from setuptools import Extension, setup
 
 HERE = os.path.abspath(os.path.dirname(__file__))
@@ -79,8 +81,16 @@ for module in CPP_MODULES:
             module,
             language="c++",
             extra_compile_args=["-std=c++14"],
-            include_dirs=[os.path.join(HERE, "cyredis_experimental/extras/cpp")] + numpy_include,
+            include_dirs=[os.path.join(HERE, "cyredis_experimental/extras/cpp")]
+            + numpy_include,
         )
     )
 
-setup(ext_modules=extensions)
+setup(
+    ext_modules=cythonize(
+        extensions,
+        include_path=[REPO],
+        compiler_directives={"language_level": "3"},
+        nthreads=os.cpu_count() or 1,
+    )
+)

@@ -71,7 +71,9 @@ jobs:
       # The experimental tree is a separate, never-published build that
       # compiles against the vendored hiredis the step above produced.
       - name: Install the experimental package
-        run: uv pip install --system --no-build-isolation -e "./experimental[game]"
+        run: |
+          uv pip install --system "Cython>=3.0,<4" "numpy>=1.21"
+          uv pip install --system --no-build-isolation -e "./experimental[game]"
 
       - name: Build the cy_game module
         # The flecs and redismodule headers are vendored, so no fetch step.

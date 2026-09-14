@@ -26,6 +26,7 @@ hiredis, so build the supported package first:
 
 ```bash
 uv pip install -e .                                   # repository root
+uv pip install "Cython>=3.0,<4" "numpy>=1.21"          # build deps for --no-build-isolation
 uv pip install --no-build-isolation -e ./experimental  # or ./experimental[game]
 ```
 
