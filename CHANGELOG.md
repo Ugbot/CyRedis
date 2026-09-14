@@ -25,6 +25,29 @@ from an sdist until 2026-05-06, and the release polish ran through 2026-09.
 - `redis_core`, the pure-Python compat shims, the `RESPParser` draft and the
   checked-in dylibs were deleted.
 
+### Transactions, pipelines and binary data (2026-09-14)
+- The client-level `multi()`, `exec_()`, `discard()`, `watch()`, `unwatch()`
+  (and their `_async` variants) are gone: each one checked out a different
+  pooled connection, so MULTI and EXEC never met and a connection was handed
+  back mid-transaction. Use `client.transaction()`, a pipeline pinned to one
+  connection for the whole `watch() ... multi() ... execute()` lifetime.
+- Connections track their MULTI/WATCH state and unread replies. The pool only
+  re-issues a clean connection: an open block is cleared with DISCARD/UNWATCH,
+  a connection with unread replies or a dead socket is dropped.
+- `pipeline.execute()` reads every reply before it returns or raises, so an
+  error in the middle of a batch can no longer desynchronise the connection.
+  Errors become `RedisError` objects in the result list; the first is raised
+  after the drain unless `execute(raise_on_error=False)`. Transactional
+  pipelines send `MULTI ... EXEC` as one batch and surface the queued command
+  that caused an `EXECABORT`. `pipeline.discard()` drops the buffer.
+- `decode_responses=False` on `CyRedisClient`/`CyRedisConnectionPool`/
+  `CyRedisConnection` returns bulk strings as `bytes`. The default (`True`)
+  decodes strictly: undecodable data raises `UnicodeDecodeError` instead of
+  being silently replaced with U+FFFD. Status/error replies stay `str`.
+- `bytes`, `bytearray` and `memoryview` arguments go on the wire untouched;
+  the `str()` coercion of keys, members, fields and values in the command
+  wrappers (which turned `b"x"` into the text `b'x'`) is removed.
+
 ### Developer loop (2026-09-14)
 - `uv sync` installs a `dev` dependency group that matches the `test` extra plus
   the lint/format/type-check/Cython/build tooling the Makefile and CI use.

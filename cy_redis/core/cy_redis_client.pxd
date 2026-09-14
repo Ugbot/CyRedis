@@ -85,6 +85,12 @@ cdef class CyRedisConnection:
     cdef object _ssl_context_capsule
     cdef int _connect_retries
     cdef double _connect_backoff
+    cdef bint _decode_responses
+    # Server-side session state this connection carries. A connection is only
+    # fit to re-enter the pool when all three are clear.
+    cdef bint _in_multi
+    cdef bint _watching
+    cdef int _pending_replies
 
     # `except? -1`: -1 is a legitimate "connect failed" return; only treat it
     # as an exception when one is actually set (TLS/config errors raise).
@@ -96,6 +102,10 @@ cdef class CyRedisConnection:
     cdef object _ensure_connected_and_run(self, list args)
     cpdef object _execute_command(self, list args)
     cdef object _parse_reply(self, redisReply *reply, int depth=*)
+    cdef object _parse_reply_ex(self, redisReply *reply, int depth, bint raise_on_error)
+    cdef void _note_command(self, list args, redisReply *reply)
+    cdef bint _is_clean(self)
+    cdef bint _make_clean(self) except *
 
 # Connection pool class - manages multiple CyRedisConnection instances
 cdef class CyRedisConnectionPool:
@@ -119,6 +129,7 @@ cdef class CyRedisConnectionPool:
     cdef str _ssl_server_name
     cdef int _connect_retries
     cdef double _connect_backoff
+    cdef bint _decode_responses
 
     cpdef CyRedisConnection get_connection(self)
     cpdef void return_connection(self, CyRedisConnection conn)
@@ -136,7 +147,7 @@ cdef class CyRedisPipeline:
     cdef int _queue(self, list args, int transform) except -1
     cdef object _run_or_queue(self, list args, int transform)
     cdef int _append_one(self, list args) except -1
-    cdef list _read_replies(self, int n, list transforms)
+    cdef list _read_replies(self, int n)
 
 # Main client class - provides high-level Redis operations
 cdef class CyRedisClient:

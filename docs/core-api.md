@@ -186,23 +186,40 @@ results = pipe.execute()          # [True, "1"]
 with client.pipeline() as pipe:
     results = pipe.set("b", "x").get("b").execute()   # [True, "x"]
 
-# Optimistic locking inside a pipeline (WATCH/MULTI)
-pipe = client.pipeline()
-pipe.watch("counter")
-pipe.multi()
-pipe.set("counter", "100")
-pipe.execute()
+# Errors are drained, not leaked: every reply is read before raising, and
+# execute(raise_on_error=False) hands the errors back as RedisError objects
+with client.pipeline() as pipe:
+    pipe.set("s", "x").lpush("s", "y").get("s")
+    pipe.execute(raise_on_error=False)   # [True, RedisError('WRONGTYPE ...'), "x"]
 ```
 
-The client also exposes inline transaction commands (`watch`, `multi`,
-`exec_`, `discard`, `unwatch`) directly on the connection:
+Transactions use `client.transaction()`: a pipeline pinned to one connection
+for the whole WATCH ... MULTI ... EXEC lifetime. After `watch()` reads run
+immediately; after `multi()` commands buffer and `execute()` sends
+`MULTI ... EXEC` in one batch. `None` from `execute()` means a watched key
+changed. Leaving the block without executing (or raising inside it) clears the
+WATCH/MULTI state before the connection goes back to the pool.
 
 ```python
-client.watch("counter")
-val = client.get("counter")
-client.multi()
-client.set("counter", str(int(val) + 1))
-client.exec_()                    # ["OK"]
+with client.transaction() as tx:
+    tx.watch("counter")
+    current = int(tx.get("counter") or 0)
+    tx.multi()
+    tx.set("counter", current + 1)
+    tx.execute()                      # [True], or None if "counter" changed
+```
+
+## Binary data
+
+Bulk strings are decoded as UTF-8 by default and undecodable data raises
+`UnicodeDecodeError`. Pass `decode_responses=False` to get `bytes` back
+instead; keys and values given as `bytes`/`bytearray`/`memoryview` are sent
+verbatim in either mode.
+
+```python
+raw = CyRedisClient(decode_responses=False)
+raw.set(b"k\x00", b"\xff\x00")
+raw.get(b"k\x00")                    # b"\xff\x00"
 ```
 
 ## Key management
