@@ -28,7 +28,7 @@ Valkey: plain `redis:7` and `valkey/valkey:8` carry no modules at all, while
 | `cy_redis.features.search` — `FT.CREATE`, `FT.SEARCH`, `FT.INFO`, `FT.DROPINDEX` | RediSearch | valkey-search, TAG/NUMERIC/VECTOR fields |
 | `cy_redis.features.search` — `FT.AGGREGATE`, `FT.SUG*`, `FT.DICT*`, `FT.ALTER`, TEXT fields | RediSearch | not implemented |
 | `cy_redis.features.graph` (`GRAPH.*`) | RedisGraph, end-of-life since Redis Stack 7.4 | no equivalent |
-| `cy_redis.features.ai` (`AI.*`) | RedisAI | no equivalent |
+| `cyredis_experimental.extras.ai` (`AI.*`, experimental, not in the wheel) | RedisAI | no equivalent |
 
 Vector search works the same on both. `ft_create` renders VECTOR fields from an
 options dict and `ft_search` takes query parameters and a dialect:

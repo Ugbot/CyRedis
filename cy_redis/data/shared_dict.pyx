@@ -7,20 +7,25 @@
 
 """
 Shared Dictionary - Replicated dictionary via Redis with concurrency control
+
+One implementation serves both the single-process and the multi-writer
+("concurrent") use: every mutation takes the per-dict distributed lock,
+re-reads the latest document, writes it back, and refreshes the local cache.
 """
 
 import json
 import time
-import uuid
+import zlib
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, Iterator, Optional, Union
 
 # Import our optimized components
 from cy_redis.core.cy_redis_client import CyRedisClient
 from cy_redis.features.distributed import CyDistributedLock
 
-
 # Shared dictionary with Redis replication and concurrency control
+KEY_PREFIX = "shared_dict:"
+
+
 cdef class CySharedDict:
     """
     High-performance shared dictionary replicated via Redis with concurrency control.
@@ -28,7 +33,7 @@ cdef class CySharedDict:
 
     cdef object redis
     cdef readonly str dict_key
-    cdef str lock_key
+    cdef readonly str lock_key
     cdef object lock
     cdef bint use_compression
     cdef object executor
@@ -66,6 +71,13 @@ cdef class CySharedDict:
         if self.executor:
             self.executor.shutdown(wait=True)
 
+    @property
+    def dict_name(self):
+        """Logical name: ``dict_key`` without the ``shared_dict:`` prefix."""
+        if self.dict_key.startswith(KEY_PREFIX):
+            return self.dict_key[len(KEY_PREFIX):]
+        return self.dict_key
+
     cdef dict _load_from_redis(self):
         """Load dictionary from Redis."""
         cdef str data = self.redis.get(self.dict_key)
@@ -73,7 +85,6 @@ cdef class CySharedDict:
         cdef bytes compressed
         cdef bytes decompressed
         cdef object result
-        import zlib
 
         if data:
             try:
@@ -106,7 +117,6 @@ cdef class CySharedDict:
         cdef str json_data = json.dumps(data, sort_keys=True)
         cdef bytes compressed
         cdef long serialized_length = len(json_data)
-        import zlib
 
         # Invariant: json.dumps of a dict is a non-empty str ("{}" at minimum).
         assert serialized_length >= 2, "serialized JSON object is at least '{}'"
@@ -312,6 +322,15 @@ cdef class CySharedDict:
         cdef dict data = self._ensure_synced()
         return [data.get(key) for key in keys]
 
+    def multi_get(self, *keys):
+        """Get multiple keys as a dictionary (missing keys map to None)."""
+        cdef dict data = self._ensure_synced()
+        return {key: data.get(key) for key in keys}
+
+    cpdef void multi_set(self, dict mapping):
+        """Set multiple key-value pairs under a single lock acquisition."""
+        self.bulk_update(mapping)
+
     # Atomic operations
     cpdef long increment(self, str key, long amount=1):
         """Atomically increment a numeric value."""
@@ -387,13 +406,15 @@ cdef class CySharedDict:
         assert total_size >= 2, "serialized size is at least '{}'"
 
         return {
+            'name': self.dict_name,
             'key_count': len(data),
             'total_size_bytes': total_size,
             'compression_enabled': self.use_compression,
             'is_compressed': compressed,
             'cache_age_seconds': <long>time.time() - self.last_sync,
             'cache_ttl_seconds': self.cache_ttl,
-            'lock_key': self.lock_key
+            'lock_key': self.lock_key,
+            'redis_key': self.dict_key,
         }
 
     # Copy operations
@@ -405,7 +426,7 @@ cdef class CySharedDict:
     def __repr__(self):
         """String representation."""
         cdef dict data = self._ensure_synced()
-        return f"SharedDict({dict(data)})"
+        return f"CySharedDict({self.dict_key!r}, {len(data)} items)"
 
 
 # Shared dictionary manager for multiple dictionaries
@@ -438,7 +459,7 @@ cdef class CySharedDictManager:
             raise ValueError("cache_ttl must be non-negative")
 
         if name not in self.dicts:
-            self.dicts[name] = CySharedDict(self.redis, f"shared_dict:{name}",
+            self.dicts[name] = CySharedDict(self.redis, KEY_PREFIX + name,
                                            use_compression, cache_ttl)
         # Postcondition: a registered dict is always returned for this name.
         assert name in self.dicts, "dict must be registered after get_dict"

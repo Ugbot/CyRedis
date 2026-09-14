@@ -2,6 +2,11 @@
 
 ← [README](../README.md) | [Web layer](web.md) | [Streams & integrations](streams.md)
 
+> **Experimental — not in the `cy-redis` wheel.** Everything on this page lives in
+> [`experimental/`](../experimental/README.md) (`cyredis_experimental.*`), is unsupported,
+> and has known correctness/security issues listed there. Build it separately with
+> `uv pip install --no-build-isolation -e ./experimental`.
+
 `CyChannelManager` provides distributed WebSocket channels backed by Redis pub/sub and Redis Streams. Multiple Python processes share the same channel state through Redis — no separate message broker needed.
 
 ## Why not Socket.IO
@@ -18,7 +23,7 @@
 
 ```python
 from cy_redis import CyRedisClient
-from cy_redis.web import CyChannelManager, create_redis_lifespan, get_channels
+from cyredis_experimental.web import CyChannelManager, create_redis_lifespan, get_channels
 from fastapi import FastAPI, WebSocket, Depends, Query
 
 redis = CyRedisClient(host="localhost", port=6379)

@@ -48,8 +48,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -57,7 +55,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
@@ -70,19 +68,26 @@ jobs:
       - name: Install package
         run: uv pip install --system -e ".[dev,test]"
 
+      # The experimental tree is a separate, never-published build that
+      # compiles against the vendored hiredis the step above produced.
+      - name: Install the experimental package
+        run: |
+          uv pip install --system "Cython>=3.0,<4" "numpy>=1.21"
+          uv pip install --system --no-build-isolation -e "./experimental[game]"
+
       - name: Build the cy_game module
         # The flecs and redismodule headers are vendored, so no fetch step.
         run: make module
 
       - name: Build the pgcache module
-        run: make -C plugins/pgcache/src
+        run: make -C experimental/pgcache/src
 
       # redis:7 rather than redis:7-alpine: both modules link against glibc and
       # fail to relocate into musl ("Error relocating cy_game.so: __snprintf_chk").
       - name: Start a Redis with cy_game loaded
         run: |
           docker run -d --name cy-game-redis -p 6385:6379 \
-            -v "$PWD/cyredis_game/module:/mod:ro" \
+            -v "$PWD/experimental/cyredis_experimental/game/module:/mod:ro" \
             redis:7 redis-server --loadmodule /mod/cy_game.so
           timeout 60 sh -c 'until docker exec cy-game-redis redis-cli ping; do sleep 1; done'
 
@@ -92,7 +97,7 @@ jobs:
         run: |
           docker build -t cyredis-pgcache tests/docker/pgcache
           docker run -d --name pgcache-redis --network host \
-            -v "$PWD/plugins/pgcache/src:/mod:ro" \
+            -v "$PWD/experimental/pgcache/src:/mod:ro" \
             cyredis-pgcache redis-server --port 6386 \
             --loadmodule /mod/pgcache.so \
             pg_host 127.0.0.1 pg_port 5432 pg_database pgcache \
@@ -103,9 +108,11 @@ jobs:
         env:
           CY_GAME_REDIS_PORT: 6385
         run: |
-          python -m pytest -v tests/unit/test_physics.py tests/unit/test_goap.py \
-            tests/unit/test_pathfinding.py tests/unit/test_flecs_module.py \
-            tests/integration/test_cy_game_module.py
+          python -m pytest -v experimental/tests/unit/test_physics.py \
+            experimental/tests/unit/test_goap.py \
+            experimental/tests/unit/test_pathfinding.py \
+            experimental/tests/unit/test_flecs_module.py \
+            experimental/tests/integration/test_cy_game_module.py
 
       - name: Run the pgcache tests
         env:
@@ -115,7 +122,7 @@ jobs:
           PGUSER: pgcache
           PGPASSWORD: pgcache
           PGDATABASE: pgcache
-        run: python -m pytest -v tests/integration/test_pgcache_module.py
+        run: python -m pytest -v experimental/tests/integration/test_pgcache_module.py
 
       - name: Show module server logs on failure
         if: failure()

@@ -1,6 +1,6 @@
 [build-system]
 # setuptools >= 77 is required for the PEP 639 `license = "MIT"` string form.
-requires = ["setuptools>=77", "Cython>=3.0,<4", "numpy>=1.21"]
+requires = ["setuptools>=77", "Cython>=3.0,<4"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -50,36 +50,14 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-# Modular layers — the core client has no runtime dependencies; each optional
-# layer pulls only what it needs. `pip install cy-redis[web]`, etc.
+# The core client has no runtime dependencies. Web/auth, workers, queues, the
+# game engine and pgcache live in experimental/ and are not part of this
+# distribution, so they have no extras here.
 async = [
     "uvloop>=0.17.0",
 ]
-ai = [
-    "numpy>=1.21.0",
-]
-auth = [
-    "PyJWT>=2.0",
-    "pyotp>=2.6",
-]
-web = [
-    "fastapi>=0.100",
-    "PyJWT>=2.0",
-    "pyotp>=2.6",
-]
-game = [
-    "msgpack>=1.0",
-]
-# pgcache is a server-side Redis module (loaded with MODULE LOAD); it needs no
-# Python runtime dependency. The extra exists so intent can be declared.
-pgcache = []
 all = [
     "uvloop>=0.17.0",
-    "numpy>=1.21.0",
-    "PyJWT>=2.0",
-    "pyotp>=2.6",
-    "fastapi>=0.100",
-    "msgpack>=1.0",
 ]
 dev = [
     "pytest>=7.0",
@@ -96,13 +74,8 @@ test = [
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
     "pytest-timeout>=2.1",
-    # The optional layers' own tests skip themselves without these.
+    # The async suite skips itself without uvloop.
     "uvloop>=0.17.0",
-    "numpy>=1.21.0",
-    "PyJWT>=2.0",
-    "pyotp>=2.6",
-    "fastapi>=0.100",
-    "msgpack>=1.0",
 ]
 
 [project.urls]
@@ -120,8 +93,8 @@ version = {attr = "cy_redis.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cy_redis*", "cyredis_game*"]
-exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "hiredis*"]
+include = ["cy_redis*"]
+exclude = ["tests*", "docs*", "scripts*", "experimental*", "examples*", "hiredis*"]
 
 [tool.setuptools.package-data]
 "cy_redis.lua_scripts" = ["*.lua", "README.md"]
@@ -137,12 +110,6 @@ exclude = ["tests*", "docs*", "scripts*", "plugins*", "examples*", "hiredis*"]
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.core.cy_redis_client"
 sources = ["cy_redis/core/cy_redis_client.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.core.redis_core"
-sources = ["cy_redis/core/redis_core.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
@@ -183,13 +150,6 @@ libraries = ["ssl", "crypto"]
 # ── cy_redis features ──────────────────────────────────────────────────────────
 
 [[tool.setuptools.ext-modules]]
-name = "cy_redis.features.advanced"
-sources = ["cy_redis/features/advanced.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-libraries = ["z"]
-
-[[tool.setuptools.ext-modules]]
 name = "cy_redis.features.distributed"
 sources = ["cy_redis/features/distributed.pyx"]
 include-dirs = [".", "hiredis"]
@@ -206,16 +166,6 @@ name = "cy_redis.features.script_manager"
 sources = ["cy_redis/features/script_manager.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.features.probabilistic"
-sources = ["cy_redis/features/probabilistic.pyx"]
-include-dirs = [".", "hiredis", "cy_redis/cpp"]
-extra-objects = ["hiredis/libhiredis.a"]
-language = "c++"
-# The cpp/ headers use constexpr etc.; some toolchains (macOS runners) still
-# default to pre-C++11, so pin the standard explicitly.
-extra-compile-args = ["-std=c++14"]
 
 [[tool.setuptools.ext-modules]]
 name = "cy_redis.features.capabilities"
@@ -242,69 +192,6 @@ include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
 
 [[tool.setuptools.ext-modules]]
-name = "cy_redis.features.ai"
-sources = ["cy_redis/features/ai.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-language = "c++"
-extra-compile-args = ["-std=c++14"]
-# numpy include dir injected at build time by setup.py cmdclass
-
-# ── cy_redis auth ──────────────────────────────────────────────────────────────
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.auth.token_manager"
-sources = ["cy_redis/auth/token_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.auth.session_manager"
-sources = ["cy_redis/auth/session_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.auth.two_factor_auth"
-sources = ["cy_redis/auth/two_factor_auth.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.auth.password_reset_manager"
-sources = ["cy_redis/auth/password_reset_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# ── cy_redis workers ───────────────────────────────────────────────────────────
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.workers.worker_queue"
-sources = ["cy_redis/workers/worker_queue.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.workers.lifecycle_manager"
-sources = ["cy_redis/workers/lifecycle_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.workers.worker_coordinator"
-sources = ["cy_redis/workers/worker_coordinator.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.workers.multi_session_tracker"
-sources = ["cy_redis/workers/multi_session_tracker.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# ── cy_redis data ──────────────────────────────────────────────────────────────
-
-[[tool.setuptools.ext-modules]]
 name = "cy_redis.data.shared_dict"
 sources = ["cy_redis/data/shared_dict.pyx"]
 include-dirs = [".", "hiredis"]
@@ -312,97 +199,10 @@ extra-objects = ["hiredis/libhiredis.a"]
 libraries = ["z"]
 
 [[tool.setuptools.ext-modules]]
-name = "cy_redis.data.concurrent_shared_dict"
-sources = ["cy_redis/data/concurrent_shared_dict.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-libraries = ["z"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.data.shared_state_manager"
-sources = ["cy_redis/data/shared_state_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# ── cy_redis web ───────────────────────────────────────────────────────────────
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.web.web_cache"
-sources = ["cy_redis/web/web_cache.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.web.web_app_support"
-sources = ["cy_redis/web/web_app_support.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.web.channels"
-sources = ["cy_redis/web/channels.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# ── cy_redis utils / communication ────────────────────────────────────────────
-
-[[tool.setuptools.ext-modules]]
 name = "cy_redis.utils.redis_iterators"
 sources = ["cy_redis/utils/redis_iterators.pyx"]
 include-dirs = [".", "hiredis"]
 extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.communication.messaging"
-sources = ["cy_redis/communication/messaging.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cy_redis.communication.rpc"
-sources = ["cy_redis/communication/rpc.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# ── cyredis_game ───────────────────────────────────────────────────────────────
-
-[[tool.setuptools.ext-modules]]
-name = "cyredis_game.game_engine"
-sources = ["cyredis_game/game_engine.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cyredis_game.module_manager"
-sources = ["cyredis_game/module_manager.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cyredis_game.pathfinding"
-sources = ["cyredis_game/pathfinding.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cyredis_game.physics"
-sources = ["cyredis_game/physics.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cyredis_game.goap"
-sources = ["cyredis_game/goap.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-[[tool.setuptools.ext-modules]]
-name = "cyredis_game.chain"
-sources = ["cyredis_game/chain.pyx"]
-include-dirs = [".", "hiredis"]
-extra-objects = ["hiredis/libhiredis.a"]
-
-# ── Tool configuration ─────────────────────────────────────────────────────────
 
 [tool.cython]
 language_level = 3
@@ -418,7 +218,7 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["cy_redis", "cyredis_game"]
+known_first_party = ["cy_redis", "cyredis_experimental"]
 known_third_party = ["Cython"]
 
 [tool.mypy]
@@ -482,7 +282,7 @@ package = true
 
 # ── cibuildwheel: binary wheels for PyPI ────────────────────────────────────────
 [tool.cibuildwheel]
-# CPython 3.9–3.14; no PyPy (the extensions use CPython C-API + numpy), no 32-bit.
+# CPython 3.9–3.14; no PyPy (the extensions use the CPython C-API), no 32-bit.
 build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*_i686 *-win32"
 # setup.py builds the vendored hiredis static lib during build_ext, so no extra

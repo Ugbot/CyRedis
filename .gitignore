@@ -20,11 +20,19 @@ __pycache__/
 *.so
 
 # Cython generated C/C++ files (regenerated from .pyx on every build).
-# cyredis_game/module/*.c are hand-written Redis-module sources and stay
-# tracked — only the top-level cyredis_game/*.c files are Cython output.
+# Hand-written C sources live only under experimental/**/module/ and
+# experimental/pgcache/src/, which are re-included below.
 cy_redis/**/*.c
 cy_redis/**/*.cpp
-cyredis_game/*.c
+experimental/**/*.c
+experimental/**/*.cpp
+!experimental/**/module/**/*.c
+!experimental/pgcache/src/*.c
+
+# Compiled objects and platform shared libraries are never committed
+*.o
+*.dylib
+*.dll
 
 # Distribution / packaging
 .Python

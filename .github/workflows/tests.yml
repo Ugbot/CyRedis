@@ -18,8 +18,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -109,8 +107,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
@@ -118,7 +114,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
@@ -168,8 +164,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -177,7 +171,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
@@ -206,8 +200,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -215,7 +207,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
@@ -229,6 +221,9 @@ jobs:
 
       - name: Check metadata
         run: uvx twine check dist/*
+
+      - name: Check that only the supported surface is shipped
+        run: python scripts/check_dist_contents.py dist/*.whl dist/*.tar.gz
 
       - name: Install the wheel into a clean environment
         run: |
@@ -307,8 +302,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -316,7 +309,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
@@ -344,8 +337,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -353,7 +344,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 

@@ -23,7 +23,7 @@ from cy_redis.core.cy_redis_client import (
     CyRedisPipeline,
     RedisError,
 )
-from cy_redis.core.protocol import RedisProtocol
+from cy_redis.core.protocol import RESP2, RESP3, ConnectionState, ProtocolNegotiator
 from cy_redis.core.sentinel import CySentinel, SentinelError, SentinelManagedClient
 
 __all__ = [
@@ -41,5 +41,8 @@ __all__ = [
     "CyRedisConnectionPool",
     "CyRedisPipeline",
     "RedisError",
-    "RedisProtocol",
+    "RESP2",
+    "RESP3",
+    "ConnectionState",
+    "ProtocolNegotiator",
 ]

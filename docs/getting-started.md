@@ -22,13 +22,12 @@ layer pulls only what it needs:
 
 ```bash
 uv pip install -e ".[async]"   # uvloop for faster event loops
-uv pip install -e ".[ai]"      # numpy (required for AI/vector features)
-uv pip install -e ".[auth]"    # PyJWT + pyotp (tokens, sessions, 2FA)
-uv pip install -e ".[web]"     # fastapi + PyJWT + pyotp (web layer)
-uv pip install -e ".[game]"    # msgpack (game engine)
-uv pip install -e ".[all]"     # everything above
 uv pip install -e ".[dev]"     # linting, mypy, full test dependencies
 ```
+
+The web/auth layer, workers, queues, game engine and pgcache are not part of
+the package; they live in [`experimental/`](../experimental/README.md) and are
+installed from there.
 
 ## Connecting
 

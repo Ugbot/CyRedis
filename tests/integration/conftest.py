@@ -4,7 +4,6 @@ Pytest fixtures for CyRedis integration tests.
 
 import os
 import time
-from typing import Generator
 
 import pytest
 
@@ -12,12 +11,7 @@ import pytest
 try:
     from cy_redis import CyDistributedLock as DistributedLock
     from cy_redis import CyRedisClient
-    from cy_redis.reliable_queue import ReliableQueue, WorkerQueue
 
-    try:
-        from cy_redis.high_performance_redis import HighPerformanceRedis
-    except ImportError:
-        HighPerformanceRedis = None
     CYREDIS_AVAILABLE = True
 except ImportError:
     CYREDIS_AVAILABLE = False
@@ -200,20 +194,6 @@ def distributed_lock(hp_redis_client, unique_key):
     """Provide a distributed lock for testing."""
     lock_key = f"{unique_key}:lock"
     return DistributedLock(hp_redis_client, lock_key)
-
-
-@pytest.fixture
-def reliable_queue(hp_redis_client, unique_key):
-    """Provide a reliable queue for testing."""
-    queue_name = f"{unique_key}:queue"
-    return ReliableQueue(hp_redis_client, queue_name)
-
-
-@pytest.fixture
-def worker_queue(hp_redis_client, unique_key):
-    """Provide a worker queue for testing."""
-    queue_name = f"{unique_key}:worker"
-    return WorkerQueue(hp_redis_client, queue_name)
 
 
 def pytest_configure(config):
