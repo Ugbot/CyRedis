@@ -2,6 +2,7 @@
 
 Usage: python scripts/check_dist_contents.py dist/*.whl dist/*.tar.gz
 """
+
 import sys
 import tarfile
 import zipfile

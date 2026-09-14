@@ -41,7 +41,10 @@ import time
 from datetime import datetime, timedelta
 
 from cy_redis import CyRedisClient
-from cyredis_experimental.extras.clickhouse import CyClickHouseBridge, CyClickHouseClient
+from cyredis_experimental.extras.clickhouse import (
+    CyClickHouseBridge,
+    CyClickHouseClient,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -271,7 +274,11 @@ async def demo_channel_broadcast(
         import uvicorn
         from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-        from cyredis_experimental.web import CyChannelManager, create_redis_lifespan, get_channels
+        from cyredis_experimental.web import (
+            CyChannelManager,
+            create_redis_lifespan,
+            get_channels,
+        )
     except ImportError:
         print(
             "  fastapi/uvicorn not installed — skipping.\n"
