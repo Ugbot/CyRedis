@@ -1,16 +1,21 @@
 # CyRedis Makefile
 # Comprehensive test runner and build automation
 
-.PHONY: help test test-unit test-integration test-fast test-coverage test-apps
+.PHONY: help test test-unit test-integration test-fast test-coverage test-examples
 .PHONY: docker-up docker-down docker-clean test-all test-watch
-.PHONY: clean build install dev-install lint format
+.PHONY: clean build dist dist-check install dev-install lint lint-report typecheck format format-check
 .PHONY: module module-clean module-fetch
 
-# Python/UV configuration
-PYTHON := python3
+# Everything runs through uv (see AGENTS.md); `uv run` syncs the `dev`
+# dependency group from pyproject.toml so no manual install step is needed.
 UV := uv
+PYTHON := $(UV) run python
 PYTEST := $(UV) run pytest
 PYTEST_ARGS := -v
+
+# Directories the formatters and linters cover; mirrors .github/workflows/tests.yml.
+FORMAT_DIRS := cy_redis/ tests/ examples/ scripts/
+LINT_DIRS := cy_redis/ tests/ scripts/
 
 # Project directories
 PROJECT_DIR := $(shell pwd)
@@ -64,18 +69,9 @@ test-coverage: ## Run tests with coverage report
 	@echo "  HTML: $(COVERAGE_DIR)/index.html"
 	@echo "  XML:  $(COVERAGE_REPORT)"
 
-test-apps: ## Run test applications/examples
-	@echo "$(BLUE)Running test applications...$(NC)"
-	@if [ -d "$(EXAMPLES_DIR)" ]; then \
-		for example in $(EXAMPLES_DIR)/example_*.py; do \
-			if [ -f "$$example" ]; then \
-				echo "$(YELLOW)Running $$example...$(NC)"; \
-				$(UV) run python "$$example" || true; \
-			fi \
-		done \
-	else \
-		echo "$(YELLOW)No examples directory found$(NC)"; \
-	fi
+test-examples: ## Import every example against the installed package (fails on the first broken one)
+	@echo "$(BLUE)Importing examples...$(NC)"
+	$(PYTHON) scripts/check_examples.py
 
 test-watch: ## Run tests in watch mode (requires pytest-watch)
 	@echo "$(BLUE)Running tests in watch mode...$(NC)"
@@ -142,33 +138,56 @@ clean: ## Clean build artifacts
 	rm -f .coverage
 	@echo "$(GREEN)Clean completed$(NC)"
 
-build: clean ## Build Cython extensions
+build: ## Build the Cython extensions in place (uses the dev group's Cython)
 	@echo "$(BLUE)Building Cython extensions...$(NC)"
-	$(UV) run python setup.py build_ext --inplace
+	$(PYTHON) setup.py build_ext --inplace
 	@echo "$(GREEN)Build completed$(NC)"
 
-install: build ## Install the package
+dist: ## Build the sdist and wheel into dist/
+	@echo "$(BLUE)Building distributions...$(NC)"
+	rm -rf dist/
+	$(UV) build
+	@echo "$(GREEN)Distributions in dist/$(NC)"
+
+dist-check: dist ## Build and validate what would be uploaded to PyPI
+	@echo "$(BLUE)Checking distributions...$(NC)"
+	$(UV) run twine check dist/*
+	$(PYTHON) scripts/check_dist_contents.py dist/*.whl dist/*.tar.gz
+	@echo "$(GREEN)Distributions look releasable$(NC)"
+
+install: ## Editable install of the package into the uv environment
 	@echo "$(BLUE)Installing package...$(NC)"
-	$(UV) pip install -e .
+	$(UV) sync
+	$(UV) pip install --no-build-isolation -e .
 	@echo "$(GREEN)Installation completed$(NC)"
 
-dev-install: ## Install development dependencies
-	@echo "$(BLUE)Installing development dependencies...$(NC)"
-	$(UV) pip install -e ".[dev,test]"
-	@echo "$(GREEN)Development dependencies installed$(NC)"
+dev-install: install ## Alias for install: `uv sync` already brings in the dev group
 
 ##@ Code Quality
 
-lint: ## Run linters (flake8, mypy)
+lint: ## Gating lint, identical to CI: flake8 error classes, black and isort checks
 	@echo "$(BLUE)Running linters...$(NC)"
-	$(UV) run flake8 cy_redis/ tests/ || true
-	$(UV) run mypy cy_redis/ || true
+	$(UV) run flake8 $(LINT_DIRS) --count --select=E9,F63,F7,F82 --show-source --statistics
+	$(UV) run black --check $(FORMAT_DIRS)
+	$(UV) run isort --check-only $(FORMAT_DIRS)
+
+lint-report: ## Advisory flake8 report (style/complexity); never fails
+	@echo "$(BLUE)flake8 report (advisory)...$(NC)"
+	$(UV) run flake8 $(LINT_DIRS) --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+typecheck: ## Run mypy on the Python surface (the compiled modules have no stubs yet)
+	@echo "$(BLUE)Running mypy...$(NC)"
+	$(UV) run mypy cy_redis/
 
 format: ## Format code with black and isort
 	@echo "$(BLUE)Formatting code...$(NC)"
-	$(UV) run black cy_redis/ tests/ examples/
-	$(UV) run isort cy_redis/ tests/ examples/
+	$(UV) run black $(FORMAT_DIRS)
+	$(UV) run isort $(FORMAT_DIRS)
 	@echo "$(GREEN)Formatting completed$(NC)"
+
+format-check: ## Report formatting drift without changing files
+	$(UV) run black --check --diff $(FORMAT_DIRS)
+	$(UV) run isort --check-only --diff $(FORMAT_DIRS)
 
 ##@ Utilities
 
@@ -180,7 +199,7 @@ info: ## Show project information
 	@echo "  Scripts Dir:  $(SCRIPTS_DIR)"
 	@echo ""
 	@echo "$(BLUE)Environment$(NC)"
-	@echo "  Python:       $$($(PYTHON) --version)"
+	@echo "  Python:       $$($(PYTHON) --version 2>/dev/null || echo 'not installed')"
 	@echo "  UV:           $$($(UV) --version 2>/dev/null || echo 'not installed')"
 	@echo "  Pytest:       $$($(UV) run pytest --version 2>/dev/null || echo 'not installed')"
 	@echo ""

@@ -8,7 +8,7 @@ import asyncio
 import threading
 import time
 
-from .game_engine import GameEngine, run_zone_worker
+from cyredis_experimental.game.game_engine import GameEngine, run_zone_worker
 
 
 def demonstrate_basic_game_setup():

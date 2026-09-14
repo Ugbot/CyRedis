@@ -1185,6 +1185,21 @@ cdef class CyRedisClient:
     def get_offset_lock(self):
         return self._offset_lock
 
+    def close(self):
+        """Drop every idle pooled connection and stop the worker executor.
+
+        The client stays usable afterwards: the pool reconnects lazily, but
+        executor-backed helpers will fail once it has been shut down."""
+        self._pool.disconnect()
+        if self._executor:
+            self._executor.shutdown(wait=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def __dealloc__(self):
         if self._executor:
             self._executor.shutdown(wait=True)
@@ -1521,24 +1536,19 @@ cdef class CyRedisClient:
         finally:
             self.pool.return_connection(conn)
 
-    cdef list _parse_xread_result(self, list result):
-        """Parse XREAD result"""
+    cdef list _parse_xread_result(self, object result):
+        """Flatten an XREAD/XREADGROUP reply [[stream, [[id, [f, v, ...]], ...]], ...]
+        (or the RESP3 {stream: entries} map) into (stream, id, {field: value})."""
         parsed = []
-        for stream_data in result:
-            if len(stream_data) >= 2:
-                stream_name = stream_data[0]
-                messages = stream_data[1]
-                for msg in messages:
-                    if len(msg) >= 2:
-                        msg_id = msg[0]
-                        msg_data = {}
-                        # Parse field-value pairs
-                        for i in range(1, len(msg), 2):
-                            if i + 1 < len(msg):
-                                field = msg[i]
-                                value = msg[i + 1]
-                                msg_data[field] = value
-                        parsed.append((stream_name, msg_id, msg_data))
+        if not result:
+            return parsed
+        if isinstance(result, dict):
+            streams = result.items()
+        else:
+            streams = ((s[0], s[1]) for s in result if len(s) >= 2)
+        for stream_name, entries in streams:
+            for msg_id, fields in _parse_stream_entries(entries):
+                parsed.append((stream_name, msg_id, fields))
         return parsed
 
     # Async operations

@@ -167,5 +167,5 @@ The client is stored on `app.state.redis`; the channel manager on `app.state.cha
 
 - [Web channels](web-channels.md) — distributed WebSocket pub/sub
 - [Advanced features](advanced.md) — shared state, workers
-- [Example](../examples/web_app_example.py) — complete web app example
+- [Example](../examples/example_fastapi_channels.py) — FastAPI app with channels
 - [Example](../examples/web_cache_example.py) — cache usage

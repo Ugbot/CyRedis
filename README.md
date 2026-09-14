@@ -22,32 +22,32 @@ repository, are unsupported, and are built separately — see
 
 ## Quick start
 
+`cy-redis` is not on PyPI yet — `0.2.0` will be the first release. Until that
+tag exists, install from source:
+
 ```bash
-pip install cy-redis
+git clone https://github.com/Ugbot/CyRedis.git && cd CyRedis
+uv sync                                # test + build tooling (Cython, setuptools, ...)
+uv pip install --no-build-isolation -e .
 ```
 
-Binary wheels are published for CPython 3.9–3.14 on Linux (x86_64/aarch64,
-glibc and musl) and macOS (arm64 on 14.0+, x86_64 on 15.0+). On other platforms pip builds from
-the sdist, which needs a C/C++ toolchain and `make` (the vendored hiredis
-builds automatically).
+Building from source needs a C/C++ toolchain and `make`; the vendored hiredis
+builds automatically. OpenSSL development headers are needed for TLS (see
+below). Once released, `pip install cy-redis` will install binary wheels for
+CPython 3.9–3.14 on Linux (x86_64/aarch64, glibc and musl) and macOS (arm64 on
+14.0+, x86_64 on 15.0+), with the sdist as the fallback elsewhere.
 
-The core client has no runtime dependencies. One optional extra:
+The core client has no runtime dependencies. One optional extra, `async`
+(uvloop): `uv pip install --no-build-isolation -e ".[async]"`.
 
-```bash
-pip install "cy-redis[async]"   # uvloop
-```
-
-Working from a checkout:
+Developer loop (`make help` lists everything):
 
 ```bash
-# Editable install (requires Cython >= 3.0)
-uv pip install -e .
-
-# Or build extensions in-place for development
-uv run python setup.py build_ext --inplace
-
-# Build a wheel/sdist
-uv build
+make build          # Cython extensions in place
+make test-unit      # no server needed
+make test           # needs a Redis or Valkey on REDIS_HOST/REDIS_PORT
+make lint           # what CI gates on
+make dist-check     # sdist + wheel, twine check, content guard
 ```
 
 ### TLS

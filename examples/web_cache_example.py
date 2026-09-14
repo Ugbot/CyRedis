@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-FastAPI-Style Web Cache Example using CyRedis
-Demonstrates the new cache functionality inspired by fastapi-cache.
+FastAPI-Style Web Cache Example using CyRedis (experimental web package)
+Demonstrates the cache functionality inspired by fastapi-cache.
+
+The cache itself runs against a real Redis; only the HTTP request object is a
+stand-in (``MockRequest``) so the example does not depend on a web framework.
 """
 
 import asyncio
@@ -27,7 +30,7 @@ from cyredis_experimental.web.web_cache import (
 
 
 class MockRequest:
-    """Mock request object for demonstration"""
+    """Stand-in for a framework request (mock: no HTTP server is involved)."""
 
     def __init__(
         self,

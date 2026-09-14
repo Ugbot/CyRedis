@@ -29,14 +29,14 @@ jobs:
 
       - name: Run flake8
         run: |
-          flake8 cy_redis/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 cy_redis/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 cy_redis/ tests/ scripts/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 cy_redis/ tests/ scripts/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Check black formatting
-        run: black --check cy_redis/ tests/ examples/
+        run: black --check cy_redis/ tests/ examples/ scripts/
 
       - name: Check isort imports
-        run: isort --check-only cy_redis/ tests/ examples/
+        run: isort --check-only cy_redis/ tests/ examples/ scripts/
 
   test-linux:
     name: Test on Ubuntu - Python ${{ matrix.python-version }}
@@ -243,6 +243,16 @@ jobs:
           assert all(script_source(name) for name in available_scripts())
           print(cy_redis.__version__, available_scripts())
           "
+
+      - name: Import every example against the installed wheel
+        # Same clean environment, run from /tmp: every `from cy_redis import x`
+        # in examples/ must resolve in what users actually install. Examples
+        # needing optional packages (fastapi, cyredis_experimental) are
+        # reported as skipped, not silently passed.
+        working-directory: /tmp
+        run: >
+          /tmp/wheel-env/bin/python "$GITHUB_WORKSPACE/scripts/check_examples.py"
+          --examples-dir "$GITHUB_WORKSPACE/examples"
 
       - name: Install the sdist from source
         run: |
